@@ -11,6 +11,7 @@ import sounddevice as sd
 import whisper
 import rp
 from pynput import keyboard
+from pynput.keyboard import Controller as KeyboardController, Key
 from PyQt6.QtWidgets import QApplication, QWidget, QVBoxLayout, QLabel
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QPainter, QColor, QPen
@@ -22,8 +23,8 @@ WHISPER_MODEL = None
 def get_whisper_model():
     global WHISPER_MODEL
     if WHISPER_MODEL is None:
-        print("Loading Whisper model (base)...")
-        WHISPER_MODEL = whisper.load_model("base")
+        print("Loading Whisper model (large-v3)...")
+        WHISPER_MODEL = whisper.load_model("large-v3")
         print("Whisper model loaded.")
     return WHISPER_MODEL
 
@@ -67,6 +68,7 @@ class VoiceThingWindow(QWidget):
     update_signal = pyqtSignal()
     hide_signal = pyqtSignal()
     toggle_signal = pyqtSignal()
+    paste_signal = pyqtSignal(str)
 
     def __init__(self):
         super().__init__()
@@ -96,11 +98,23 @@ class VoiceThingWindow(QWidget):
         self.update_signal.connect(self._update_display)
         self.hide_signal.connect(lambda: QTimer.singleShot(2000, self.hide))
         self.toggle_signal.connect(self.toggle_recording)
+        self.paste_signal.connect(self._do_paste)
 
         self.update_timer = QTimer()
         self.update_timer.timeout.connect(self._update_display)
 
+    def _do_paste(self, text: str):
+        print(f"_do_paste on main thread: {text!r}")
+        rp.string_to_clipboard(text)
+        time.sleep(0.1)
+        kb = KeyboardController()
+        with kb.pressed(Key.cmd):
+            kb.tap('v')
+        time.sleep(0.1)
+        print("Paste done.")
+
     def _update_display(self):
+        print(f"_update_display: {len(self.audio_chunks)} chunks")
         if self.audio_chunks:
             audio = np.concatenate(self.audio_chunks)
             self.waveform.set_samples(audio)
@@ -118,6 +132,7 @@ class VoiceThingWindow(QWidget):
         self.drag_pos = None
 
     def toggle_recording(self):
+        print(f"toggle_recording called, recording={self.recording}")
         self.stop_recording() if self.recording else self.start_recording()
 
     def start_recording(self):
@@ -132,6 +147,8 @@ class VoiceThingWindow(QWidget):
         print("Recording started...")
 
         def callback(indata, frames, time, status):
+            if status:
+                print(f"Audio callback status: {status}")
             self.audio_chunks.append(indata[:, 0].copy())
 
         self.stream = sd.InputStream(samplerate=SAMPLE_RATE, channels=1, dtype=np.float32, callback=callback)
@@ -157,6 +174,7 @@ class VoiceThingWindow(QWidget):
         threading.Thread(target=self._transcribe_and_type, args=(audio,), daemon=True).start()
 
     def _transcribe_and_type(self, audio: np.ndarray):
+        print(f"_transcribe_and_type called, audio len={len(audio)}")
         if len(audio) == 0:
             print("No audio recorded.")
             self.hide_signal.emit()
@@ -165,25 +183,31 @@ class VoiceThingWindow(QWidget):
         print(f"Recorded {len(audio) / SAMPLE_RATE:.2f}s of audio.")
 
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+            print(f"Writing to {f.name}...")
             scipy.io.wavfile.write(f.name, SAMPLE_RATE, audio)
             print(f"Saved to {f.name}")
 
-            print("Transcribing...")
+            print("Calling whisper transcribe...")
             text = get_whisper_model().transcribe(f.name, verbose=True)["text"].strip()
+            print("Whisper returned.")
 
         print(f"Transcription: {text!r}")
 
         if text:
-            print("Typing text...")
-            rp.type_string_with_keyboard(text)
-            print("Done typing.")
+            print("Emitting paste signal...")
+            self.paste_signal.emit(text)
 
+        print("Emitting hide signal...")
         self.hide_signal.emit()
+        print("_transcribe_and_type done.")
 
 
 def main():
+    print("Starting app...")
     app = QApplication([])
+    print("QApplication created")
     window = VoiceThingWindow()
+    print("Window created")
 
     # Double-tap Option (only if no other keys pressed)
     last_tap = [0.0]
