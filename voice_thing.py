@@ -12,7 +12,7 @@ import whisper
 import rp
 from pynput import keyboard
 from pynput.keyboard import Controller as KeyboardController, Key
-from PyQt6.QtWidgets import QApplication, QWidget, QVBoxLayout, QLabel
+from PyQt6.QtWidgets import QApplication, QWidget, QVBoxLayout, QLabel, QScrollArea
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QPainter, QColor, QPen
 
@@ -69,6 +69,7 @@ class VoiceThingWindow(QWidget):
     hide_signal = pyqtSignal()
     toggle_signal = pyqtSignal()
     paste_signal = pyqtSignal(str)
+    log_signal = pyqtSignal(str)
 
     def __init__(self):
         super().__init__()
@@ -76,9 +77,11 @@ class VoiceThingWindow(QWidget):
         self.audio_chunks = []
         self.stream = None
         self.drag_pos = None
+        self.expanded = False
+        self.tee = None
+        self.tee_last_len = 0
 
         self.setWindowTitle("Voice Thing")
-        self.setFixedSize(400, 150)
         self.setWindowFlags(Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.FramelessWindowHint)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
@@ -90,18 +93,53 @@ class VoiceThingWindow(QWidget):
             "color: white; font-size: 14px; background: rgba(30,30,40,200); padding: 5px; border-radius: 5px;"
         )
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.status_label.mousePressEvent = lambda e: self._toggle_expand()
         layout.addWidget(self.status_label)
 
         self.waveform = WaveformWidget()
         layout.addWidget(self.waveform)
 
+        self.log_output = QLabel("")
+        self.log_output.setStyleSheet(
+            "color: #aaa; font-size: 11px; font-family: monospace; background: rgba(20,20,30,220); padding: 8px;"
+        )
+        self.log_output.setWordWrap(True)
+        self.log_output.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidget(self.log_output)
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setStyleSheet("background: rgba(20,20,30,220); border: none; border-radius: 5px;")
+        layout.addWidget(self.scroll_area)
+
+        self.expanded = True
+        self._update_size()
+
         self.update_signal.connect(self._update_display)
         self.hide_signal.connect(lambda: QTimer.singleShot(2000, self.hide))
         self.toggle_signal.connect(self.toggle_recording)
         self.paste_signal.connect(self._do_paste)
+        self.log_signal.connect(self._append_log)
 
         self.update_timer = QTimer()
         self.update_timer.timeout.connect(self._update_display)
+
+    def _toggle_expand(self):
+        self.expanded = not self.expanded
+        self.scroll_area.setVisible(self.expanded)
+        self._update_size()
+
+    def _update_size(self):
+        if self.expanded:
+            self.setFixedSize(400, 350)
+        else:
+            self.setFixedSize(400, 150)
+
+    def _append_log(self, text: str):
+        current = self.log_output.text()
+        self.log_output.setText((current + "\n" + text).strip())
+        # Scroll to bottom
+        self.scroll_area.verticalScrollBar().setValue(self.scroll_area.verticalScrollBar().maximum())
 
     def _do_paste(self, text: str):
         print(f"_do_paste on main thread: {text!r}")
@@ -114,11 +152,17 @@ class VoiceThingWindow(QWidget):
         print("Paste done.")
 
     def _update_display(self):
-        print(f"_update_display: {len(self.audio_chunks)} chunks")
         if self.audio_chunks:
             audio = np.concatenate(self.audio_chunks)
             self.waveform.set_samples(audio)
             self.status_label.setText(f"Recording... {len(audio) / SAMPLE_RATE:.1f}s")
+        # Poll tee for new output
+        if self.tee and len(self.tee.text) > self.tee_last_len:
+            new_text = self.tee.text[self.tee_last_len:]
+            for line in new_text.split("\n"):
+                if line.strip():
+                    self.log_signal.emit(line)
+            self.tee_last_len = len(self.tee.text)
 
     def mousePressEvent(self, e):
         if e.button() == Qt.MouseButton.LeftButton:
@@ -138,6 +182,9 @@ class VoiceThingWindow(QWidget):
     def start_recording(self):
         self.recording = True
         self.audio_chunks = []
+        self.tee = rp.TeeStdout()
+        self.tee.__enter__()
+        self.tee_last_len = 0
         self.show()
         screen = QApplication.primaryScreen().geometry()
         self.move((screen.width() - self.width()) // 2, screen.height() // 4)
@@ -157,7 +204,7 @@ class VoiceThingWindow(QWidget):
 
     def stop_recording(self):
         self.recording = False
-        self.update_timer.stop()
+        # Keep timer running to poll tee during transcription
 
         if self.stream:
             self.stream.stop()
@@ -173,33 +220,40 @@ class VoiceThingWindow(QWidget):
 
         threading.Thread(target=self._transcribe_and_type, args=(audio,), daemon=True).start()
 
+    def _log(self, msg: str):
+        print(msg)
+        self.log_signal.emit(msg)
+
     def _transcribe_and_type(self, audio: np.ndarray):
-        print(f"_transcribe_and_type called, audio len={len(audio)}")
+        self._log(f"Audio: {len(audio)} samples")
         if len(audio) == 0:
-            print("No audio recorded.")
+            self._log("No audio recorded.")
             self.hide_signal.emit()
             return
 
-        print(f"Recorded {len(audio) / SAMPLE_RATE:.2f}s of audio.")
+        self._log(f"Recorded {len(audio) / SAMPLE_RATE:.2f}s")
 
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
-            print(f"Writing to {f.name}...")
             scipy.io.wavfile.write(f.name, SAMPLE_RATE, audio)
-            print(f"Saved to {f.name}")
+            self._log(f"Saved: {f.name}")
 
-            print("Calling whisper transcribe...")
-            text = get_whisper_model().transcribe(f.name, verbose=True)["text"].strip()
-            print("Whisper returned.")
+            self._log("Transcribing...")
+            result = get_whisper_model().transcribe(f.name, verbose=True)
+            text = result["text"].strip()
 
-        print(f"Transcription: {text!r}")
+        self._log(f"Result: {text!r}")
 
         if text:
             print("Emitting paste signal...")
             self.paste_signal.emit(text)
 
-        print("Emitting hide signal...")
+        # Close tee and stop timer
+        if self.tee:
+            self.tee.__exit__(None, None, None)
+            self.tee = None
+        self.update_timer.stop()
+
         self.hide_signal.emit()
-        print("_transcribe_and_type done.")
 
 
 def main():
@@ -229,6 +283,7 @@ def main():
     keyboard.Listener(on_press=on_press, on_release=on_release).start()
 
     get_whisper_model()
+    rp.play_chords([0, 4, 7], [12], gap=0, t=0.15)  # Ready chime
     print("Voice Thing running. Double-tap Option to record.")
     app.exec()
 
