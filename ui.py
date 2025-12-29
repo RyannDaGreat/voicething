@@ -9,9 +9,9 @@ import scipy.io.wavfile
 import sounddevice as sd
 import rp
 from pynput.keyboard import Controller as KeyboardController, Key
-from PyQt6.QtWidgets import QApplication, QWidget, QVBoxLayout, QLabel, QScrollArea
+from PyQt6.QtWidgets import QApplication, QWidget, QVBoxLayout, QLabel, QScrollArea, QSystemTrayIcon, QMenu
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QPainter, QColor, QPen
+from PyQt6.QtGui import QPainter, QColor, QPen, QIcon, QPixmap
 
 SAMPLE_RATE = 16000
 
@@ -68,17 +68,20 @@ class VoiceThingWindow(QWidget):
         self.expanded = False
         self.tee = None
         self.tee_last_len = 0
+        self.scroll_locked = False
 
         self.setWindowTitle("Voice Thing")
         self.setWindowFlags(Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.FramelessWindowHint)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self._apply_blur()
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(10, 10, 10, 10)
 
         self.status_label = QLabel("Double-tap Option to record")
         self.status_label.setStyleSheet(
-            "color: white; font-size: 14px; background: rgba(30,30,40,200); padding: 5px; border-radius: 5px;"
+            "color: #fff; font-size: 14px; font-weight: 500; "
+            "background: rgba(30,30,40,200); padding: 8px 12px; border-radius: 8px;"
         )
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.status_label.mousePressEvent = lambda e: self._toggle_expand()
@@ -89,7 +92,8 @@ class VoiceThingWindow(QWidget):
 
         self.log_output = QLabel("")
         self.log_output.setStyleSheet(
-            "color: #aaa; font-size: 11px; font-family: monospace; background: rgba(20,20,30,220); padding: 8px;"
+            "color: #b0b0b0; font-size: 11px; font-family: 'SF Mono', Menlo, monospace; "
+            "background: transparent; padding: 8px; line-height: 1.4;"
         )
         self.log_output.setWordWrap(True)
         self.log_output.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
@@ -97,7 +101,13 @@ class VoiceThingWindow(QWidget):
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidget(self.log_output)
         self.scroll_area.setWidgetResizable(True)
-        self.scroll_area.setStyleSheet("background: rgba(20,20,30,220); border: none; border-radius: 5px;")
+        self.scroll_area.setStyleSheet(
+            "QScrollArea { background: rgba(20,20,30,200); border: none; border-radius: 8px; }"
+            "QScrollBar:vertical { width: 6px; background: transparent; }"
+            "QScrollBar::handle:vertical { background: rgba(255,255,255,0.2); border-radius: 3px; min-height: 20px; }"
+            "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }"
+        )
+        self.scroll_area.verticalScrollBar().valueChanged.connect(self._on_scroll)
         layout.addWidget(self.scroll_area)
 
         self.expanded = True
@@ -112,6 +122,47 @@ class VoiceThingWindow(QWidget):
         self.update_timer = QTimer()
         self.update_timer.timeout.connect(self._update_display)
 
+        self._setup_tray()
+
+    def _apply_blur(self):
+        """Apply native macOS vibrancy effect."""
+        try:
+            from ctypes import c_void_p
+            from AppKit import NSVisualEffectView
+            from PyQt6.sip import voidptr
+            import objc
+
+            ns_view = objc.objc_object(c_void_p=voidptr(int(self.winId())))
+            effect_view = NSVisualEffectView.alloc().initWithFrame_(ns_view.bounds())
+            effect_view.setAutoresizingMask_(18)  # Width + Height flexible
+            effect_view.setBlendingMode_(1)  # Behind window
+            effect_view.setMaterial_(9)  # HUD window
+            effect_view.setState_(1)  # Active
+            ns_view.addSubview_positioned_relativeTo_(effect_view, 2, None)
+        except Exception:
+            pass  # Fallback to no blur
+
+    def _setup_tray(self):
+        self.tray = QSystemTrayIcon(self)
+        # Create simple mic icon
+        pixmap = QPixmap(22, 22)
+        pixmap.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setBrush(QColor(100, 200, 255))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawEllipse(6, 2, 10, 14)
+        painter.drawRect(9, 14, 4, 4)
+        painter.end()
+        self.tray.setIcon(QIcon(pixmap))
+
+        menu = QMenu()
+        menu.addAction("Show", self.show)
+        menu.addAction("Quit", QApplication.quit)
+        self.tray.setContextMenu(menu)
+        self.tray.setToolTip("Voice Thing")
+        self.tray.show()
+
     def _toggle_expand(self):
         self.expanded = not self.expanded
         self.scroll_area.setVisible(self.expanded)
@@ -120,10 +171,30 @@ class VoiceThingWindow(QWidget):
     def _update_size(self):
         self.setFixedSize(400, 350 if self.expanded else 150)
 
+    def _on_scroll(self):
+        scrollbar = self.scroll_area.verticalScrollBar()
+        at_bottom = scrollbar.value() >= scrollbar.maximum() - 10
+        was_locked = self.scroll_locked
+        self.scroll_locked = not at_bottom
+
+        if self.scroll_locked != was_locked:
+            self._update_scroll_style()
+
+    def _update_scroll_style(self):
+        border = "border: 2px solid rgba(255,150,50,0.6);" if self.scroll_locked else "border: none;"
+        self.scroll_area.setStyleSheet(
+            f"QScrollArea {{ background: rgba(20,20,30,200); {border} border-radius: 8px; }}"
+            "QScrollBar:vertical { width: 6px; background: transparent; }"
+            "QScrollBar::handle:vertical { background: rgba(255,255,255,0.2); border-radius: 3px; min-height: 20px; }"
+            "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }"
+        )
+
     def _append_log(self, text: str):
         current = self.log_output.text()
         self.log_output.setText((current + "\n" + text).strip())
-        self.scroll_area.verticalScrollBar().setValue(self.scroll_area.verticalScrollBar().maximum())
+        if not self.scroll_locked:
+            QTimer.singleShot(10, lambda: self.scroll_area.verticalScrollBar().setValue(
+                self.scroll_area.verticalScrollBar().maximum()))
 
     def _do_paste(self, text: str):
         print(f"_do_paste on main thread: {text!r}")

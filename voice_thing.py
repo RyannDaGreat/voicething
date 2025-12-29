@@ -1,6 +1,7 @@
 #!/usr/bin/env /opt/homebrew/opt/python@3.10/bin/python3.10
 """Voice transcription app: double-tap Option to record, transcribe, and type."""
 
+import signal
 import time
 
 import whisper
@@ -23,6 +24,8 @@ def get_whisper_model():
 
 
 def main():
+    signal.signal(signal.SIGINT, signal.SIG_DFL)  # Allow Ctrl+C to kill app
+
     print("Starting app...")
     app = QApplication([])
     print("QApplication created")
