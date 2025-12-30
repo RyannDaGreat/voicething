@@ -43,6 +43,7 @@ class TeeOutput:
         return ''.join(self._buf)
 import scipy.io.wavfile
 import sounddevice as sd
+from AppKit import NSWorkspace, NSApplicationActivateIgnoringOtherApps
 from pynput import keyboard
 from pynput.keyboard import Controller as KeyboardController, Key
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QSize, QPoint
@@ -338,8 +339,9 @@ class HelpDialog(QDialog):
             row = QHBoxLayout()
             row.setSpacing(4)
             btn = QPushButton(key)
-            btn.setIcon(make_icon(icon_fn))
-            btn.setIconSize(QSize(14, 14))
+            if icon_fn:
+                btn.setIcon(make_icon(icon_fn))
+                btn.setIconSize(QSize(14, 14))
             btn.setStyleSheet(BTN_CSS)
             btn.setFixedWidth(60)
             btn.setEnabled(False)
@@ -560,6 +562,7 @@ class VoiceThingWindow(QWidget):
         self.last_transcription = None
         self.transcriptions = []  # List of transcription strings
         self.auto_hide = True  # Whether to auto-hide after transcription
+        self._prev_app = None  # For restoring focus when toggling window
         self.sound_enabled = True  # Whether to play chimes
         self.current_model = WHISPER_MODEL  # Current Whisper model
 
@@ -716,8 +719,14 @@ class VoiceThingWindow(QWidget):
     def _focus_window(self):
         if self.isActiveWindow():
             self.hide()
+            # Restore previous app
+            if self._prev_app:
+                self._prev_app.activateWithOptions_(NSApplicationActivateIgnoringOtherApps)
+                self._prev_app = None
             self._chime([7, 0], t=0.06)  # Descending: unfocus
         else:
+            # Remember current app before stealing focus
+            self._prev_app = NSWorkspace.sharedWorkspace().frontmostApplication()
             self.show()
             self.raise_()
             self.activateWindow()
