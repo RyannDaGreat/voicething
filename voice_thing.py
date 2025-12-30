@@ -57,7 +57,7 @@ from PyQt6.QtWidgets import (
     QMenu,
     QPushButton,
     QStackedWidget,
-    QFrame,
+    QTextEdit,
 )
 
 APP_NAME = "VoiceThing"
@@ -71,7 +71,7 @@ RECORDINGS_DIR = os.path.join(tempfile.gettempdir(), APP_NAME)
 # Shared styling for buttons and tabs
 BTN_CSS = (
     "QPushButton { color: rgba(255,255,255,0.6); background: rgba(255,255,255,0.1); "
-    "border: 1px solid rgba(255,255,255,1); border-radius: 3px; padding: 1px 2px; font-size: 10px; }"
+    "border: 1px solid rgb(100,100,100); border-radius: 3px; padding: 1px 2px; font-size: 10px; }"
     "QPushButton:hover { background: rgba(255,255,255,0.2); }"
     "QPushButton:disabled { color: rgba(255,255,255,0.2); background: transparent; }"
     "QPushButton:checked { background: rgba(100,200,255,0.3); }"
@@ -120,6 +120,52 @@ def draw_copy(p, s):
     m = s // 5
     p.drawRoundedRect(m, m, s // 2, s // 2, 2, 2)
     p.drawRoundedRect(s // 3, s // 3, s // 2, s // 2, 2, 2)
+
+
+def draw_eye(p, s, open=True):
+    """Draw an eye icon - open when visible, closed/slashed when auto-hide."""
+    cx, cy = s // 2, s // 2
+    # Eye outline (almond shape)
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    p.setPen(QPen(ICON_COLOR, 2))
+    # Draw eye shape using arcs
+    p.drawEllipse(s // 6, s // 3, s * 2 // 3, s // 3)
+    if open:
+        # Pupil
+        p.setBrush(ICON_COLOR)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.drawEllipse(cx - s // 8, cy - s // 8, s // 4, s // 4)
+    else:
+        # Slash through eye
+        p.setPen(QPen(ICON_COLOR, 2))
+        p.drawLine(s // 4, s * 3 // 4, s * 3 // 4, s // 4)
+
+
+def draw_sound(p, s, enabled=True):
+    """Draw a speaker icon, with slash when muted."""
+    p.setBrush(ICON_COLOR)
+    p.setPen(Qt.PenStyle.NoPen)
+    # Speaker body
+    m = s // 4
+    p.drawRect(m, s * 3 // 8, s // 6, s // 4)
+    # Speaker cone
+    pts = QPolygon([
+        QPoint(m + s // 6, s * 3 // 8),
+        QPoint(m + s // 3, s // 4),
+        QPoint(m + s // 3, s * 3 // 4),
+        QPoint(m + s // 6, s * 5 // 8),
+    ])
+    p.drawPolygon(pts)
+    # Sound waves
+    if enabled:
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.setPen(QPen(ICON_COLOR, 2))
+        p.drawArc(s // 2, s // 3, s // 5, s // 3, 45 * 16, -90 * 16)
+        p.drawArc(s // 2 + s // 8, s // 4, s // 4, s // 2, 45 * 16, -90 * 16)
+    else:
+        # Mute slash
+        p.setPen(QPen(ICON_COLOR, 2))
+        p.drawLine(s * 3 // 4, s // 4, s // 4, s * 3 // 4)
 
 
 def make_icon(draw_fn, size=64):
@@ -218,6 +264,8 @@ class VoiceThingWindow(QWidget):
         self.last_audio_path = None
         self.last_transcription = None
         self.transcriptions = []  # List of transcription strings
+        self.auto_hide = True  # Whether to auto-hide after transcription
+        self.sound_enabled = True  # Whether to play chimes
 
         self.setWindowTitle(APP_NAME)
         self.setWindowFlags(
@@ -232,13 +280,28 @@ class VoiceThingWindow(QWidget):
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(4)
 
+        # Status row with minimize button on left
+        status_row = QHBoxLayout()
+        status_row.setContentsMargins(0, 0, 0, 0)
+        self.minimize_btn = QPushButton()
+        self.minimize_btn.setFixedSize(12, 12)
+        self.minimize_btn.setStyleSheet(
+            "QPushButton { background: rgb(255, 189, 68); border: none; border-radius: 6px; }"
+            "QPushButton:hover { background: rgb(255, 210, 100); }"
+        )
+        self.minimize_btn.clicked.connect(self.hide)
+        status_row.addWidget(self.minimize_btn)
         self.status_label = QLabel("Double-tap Option to record")
         self.status_label.setStyleSheet(
             "color: rgba(255,255,255,0.7); font-size: 14px;"
         )
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(self.status_label)
+        status_row.addWidget(self.status_label, 1)
+        # Spacer to balance the minimize button
+        status_row.addSpacing(12)
+        layout.addLayout(status_row)
 
         self.timer_label = QLabel("0:00.0")
         self.seg_font = seg_font
@@ -266,6 +329,12 @@ class VoiceThingWindow(QWidget):
         self.cancel_btn = make_btn("Esc", draw_x, self.cancel_recording)
         self.copy_btn = make_btn("C", draw_copy, self.copy_transcription)
         self.folder_btn = make_btn("F", draw_folder, self.open_folder)
+        # Sound toggle button
+        self.sound_btn = make_btn("S", draw_sound, self.toggle_sound)
+        self.sound_btn.setEnabled(True)
+        # Eye button to toggle auto-hide (eye open = stays visible)
+        self.eye_btn = make_btn("V", draw_eye, self.toggle_auto_hide)
+        self.eye_btn.setEnabled(True)
         layout.addLayout(btn_row)
 
         self.waveform = WaveformWidget()
@@ -273,16 +342,16 @@ class VoiceThingWindow(QWidget):
 
         # Tab bar for Output/Transcriptions
         tab_row = QHBoxLayout()
-        tab_row.setSpacing(0)
-        tab_row.setContentsMargins(0, 0, 0, 0)
-        self.output_tab = QPushButton("Output")
+        tab_row.setSpacing(4)
+        tab_row.setContentsMargins(0, 4, 0, 0)
+        self.output_tab = QPushButton("O  Output")
         self.output_tab.setCheckable(True)
         self.output_tab.setChecked(True)
         self.output_tab.setStyleSheet(BTN_CSS)
         self.output_tab.clicked.connect(lambda: self._switch_tab(0))
         tab_row.addWidget(self.output_tab, 1)
 
-        self.transcriptions_tab = QPushButton("Transcriptions")
+        self.transcriptions_tab = QPushButton("T  Transcriptions")
         self.transcriptions_tab.setCheckable(True)
         self.transcriptions_tab.setStyleSheet(BTN_CSS)
         self.transcriptions_tab.clicked.connect(lambda: self._switch_tab(1))
@@ -305,19 +374,17 @@ class VoiceThingWindow(QWidget):
         self.output_scroll.setWidgetResizable(True)
         self.tab_stack.addWidget(self.output_scroll)
 
-        # Transcriptions panel
-        self.transcriptions_label = QLabel("")
-        self.transcriptions_label.setStyleSheet(
-            "color: #b0b0b0; font-size: 11px; font-family: Menlo, monospace;"
-            "background: transparent; padding: 8px;"
+        # Transcriptions panel - use QTextEdit for native context menu and scrolling
+        self.transcriptions_edit = QTextEdit()
+        self.transcriptions_edit.setReadOnly(True)
+        self.transcriptions_edit.setStyleSheet(
+            "QTextEdit { color: #b0b0b0; font-size: 11px; font-family: Menlo, monospace;"
+            "background: rgba(20,20,30,200); border: none; border-radius: 8px; padding: 8px; }"
+            "QScrollBar:vertical { width: 6px; background: transparent; }"
+            "QScrollBar::handle:vertical { background: rgba(255,255,255,0.2); border-radius: 3px; }"
+            "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }"
         )
-        self.transcriptions_label.setWordWrap(True)
-        self.transcriptions_label.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
-        self.transcriptions_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        self.transcriptions_scroll = LockableScrollArea()
-        self.transcriptions_scroll.setWidget(self.transcriptions_label)
-        self.transcriptions_scroll.setWidgetResizable(True)
-        self.tab_stack.addWidget(self.transcriptions_scroll)
+        self.tab_stack.addWidget(self.transcriptions_edit)
 
         layout.addWidget(self.tab_stack)
 
@@ -348,8 +415,11 @@ class VoiceThingWindow(QWidget):
         self.tray.show()
 
     def _maybe_hide(self):
-        current_scroll = self.output_scroll if self.tab_stack.currentIndex() == 0 else self.transcriptions_scroll
-        if not self.is_focused and not current_scroll.locked:
+        if not self.auto_hide:
+            return
+        if self.tab_stack.currentIndex() == 0 and self.output_scroll.locked:
+            return
+        if not self.is_focused:
             self.hide()
 
     def _switch_tab(self, index):
@@ -361,15 +431,17 @@ class VoiceThingWindow(QWidget):
         self.transcriptions.append(text)
         self._update_transcriptions_display()
         self._switch_tab(1)
-        self.transcriptions_scroll.scroll_to_bottom()
+        # Scroll to bottom
+        sb = self.transcriptions_edit.verticalScrollBar()
+        sb.setValue(sb.maximum())
 
     def _update_transcriptions_display(self):
-        html = "<hr>".join(f"<p>{t}</p>" for t in self.transcriptions)
-        self.transcriptions_label.setText(html)
+        html = "<hr>".join(f"<p style='margin:4px 0;'>{t}</p>" for t in self.transcriptions)
+        self.transcriptions_edit.setHtml(html)
 
     def _copy_to_clipboard(self, text):
         rp.string_to_clipboard(text)
-        rp.play_chords([12, 16], gap=0, t=0.05, sampler=quiet_sampler, block=False)
+        self._play_chime([12, 16], gap=0, t=0.05, sampler=quiet_sampler, block=False)
 
     def _do_paste(self, text):
         self._copy_to_clipboard(text)
@@ -449,6 +521,14 @@ class VoiceThingWindow(QWidget):
             self.copy_transcription()
         elif key == Qt.Key.Key_F:
             self.open_folder()
+        elif key == Qt.Key.Key_S:
+            self.toggle_sound()
+        elif key == Qt.Key.Key_V:
+            self.toggle_auto_hide()
+        elif key == Qt.Key.Key_O:
+            self._switch_tab(0)
+        elif key == Qt.Key.Key_T:
+            self._switch_tab(1)
         else:
             super().keyPressEvent(e)
 
@@ -484,7 +564,7 @@ class VoiceThingWindow(QWidget):
         elif self.state == "recording":
             self.stop_recording()
         else:
-            rp.play_chords([3, 0], gap=0, t=0.08, sampler=quiet_sampler, block=False)
+            self._play_chime([3, 0], gap=0, t=0.08, sampler=quiet_sampler, block=False)
 
     def cancel_recording(self):
         if self.state != "recording":
@@ -493,7 +573,7 @@ class VoiceThingWindow(QWidget):
         self._set_state("idle", "Cancelled")
         self.audio_chunks = []
         self.waveform.set_samples(np.array([]))
-        rp.play_chords([7, 3], gap=0, t=0.06, sampler=quiet_sampler, block=False)
+        self._play_chime([7, 3], gap=0, t=0.06, sampler=quiet_sampler, block=False)
         self.hide_signal.emit()
 
     def _set_state(self, state, status):
@@ -504,6 +584,20 @@ class VoiceThingWindow(QWidget):
             f"color: rgba(100,200,255,{opacity}); font-size: 28px; font-family: '{self.seg_font}';"
         )
         self._update_buttons()
+
+    def toggle_auto_hide(self):
+        self.auto_hide = not self.auto_hide
+        # Eye open = stays visible (no auto-hide), eye slashed = auto-hide enabled
+        self.eye_btn.setIcon(make_icon(lambda p, s: draw_eye(p, s, not self.auto_hide)))
+
+    def toggle_sound(self):
+        self.sound_enabled = not self.sound_enabled
+        self.sound_btn.setIcon(make_icon(lambda p, s: draw_sound(p, s, self.sound_enabled)))
+
+    def _play_chime(self, *args, **kwargs):
+        """Play chime only if sound is enabled."""
+        if self.sound_enabled:
+            rp.play_chords(*args, **kwargs)
 
     def copy_transcription(self):
         if self.last_transcription:
@@ -525,7 +619,7 @@ class VoiceThingWindow(QWidget):
             self.first_show = False
         self.timer_label.setText("0:00.0")
         self._set_state("recording", "Recording")
-        rp.play_chords([0, 4], [7, 12], gap=0, t=0.08, sampler=quiet_sampler, block=False)
+        self._play_chime([0, 4], [7, 12], gap=0, t=0.08, sampler=quiet_sampler, block=False)
 
         def callback(indata, frames, time_info, status):
             self.audio_chunks.append(indata[:, 0].copy())
@@ -547,7 +641,7 @@ class VoiceThingWindow(QWidget):
             self.stream = None
         self._set_state("transcribing", "Transcribing...")
         self._switch_tab(0)  # Switch to Output tab during transcription
-        rp.play_chords([12, 7], [4, 0], gap=0, t=0.08, sampler=quiet_sampler, block=False)
+        self._play_chime([12, 7], [4, 0], gap=0, t=0.08, sampler=quiet_sampler, block=False)
         audio = np.concatenate(self.audio_chunks) if self.audio_chunks else np.array([])
         self.waveform.set_samples(audio)
         threading.Thread(target=self._transcribe, args=(audio,), daemon=True).start()
@@ -578,7 +672,7 @@ class VoiceThingWindow(QWidget):
             self.paste_signal.emit(result.text)
             self.add_transcription_signal.emit(result.text)
 
-        rp.play_chords([0], [4], [7], [12], gap=0, t=0.08, sampler=quiet_sampler, block=False)
+        self._play_chime([0], [4], [7], [12], gap=0, t=0.08, sampler=quiet_sampler, block=False)
         self._finish()
 
     def _finish(self):
