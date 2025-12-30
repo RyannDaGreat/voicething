@@ -16,17 +16,68 @@ from PyQt6.QtGui import QPainter, QColor, QPen, QIcon, QPixmap
 SAMPLE_RATE = 16000
 
 
+class RoundedScrollArea(QScrollArea):
+    """ScrollArea with properly rounded corners via custom painting."""
+
+    def __init__(self, border_color=None):
+        super().__init__()
+        self.border_color = border_color
+        self.setWidgetResizable(True)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setStyleSheet(
+            "QScrollArea { background: transparent; border: none; }"
+            "QScrollBar:vertical { width: 6px; background: transparent; }"
+            "QScrollBar::handle:vertical { background: rgba(255,255,255,0.2); border-radius: 3px; min-height: 20px; }"
+            "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }"
+        )
+
+    def set_border_color(self, color):
+        self.border_color = color
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self.viewport())
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        # Background
+        painter.setBrush(QColor(20, 20, 30, 200))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawRoundedRect(self.viewport().rect(), 8, 8)
+
+        # Border if set
+        if self.border_color:
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.setPen(QPen(self.border_color, 2))
+            r = self.viewport().rect().adjusted(1, 1, -1, -1)
+            painter.drawRoundedRect(r, 7, 7)
+
+        painter.end()
+        super().paintEvent(event)
+
+
 class WaveformWidget(QWidget):
-    """Displays last 10 seconds of audio waveform."""
+    """Displays last 10 seconds of audio waveform with smooth amplitude."""
 
     def __init__(self):
         super().__init__()
         self.samples = np.array([])
+        self.display_max = 0.01  # Current display amplitude (smoothed)
         self.setMinimumHeight(100)
 
     def set_samples(self, samples: np.ndarray):
         max_samples = 10 * SAMPLE_RATE
         self.samples = samples[-max_samples:] if len(samples) > max_samples else samples
+
+        # Exponential decay for amplitude normalization
+        if len(self.samples) > 0:
+            current_max = np.max(np.abs(self.samples))
+            if current_max > self.display_max:
+                # Jump up quickly
+                self.display_max = current_max
+            else:
+                # Decay slowly (0.95 per frame at 120hz = ~1 sec decay)
+                self.display_max = max(self.display_max * 0.95, current_max, 0.01)
+
         self.update()
 
     def paintEvent(self, event):
@@ -41,11 +92,10 @@ class WaveformWidget(QWidget):
         chunk_size = max(1, len(self.samples) // w)
         n = len(self.samples) // chunk_size
         peaks = np.max(np.abs(self.samples[:n * chunk_size].reshape(n, chunk_size)), axis=1)
-        max_peak = max(np.max(peaks), 1e-6)
 
         painter.setPen(QPen(QColor(100, 200, 255), 2))
         for x, peak in enumerate(peaks):
-            bar = int((peak / max_peak) * h // 2 * 0.9)
+            bar = int((peak / self.display_max) * h // 2 * 0.9)
             painter.drawLine(x, h // 2 - bar, x, h // 2 + bar)
 
 
@@ -69,11 +119,11 @@ class VoiceThingWindow(QWidget):
         self.tee = None
         self.tee_last_len = 0
         self.scroll_locked = False
+        self.is_focused = False
 
         self.setWindowTitle("Voice Thing")
         self.setWindowFlags(Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.FramelessWindowHint)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        self._apply_blur()
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(10, 10, 10, 10)
@@ -98,15 +148,8 @@ class VoiceThingWindow(QWidget):
         self.log_output.setWordWrap(True)
         self.log_output.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
 
-        self.scroll_area = QScrollArea()
+        self.scroll_area = RoundedScrollArea()
         self.scroll_area.setWidget(self.log_output)
-        self.scroll_area.setWidgetResizable(True)
-        self.scroll_area.setStyleSheet(
-            "QScrollArea { background: rgba(20,20,30,200); border: none; border-radius: 8px; }"
-            "QScrollBar:vertical { width: 6px; background: transparent; }"
-            "QScrollBar::handle:vertical { background: rgba(255,255,255,0.2); border-radius: 3px; min-height: 20px; }"
-            "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }"
-        )
         self.scroll_area.verticalScrollBar().valueChanged.connect(self._on_scroll)
         layout.addWidget(self.scroll_area)
 
@@ -114,7 +157,7 @@ class VoiceThingWindow(QWidget):
         self._update_size()
 
         self.update_signal.connect(self._update_display)
-        self.hide_signal.connect(lambda: QTimer.singleShot(2000, self.hide))
+        self.hide_signal.connect(self._maybe_hide)
         self.toggle_signal.connect(self.toggle_recording)
         self.paste_signal.connect(self._do_paste)
         self.log_signal.connect(self._append_log)
@@ -123,12 +166,6 @@ class VoiceThingWindow(QWidget):
         self.update_timer.timeout.connect(self._update_display)
 
         self._setup_tray()
-
-    def _apply_blur(self):
-        """Native macOS blur doesn't work with PyQt6 - would crash."""
-        # NSVisualEffectView injection crashes PyQt6's rendering pipeline.
-        # Leaving this as a no-op. True blur requires native Cocoa window.
-        pass
 
     def _setup_tray(self):
         self.tray = QSystemTrayIcon(self)
@@ -159,6 +196,10 @@ class VoiceThingWindow(QWidget):
     def _update_size(self):
         self.setFixedSize(400, 350 if self.expanded else 150)
 
+    def _maybe_hide(self):
+        if not self.is_focused:
+            QTimer.singleShot(2000, self.hide)
+
     def _on_scroll(self):
         scrollbar = self.scroll_area.verticalScrollBar()
         at_bottom = scrollbar.value() >= scrollbar.maximum() - 10
@@ -166,16 +207,8 @@ class VoiceThingWindow(QWidget):
         self.scroll_locked = not at_bottom
 
         if self.scroll_locked != was_locked:
-            self._update_scroll_style()
-
-    def _update_scroll_style(self):
-        border = "border: 2px solid rgba(255,150,50,0.6);" if self.scroll_locked else "border: none;"
-        self.scroll_area.setStyleSheet(
-            f"QScrollArea {{ background: rgba(20,20,30,200); {border} border-radius: 8px; }}"
-            "QScrollBar:vertical { width: 6px; background: transparent; }"
-            "QScrollBar::handle:vertical { background: rgba(255,255,255,0.2); border-radius: 3px; min-height: 20px; }"
-            "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }"
-        )
+            color = QColor(255, 150, 50, 150) if self.scroll_locked else None
+            self.scroll_area.set_border_color(color)
 
     def _append_log(self, text: str):
         current = self.log_output.text()
@@ -185,14 +218,15 @@ class VoiceThingWindow(QWidget):
                 self.scroll_area.verticalScrollBar().maximum()))
 
     def _do_paste(self, text: str):
-        print(f"_do_paste on main thread: {text!r}")
         rp.string_to_clipboard(text)
+        if self.is_focused:
+            # Don't paste into our own window
+            return
         time.sleep(0.1)
         kb = KeyboardController()
         with kb.pressed(Key.cmd):
             kb.tap('v')
         time.sleep(0.1)
-        print("Paste done.")
 
     def _update_display(self):
         if self.audio_chunks:
@@ -216,6 +250,40 @@ class VoiceThingWindow(QWidget):
 
     def mouseReleaseEvent(self, e):
         self.drag_pos = None
+
+    def focusInEvent(self, e):
+        self.is_focused = True
+        self.update()
+        super().focusInEvent(e)
+
+    def focusOutEvent(self, e):
+        self.is_focused = False
+        self.update()
+        super().focusOutEvent(e)
+
+    def changeEvent(self, e):
+        if e.type() == e.Type.ActivationChange:
+            self.is_focused = self.isActiveWindow()
+            self.update()
+        super().changeEvent(e)
+
+    def paintEvent(self, e):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        # Background
+        painter.setBrush(QColor(30, 30, 40, 220))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawRoundedRect(self.rect().adjusted(2, 2, -2, -2), 12, 12)
+
+        # Glow border when focused
+        if self.is_focused:
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            pen = QPen(QColor(100, 200, 255, 100), 3)
+            painter.setPen(pen)
+            painter.drawRoundedRect(self.rect().adjusted(2, 2, -2, -2), 12, 12)
+
+        painter.end()
 
     def toggle_recording(self):
         print(f"toggle_recording called, recording={self.recording}")
@@ -242,7 +310,7 @@ class VoiceThingWindow(QWidget):
 
         self.stream = sd.InputStream(samplerate=SAMPLE_RATE, channels=1, dtype=np.float32, callback=callback)
         self.stream.start()
-        self.update_timer.start(50)
+        self.update_timer.start(8)  # ~120hz for smooth waveform
 
     def stop_recording(self):
         self.recording = False
