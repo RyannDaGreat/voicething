@@ -1,1 +1,21 @@
 __pycache__/
+
+
+#<RP Default Gitignore Start>
+*.pyc
+*.bak
+*.swh
+*.swi
+*.swj
+*.swk
+*.swl
+*.swm
+*.swn
+*.swo
+*.swp
+*.un~
+*.gstmp
+*.ipynb_checkpoints
+*.DS_Store
+#<RP Default Gitignore End>
+
