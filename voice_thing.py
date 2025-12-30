@@ -168,6 +168,8 @@ class VoiceThingWindow(QWidget):
             btn_row.addWidget(btn)
             return btn
 
+        self.record_btn = make_btn("", draw_mic, self.toggle_recording)
+        self.record_btn.setEnabled(True)
         self.cancel_btn = make_btn("Esc", draw_x, self.cancel_recording)
         self.audio_btn = make_btn("", draw_speaker, self.open_audio_location)
         layout.addLayout(btn_row)
@@ -279,7 +281,7 @@ class VoiceThingWindow(QWidget):
         super().changeEvent(e)
 
     def keyPressEvent(self, e):
-        if e.key() == Qt.Key.Key_Escape and self.recording:
+        if e.key() == Qt.Key.Key_Escape and self.state == STATE_RECORDING:
             self.cancel_recording()
         else:
             super().keyPressEvent(e)
@@ -309,28 +311,47 @@ class VoiceThingWindow(QWidget):
         self.update_timer.stop()
 
     def toggle_recording(self):
-        (self.stop_recording if self.recording else self.start_recording)()
+        if self.state == STATE_IDLE:
+            self.start_recording()
+        elif self.state == STATE_RECORDING:
+            self.stop_recording()
+        else:
+            # Transcribing - play "no" chime
+            rp.play_chords([3, 0], gap=0, t=0.08)
 
     def cancel_recording(self):
-        if not self.recording:
+        if self.state != STATE_RECORDING:
             return
-        self.recording = False
+        self.state = STATE_IDLE
         self._cleanup_stream()
         self._cleanup_tee()
+        self._update_buttons()
         self.timer_label.hide()
-        self.cancel_btn.setEnabled(False)
         self.audio_chunks = []
         self.waveform.set_samples(np.array([]))
         self.status_label.setText("Cancelled")
         rp.play_chords([7, 3], gap=0, t=0.06)
         self.hide_signal.emit()
 
+    def _update_buttons(self):
+        if self.state == STATE_IDLE:
+            self.record_btn.setIcon(make_icon(draw_mic))
+            self.record_btn.setEnabled(True)
+            self.cancel_btn.setEnabled(False)
+        elif self.state == STATE_RECORDING:
+            self.record_btn.setIcon(make_icon(draw_stop))
+            self.record_btn.setEnabled(True)
+            self.cancel_btn.setEnabled(True)
+        else:  # STATE_TRANSCRIBING
+            self.record_btn.setEnabled(False)
+            self.cancel_btn.setEnabled(False)
+
     def open_audio_location(self):
         if self.last_audio_path and os.path.exists(self.last_audio_path):
             subprocess.run(["open", "-R", self.last_audio_path])
 
     def start_recording(self):
-        self.recording = True
+        self.state = STATE_RECORDING
         self.audio_chunks = []
         self.tee = rp.TeeStdout()
         self.tee.__enter__()
@@ -343,7 +364,7 @@ class VoiceThingWindow(QWidget):
         self.status_label.setText("Recording")
         self.timer_label.setText("0:00.00")
         self.timer_label.show()
-        self.cancel_btn.setEnabled(True)
+        self._update_buttons()
         rp.play_chords([0, 4], [7, 12], gap=0, t=0.08)
 
         def callback(indata, frames, time_info, status):
@@ -354,11 +375,11 @@ class VoiceThingWindow(QWidget):
         self.update_timer.start(8)
 
     def stop_recording(self):
-        self.recording = False
+        self.state = STATE_TRANSCRIBING
         self._cleanup_stream()
+        self._update_buttons()
         rp.play_chords([12, 7], [4, 0], gap=0, t=0.08)
         self.timer_label.hide()
-        self.cancel_btn.setEnabled(False)
         self.status_label.setText("Transcribing...")
         audio = np.concatenate(self.audio_chunks) if self.audio_chunks else np.array([])
         self.waveform.set_samples(audio)
@@ -367,7 +388,7 @@ class VoiceThingWindow(QWidget):
     def _transcribe(self, audio):
         if len(audio) == 0:
             print("No audio.")
-            self.hide_signal.emit()
+            self._finish_transcription()
             return
         print(f"Recorded {len(audio) / SAMPLE_RATE:.2f}s")
 
@@ -377,11 +398,17 @@ class VoiceThingWindow(QWidget):
             result = rp.transcribe_audio_file_via_whisper(f.name, model=WHISPER_MODEL, show_progress=True)
 
         print(f"Result: {result.text!r}")
-        self._cleanup_tee()
         rp.play_chords([0], [4], [7], [12], gap=0, t=0.08)
         self.audio_btn.setEnabled(True)
         if result.text:
             self.paste_signal.emit(result.text)
+        self._finish_transcription()
+
+    def _finish_transcription(self):
+        self._cleanup_tee()
+        self.state = STATE_IDLE
+        self._update_buttons()
+        self.status_label.setText("Double-tap Option to record")
         self.hide_signal.emit()
 
 
