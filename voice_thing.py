@@ -109,6 +109,19 @@ def draw_x(p, s):
     p.drawLine(s - m, m, m, s - m)
 
 
+def draw_help(p, s):
+    """Draw a question mark icon."""
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    p.setPen(QPen(ICON_COLOR, 2))
+    # Question mark curve
+    p.drawArc(s // 4, s // 6, s // 2, s // 2, 0, 200 * 16)
+    p.drawLine(s // 2, s // 2 + s // 8, s // 2, s * 2 // 3)
+    # Dot
+    p.setBrush(ICON_COLOR)
+    p.setPen(Qt.PenStyle.NoPen)
+    p.drawEllipse(s // 2 - 2, s * 3 // 4, 5, 5)
+
+
 def draw_folder(p, s):
     p.setBrush(ICON_COLOR)
     p.setPen(Qt.PenStyle.NoPen)
@@ -218,6 +231,108 @@ WHISPER_MODELS = [
     ("L", "large-v3", "Best accuracy, slowest (~10GB VRAM)"),
 ]
 
+# Button definitions: (key, icon_fn, description)
+# Used for creating buttons and help dialog (DRY)
+BUTTONS = [
+    ("Space", draw_mic, "Start/stop recording"),
+    ("Esc", draw_x, "Cancel recording"),
+    ("C", draw_copy, "Copy last transcription to clipboard"),
+    ("L", draw_load, "Load audio file to transcribe"),
+    ("F", draw_folder, "Open recordings folder"),
+    ("S", draw_sound, "Toggle sound effects"),
+    ("V", draw_eye, "Toggle auto-minimize after transcription"),
+    ("M", draw_model, "Change Whisper model"),
+    ("?", draw_help, "Show this help"),
+]
+
+# Tab definitions
+TABS = [
+    ("O", "Output", "Show console output"),
+    ("T", "Transcriptions", "Show transcription history"),
+]
+
+
+class HelpDialog(QDialog):
+    """Help dialog showing all keyboard shortcuts and descriptions."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Help")
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(15, 15, 15, 15)
+        layout.setSpacing(8)
+
+        # App description
+        title = QLabel(f"{APP_NAME}")
+        title.setStyleSheet("color: white; font-size: 16px; font-weight: bold;")
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(title)
+
+        desc = QLabel("Voice transcription tool.\nDouble-tap Option to record from anywhere.")
+        desc.setStyleSheet("color: rgba(255,255,255,0.7); font-size: 11px;")
+        desc.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(desc)
+
+        # Buttons section
+        for key, icon_fn, description in BUTTONS:
+            row = QHBoxLayout()
+            btn = QPushButton(key)
+            btn.setIcon(make_icon(icon_fn))
+            btn.setIconSize(QSize(16, 16))
+            btn.setStyleSheet(BTN_CSS)
+            btn.setFixedWidth(70)
+            btn.setEnabled(False)
+            row.addWidget(btn)
+            lbl = QLabel(description)
+            lbl.setStyleSheet("color: rgba(255,255,255,0.8); font-size: 11px;")
+            row.addWidget(lbl, 1)
+            layout.addLayout(row)
+
+        # Tabs section
+        layout.addSpacing(5)
+        for key, name, description in TABS:
+            row = QHBoxLayout()
+            btn = QPushButton(f"{key}  {name}")
+            btn.setStyleSheet(BTN_CSS)
+            btn.setFixedWidth(120)
+            btn.setEnabled(False)
+            row.addWidget(btn)
+            lbl = QLabel(description)
+            lbl.setStyleSheet("color: rgba(255,255,255,0.8); font-size: 11px;")
+            row.addWidget(lbl, 1)
+            layout.addLayout(row)
+
+        # Drag and drop hint
+        layout.addSpacing(5)
+        hint = QLabel("Drag & drop audio files to transcribe them.")
+        hint.setStyleSheet("color: rgba(255,255,255,0.5); font-size: 10px;")
+        hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(hint)
+
+        # Close button
+        close_btn = QPushButton("Esc  Close")
+        close_btn.setStyleSheet(BTN_CSS)
+        close_btn.clicked.connect(self.accept)
+        layout.addWidget(close_btn)
+
+        self.setFixedWidth(320)
+
+    def keyPressEvent(self, e):
+        if e.key() in (Qt.Key.Key_Escape, Qt.Key.Key_Question):
+            self.accept()
+        else:
+            super().keyPressEvent(e)
+
+    def paintEvent(self, e):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setBrush(QColor(30, 30, 40, 240))
+        p.setPen(QPen(QColor(100, 100, 100), 1))
+        p.drawRoundedRect(self.rect().adjusted(1, 1, -1, -1), 10, 10)
+
 
 class ModelDialog(QDialog):
     """Dialog to select Whisper model with keyboard shortcuts."""
@@ -292,7 +407,7 @@ class TextPanel(QTextEdit):
     def keyPressEvent(self, e):
         # Pass shortcut keys to parent window
         if e.key() in (Qt.Key.Key_Space, Qt.Key.Key_Escape, Qt.Key.Key_C, Qt.Key.Key_L, Qt.Key.Key_F,
-                       Qt.Key.Key_S, Qt.Key.Key_V, Qt.Key.Key_O, Qt.Key.Key_T, Qt.Key.Key_M):
+                       Qt.Key.Key_S, Qt.Key.Key_V, Qt.Key.Key_O, Qt.Key.Key_T, Qt.Key.Key_M, Qt.Key.Key_Question):
             self.window().keyPressEvent(e)
         else:
             super().keyPressEvent(e)
@@ -464,6 +579,9 @@ class VoiceThingWindow(QWidget):
         self.model_btn = make_btn("M", draw_model, self.show_model_dialog)
         self.model_btn.setToolTip("Change Whisper model")
         self.model_btn.setEnabled(True)
+        self.help_btn = make_btn("?", draw_help, self.show_help)
+        self.help_btn.setToolTip("Show help")
+        self.help_btn.setEnabled(True)
         layout.addLayout(btn_row)
 
         self.waveform = WaveformWidget()
@@ -657,6 +775,8 @@ class VoiceThingWindow(QWidget):
             self._switch_tab(1)
         elif key == Qt.Key.Key_M:
             self.show_model_dialog()
+        elif key == Qt.Key.Key_Question:
+            self.show_help()
         else:
             super().keyPressEvent(e)
 
@@ -733,6 +853,13 @@ class VoiceThingWindow(QWidget):
     def _play_waiting_chime(self):
         """Play low bump-a-bump sound while waiting."""
         self._chime([-20], [-19], [-20], t=0.066)
+
+    def show_help(self):
+        """Show help dialog."""
+        dialog = HelpDialog(self)
+        dialog.move(self.x() + (self.width() - dialog.width()) // 2,
+                    self.y() + (self.height() - dialog.height()) // 2)
+        dialog.exec()
 
     def show_model_dialog(self):
         """Show dialog to select Whisper model."""
@@ -913,6 +1040,12 @@ def main():
                 last_tap[0] = now
 
     keyboard.Listener(on_press=on_press, on_release=on_release).start()
+
+    # Show window on boot
+    screen = QApplication.primaryScreen().geometry()
+    window.move((screen.width() - window.width()) // 2, screen.height() // 4)
+    window.show()
+    window.first_show = False
 
     print(f"Loading Whisper ({WHISPER_MODEL})...")
     rp.r._get_pywhispercpp_model(WHISPER_MODEL)
