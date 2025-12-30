@@ -271,6 +271,7 @@ class HelpDialog(QDialog):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.drag_pos = None
         self.setWindowTitle("Help")
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
@@ -297,16 +298,14 @@ class HelpDialog(QDialog):
 
         about_text = QLabel(
             "Voice transcription powered by Whisper.\n\n"
-            "• Double-tap Option to record from anywhere\n"
-            "  (works in fullscreen apps and terminals!)\n"
-            "• Double-tap Option again to stop and\n"
-            "  auto-paste the transcription via Cmd+V\n"
+            "• Double-tap Option to record from anywhere (works in fullscreen apps and terminals!)\n"
+            "• Double-tap Option again to stop and auto-paste the transcription via Cmd+V\n"
             "• Cmd + double-tap Option to toggle focus\n"
             "• Access from menu bar (top right of Mac)\n"
             "• Drag & drop audio files to transcribe\n"
             "• Cmd+Q to quit\n\n"
-            "Pro tip: Right-click in Transcriptions tab\n"
-            "to copy a single transcription.\n\n"
+            "100% keyboard-driven - no mouse needed! (hover buttons to see shortcuts)\n\n"
+            "Pro tip: Right-click in Transcriptions tab to copy a single transcription.\n\n"
             "By Clara Burgert"
         )
         about_text.setStyleSheet("color: rgba(255,255,255,0.7); font-size: 10px;")
@@ -382,6 +381,17 @@ class HelpDialog(QDialog):
             self.accept()
         else:
             super().keyPressEvent(e)
+
+    def mousePressEvent(self, e):
+        if e.button() == Qt.MouseButton.LeftButton:
+            self.drag_pos = e.globalPosition().toPoint() - self.frameGeometry().topLeft()
+
+    def mouseMoveEvent(self, e):
+        if self.drag_pos and e.buttons() & Qt.MouseButton.LeftButton:
+            self.move(e.globalPosition().toPoint() - self.drag_pos)
+
+    def mouseReleaseEvent(self, e):
+        self.drag_pos = None
 
     def paintEvent(self, e):
         p = QPainter(self)
