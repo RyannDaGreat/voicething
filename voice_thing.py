@@ -244,8 +244,11 @@ TABS = [
 ]
 
 
+GITHUB_URL = "https://github.com/RyannDaGreat/VoiceThing"
+
+
 class HelpDialog(QDialog):
-    """Help dialog showing all keyboard shortcuts and descriptions."""
+    """Help dialog with about info and keymap."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -255,54 +258,93 @@ class HelpDialog(QDialog):
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(15, 15, 15, 15)
-        layout.setSpacing(8)
+        layout.setSpacing(10)
 
-        # App description
-        title = QLabel(f"{APP_NAME}")
-        title.setStyleSheet("color: white; font-size: 16px; font-weight: bold;")
+        # Title
+        title = QLabel(APP_NAME)
+        title.setStyleSheet("color: white; font-size: 18px; font-weight: bold;")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title)
 
-        desc = QLabel("Voice transcription tool.\nDouble-tap Option to record from anywhere.")
-        desc.setStyleSheet("color: rgba(255,255,255,0.7); font-size: 11px;")
-        desc.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(desc)
+        # Main content: About | Keymap
+        content = QHBoxLayout()
+        content.setSpacing(15)
 
-        # Buttons section
+        # Left side: About
+        about_box = QVBoxLayout()
+        about_label = QLabel("About")
+        about_label.setStyleSheet("color: rgb(100,200,255); font-size: 12px; font-weight: bold;")
+        about_box.addWidget(about_label)
+
+        about_text = QLabel(
+            "Voice transcription powered by Whisper.\n\n"
+            "• Double-tap Option to record from anywhere\n"
+            "  (works in fullscreen apps and terminals!)\n"
+            "• Double-tap Option again to stop and\n"
+            "  auto-paste the transcription via Cmd+V\n"
+            "• Access from the menu bar icon (top right)\n"
+            "• Drag & drop audio files to transcribe\n"
+            "• Toggle auto-minimize with V key\n\n"
+            "By Clara Burgert"
+        )
+        about_text.setStyleSheet("color: rgba(255,255,255,0.7); font-size: 10px;")
+        about_text.setWordWrap(True)
+        about_text.setFixedWidth(180)
+        about_box.addWidget(about_text)
+        about_box.addStretch()
+
+        # GitHub button
+        github_btn = QPushButton("GitHub")
+        github_btn.setStyleSheet(BTN_CSS)
+        github_btn.clicked.connect(lambda: subprocess.run(["open", GITHUB_URL]))
+        about_box.addWidget(github_btn)
+
+        content.addLayout(about_box)
+
+        # Separator
+        sep = QLabel()
+        sep.setFixedWidth(1)
+        sep.setStyleSheet("background: rgba(255,255,255,0.2);")
+        content.addWidget(sep)
+
+        # Right side: Keymap
+        keymap_box = QVBoxLayout()
+        keymap_label = QLabel("Keymap")
+        keymap_label.setStyleSheet("color: rgb(100,200,255); font-size: 12px; font-weight: bold;")
+        keymap_box.addWidget(keymap_label)
+
         for key, icon_fn, description in BUTTONS:
             row = QHBoxLayout()
+            row.setSpacing(4)
             btn = QPushButton(key)
             btn.setIcon(make_icon(icon_fn))
-            btn.setIconSize(QSize(16, 16))
+            btn.setIconSize(QSize(14, 14))
             btn.setStyleSheet(BTN_CSS)
-            btn.setFixedWidth(70)
+            btn.setFixedWidth(60)
             btn.setEnabled(False)
             row.addWidget(btn)
             lbl = QLabel(description)
-            lbl.setStyleSheet("color: rgba(255,255,255,0.8); font-size: 11px;")
+            lbl.setStyleSheet("color: rgba(255,255,255,0.7); font-size: 9px;")
             row.addWidget(lbl, 1)
-            layout.addLayout(row)
+            keymap_box.addLayout(row)
 
-        # Tabs section
-        layout.addSpacing(5)
         for key, name, description in TABS:
             row = QHBoxLayout()
-            btn = QPushButton(f"{key}  {name}")
+            row.setSpacing(4)
+            btn = QPushButton(f"{key}")
             btn.setStyleSheet(BTN_CSS)
-            btn.setFixedWidth(120)
+            btn.setFixedWidth(60)
             btn.setEnabled(False)
             row.addWidget(btn)
-            lbl = QLabel(description)
-            lbl.setStyleSheet("color: rgba(255,255,255,0.8); font-size: 11px;")
+            lbl = QLabel(f"{name} tab")
+            lbl.setStyleSheet("color: rgba(255,255,255,0.7); font-size: 9px;")
             row.addWidget(lbl, 1)
-            layout.addLayout(row)
+            keymap_box.addLayout(row)
 
-        # Drag and drop hint
-        layout.addSpacing(5)
-        hint = QLabel("Drag & drop audio files to transcribe them.")
-        hint.setStyleSheet("color: rgba(255,255,255,0.5); font-size: 10px;")
-        hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(hint)
+        keymap_box.addStretch()
+        content.addLayout(keymap_box)
+
+        layout.addLayout(content)
 
         # Close button
         close_btn = QPushButton("Esc  Close")
@@ -310,7 +352,7 @@ class HelpDialog(QDialog):
         close_btn.clicked.connect(self.accept)
         layout.addWidget(close_btn)
 
-        self.setFixedWidth(320)
+        self.setFixedWidth(480)
 
     def keyPressEvent(self, e):
         if e.key() in (Qt.Key.Key_Escape, Qt.Key.Key_Question):
