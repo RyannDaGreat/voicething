@@ -7,6 +7,7 @@ import subprocess
 import tempfile
 import threading
 import time
+from datetime import datetime
 
 import numpy as np
 import rp
@@ -19,10 +20,13 @@ from PyQt6.QtGui import QPainter, QColor, QPen, QIcon, QPixmap, QFontDatabase, Q
 from PyQt6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout,
                               QLabel, QScrollArea, QSystemTrayIcon, QMenu, QPushButton)
 
+APP_NAME = "VoiceThing"
 SAMPLE_RATE = 16000
 WHISPER_MODEL = "large-v3"
 ICON_COLOR = QColor(255, 255, 255, 180)
 ACCENT_COLOR = QColor(100, 200, 255)
+ICON_SIZE = 64
+RECORDINGS_DIR = os.path.join(tempfile.gettempdir(), APP_NAME)
 
 STATE_IDLE = "idle"
 STATE_RECORDING = "recording"
@@ -53,21 +57,17 @@ def draw_x(p, size):
     p.drawLine(size - m, m, m, size - m)
 
 
-def draw_speaker(p, size):
+def draw_folder(p, size):
     p.setBrush(ICON_COLOR)
     p.setPen(Qt.PenStyle.NoPen)
-    s6, s3 = size // 6, size // 3
-    p.drawPolygon(QPolygon([
-        QPoint(s6, s3), QPoint(s3, s3), QPoint(size // 2, s6),
-        QPoint(size // 2, size - s6), QPoint(s3, size - s3), QPoint(s6, size - s3)
-    ]))
-    p.setBrush(Qt.BrushStyle.NoBrush)
-    p.setPen(QPen(ICON_COLOR, 2))
-    p.drawArc(size // 2, s3, size // 4, s3, -60 * 16, 120 * 16)
-    p.drawArc(size // 2 + size // 8, size // 4, s3, size // 2, -60 * 16, 120 * 16)
+    m = size // 6
+    # Folder body
+    p.drawRoundedRect(m, size // 3, size - 2 * m, size // 2, 2, 2)
+    # Folder tab
+    p.drawRoundedRect(m, size // 4, size // 3, size // 6, 2, 2)
 
 
-def make_icon(draw_fn, size=18):
+def make_icon(draw_fn, size=ICON_SIZE):
     px = QPixmap(size, size)
     px.fill(Qt.GlobalColor.transparent)
     p = QPainter(px)
@@ -126,7 +126,7 @@ class VoiceThingWindow(QWidget):
         self.first_show = True
         self.last_audio_path = None
 
-        self.setWindowTitle("Voice Thing")
+        self.setWindowTitle(APP_NAME)
         self.setWindowFlags(Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.FramelessWindowHint)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
@@ -161,7 +161,7 @@ class VoiceThingWindow(QWidget):
         def make_btn(text, icon_fn, handler):
             btn = QPushButton(text)
             btn.setIcon(make_icon(icon_fn))
-            btn.setIconSize(QSize(18, 18))
+            btn.setIconSize(QSize(24, 24))
             btn.setStyleSheet(btn_css)
             btn.clicked.connect(handler)
             btn.setEnabled(False)
@@ -171,7 +171,7 @@ class VoiceThingWindow(QWidget):
         self.record_btn = make_btn("", draw_mic, self.toggle_recording)
         self.record_btn.setEnabled(True)
         self.cancel_btn = make_btn("Esc", draw_x, self.cancel_recording)
-        self.audio_btn = make_btn("", draw_speaker, self.open_audio_location)
+        self.folder_btn = make_btn("", draw_folder, self.open_recordings_folder)
         layout.addLayout(btn_row)
 
         self.waveform = WaveformWidget()
@@ -222,7 +222,7 @@ class VoiceThingWindow(QWidget):
         menu.addAction("Show", self.show)
         menu.addAction("Quit", QApplication.quit)
         self.tray.setContextMenu(menu)
-        self.tray.setToolTip("Voice Thing")
+        self.tray.setToolTip(APP_NAME)
         self.tray.show()
 
     def _maybe_hide(self):
@@ -346,9 +346,12 @@ class VoiceThingWindow(QWidget):
             self.record_btn.setEnabled(False)
             self.cancel_btn.setEnabled(False)
 
-    def open_audio_location(self):
+    def open_recordings_folder(self):
+        os.makedirs(RECORDINGS_DIR, exist_ok=True)
         if self.last_audio_path and os.path.exists(self.last_audio_path):
             subprocess.run(["open", "-R", self.last_audio_path])
+        else:
+            subprocess.run(["open", RECORDINGS_DIR])
 
     def start_recording(self):
         self.state = STATE_RECORDING
@@ -392,16 +395,23 @@ class VoiceThingWindow(QWidget):
             return
         print(f"Recorded {len(audio) / SAMPLE_RATE:.2f}s")
 
-        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
-            scipy.io.wavfile.write(f.name, SAMPLE_RATE, (audio * 32767).astype(np.int16))
-            self.last_audio_path = f.name
-            result = rp.transcribe_audio_file_via_whisper(f.name, model=WHISPER_MODEL, show_progress=True)
+        os.makedirs(RECORDINGS_DIR, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        wav_path = os.path.join(RECORDINGS_DIR, f"{timestamp}.wav")
+        txt_path = os.path.join(RECORDINGS_DIR, f"{timestamp}.txt")
+
+        scipy.io.wavfile.write(wav_path, SAMPLE_RATE, (audio * 32767).astype(np.int16))
+        self.last_audio_path = wav_path
+        result = rp.transcribe_audio_file_via_whisper(wav_path, model=WHISPER_MODEL, show_progress=True)
 
         print(f"Result: {result.text!r}")
-        rp.play_chords([0], [4], [7], [12], gap=0, t=0.08)
-        self.audio_btn.setEnabled(True)
         if result.text:
+            with open(txt_path, 'w') as f:
+                f.write(result.text)
             self.paste_signal.emit(result.text)
+
+        rp.play_chords([0], [4], [7], [12], gap=0, t=0.08)
+        self.folder_btn.setEnabled(True)
         self._finish_transcription()
 
     def _finish_transcription(self):
@@ -438,7 +448,7 @@ def main():
     print(f"Loading Whisper ({WHISPER_MODEL})...")
     rp.r._get_pywhispercpp_model(WHISPER_MODEL)
     rp.play_chords([0, 4, 7], [12], gap=0, t=0.15)
-    print("Voice Thing ready. Double-tap Option to record.")
+    print(f"{APP_NAME} ready. Double-tap Option to record.")
     app.exec()
 
 
