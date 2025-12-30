@@ -125,22 +125,10 @@ class VoiceThingWindow(QWidget):
         self._setup_tray()
 
     def _apply_blur(self):
-        """Apply native macOS vibrancy effect."""
-        try:
-            from ctypes import c_void_p
-            from AppKit import NSVisualEffectView
-            from PyQt6.sip import voidptr
-            import objc
-
-            ns_view = objc.objc_object(c_void_p=voidptr(int(self.winId())))
-            effect_view = NSVisualEffectView.alloc().initWithFrame_(ns_view.bounds())
-            effect_view.setAutoresizingMask_(18)  # Width + Height flexible
-            effect_view.setBlendingMode_(1)  # Behind window
-            effect_view.setMaterial_(9)  # HUD window
-            effect_view.setState_(1)  # Active
-            ns_view.addSubview_positioned_relativeTo_(effect_view, 2, None)
-        except Exception:
-            pass  # Fallback to no blur
+        """Native macOS blur doesn't work with PyQt6 - would crash."""
+        # NSVisualEffectView injection crashes PyQt6's rendering pipeline.
+        # Leaving this as a no-op. True blur requires native Cocoa window.
+        pass
 
     def _setup_tray(self):
         self.tray = QSystemTrayIcon(self)
