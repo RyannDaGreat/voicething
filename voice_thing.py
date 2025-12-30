@@ -288,9 +288,16 @@ class VoiceThingWindow(QWidget):
 
     def _update_display(self):
         if self.audio_chunks:
-            audio = np.concatenate(self.audio_chunks)
-            self.waveform.set_samples(audio)
-            secs = len(audio) / SAMPLE_RATE
+            # Only concat new chunks since last update
+            if not hasattr(self, '_audio_buffer') or self._audio_buffer is None:
+                self._audio_buffer = np.concatenate(self.audio_chunks)
+                self._last_chunk_count = len(self.audio_chunks)
+            elif len(self.audio_chunks) > self._last_chunk_count:
+                new_chunks = self.audio_chunks[self._last_chunk_count:]
+                self._audio_buffer = np.concatenate([self._audio_buffer] + new_chunks)
+                self._last_chunk_count = len(self.audio_chunks)
+            self.waveform.set_samples(self._audio_buffer)
+            secs = len(self._audio_buffer) / SAMPLE_RATE
             self.timer_label.setText(f"{int(secs // 60)}:{secs % 60:04.1f}")
         if self.tee and len(self.tee.text) > self.tee_last_len:
             for line in self.tee.text[self.tee_last_len :].split("\n"):
@@ -428,6 +435,8 @@ class VoiceThingWindow(QWidget):
 
     def start_recording(self):
         self.audio_chunks = []
+        self._audio_buffer = None
+        self._last_chunk_count = 0
         self.tee = rp.TeeStdout()
         self.tee.__enter__()
         self.tee_last_len = 0
