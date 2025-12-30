@@ -624,19 +624,6 @@ class TextPanel(QTextEdit):
         if self.paragraphs is None:
             super().contextMenuEvent(e)
             return
-        # Auto-select paragraph under cursor if nothing selected
-        if not self.textCursor().hasSelection():
-            self.setFocus()  # Ensure proper selection highlighting
-            cursor = self.cursorForPosition(e.pos())
-            block_num = cursor.blockNumber()
-            # Each transcription is a <p> tag, map block to paragraph index
-            # Blocks: p0, hr, p1, hr, p2... so paragraph i is at block 2*i
-            para_idx = block_num // 2
-            if self.paragraphs and 0 <= para_idx < len(self.paragraphs):
-                # Select the entire block (paragraph)
-                cursor.movePosition(cursor.MoveOperation.StartOfBlock)
-                cursor.movePosition(cursor.MoveOperation.EndOfBlock, cursor.MoveMode.KeepAnchor)
-                self.setTextCursor(cursor)
 
         menu = QMenu(self)
         menu.setStyleSheet(
@@ -644,9 +631,23 @@ class TextPanel(QTextEdit):
             "QMenu::item { padding: 4px 12px; border-radius: 4px; }"
             "QMenu::item:selected { background: rgb(60,60,70); }"
         )
+
+        # If user has a selection, copy that selection
         if self.textCursor().hasSelection():
-            copy_action = menu.addAction("Copy")
+            copy_action = menu.addAction("Copy Selection")
             copy_action.triggered.connect(self.copy)
+
+        # Find which transcription was clicked and offer to copy it
+        cursor = self.cursorForPosition(e.pos())
+        block_num = cursor.blockNumber()
+        # Each transcription is separated by <hr> which creates blocks
+        # Count <hr> elements before this block to find paragraph index
+        para_idx = block_num // 2  # Approximate: p0, hr, p1, hr, ...
+        if self.paragraphs and 0 <= para_idx < len(self.paragraphs):
+            para_text = self.paragraphs[para_idx]
+            copy_para = menu.addAction("Copy This Transcription")
+            copy_para.triggered.connect(lambda: QApplication.clipboard().setText(para_text))
+
         select_all = menu.addAction("Select All")
         select_all.triggered.connect(self.selectAll)
         menu.exec(e.globalPos())
@@ -977,9 +978,9 @@ class VoiceThingWindow(QWidget):
                 parts.append(f"<p style='margin:4px 0;'>{raw}</p>")
         html = "<hr>".join(parts)
         self.transcriptions_panel.setHtml(html)
-        # For right-click copy, provide both raw and processed together
+        # For right-click "Copy This Transcription", use final text (processed if available)
         self.transcriptions_panel.paragraphs = [
-            f"{r}\n{p}" if p else r for r, p in self.transcriptions
+            p if p else r for r, p in self.transcriptions
         ]
         # Scroll to bottom for new transcription
         sb = self.transcriptions_panel.verticalScrollBar()
