@@ -9,11 +9,93 @@ import scipy.io.wavfile
 import sounddevice as sd
 import rp
 from pynput.keyboard import Controller as KeyboardController, Key
-from PyQt6.QtWidgets import QApplication, QWidget, QVBoxLayout, QLabel, QScrollArea, QSystemTrayIcon, QMenu
+from PyQt6.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QScrollArea, QSystemTrayIcon, QMenu, QPushButton
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QPainter, QColor, QPen, QIcon, QPixmap, QFontDatabase
+import subprocess
+import os
 
 SAMPLE_RATE = 16000
+
+
+def make_icon_pause(size=24, color=QColor(255, 255, 255, 180)) -> QIcon:
+    """Draw pause icon (two vertical bars)."""
+    pixmap = QPixmap(size, size)
+    pixmap.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    painter.setBrush(color)
+    painter.setPen(Qt.PenStyle.NoPen)
+    w = size // 5
+    margin = size // 5
+    painter.drawRect(margin, margin, w, size - 2 * margin)
+    painter.drawRect(size - margin - w, margin, w, size - 2 * margin)
+    painter.end()
+    return QIcon(pixmap)
+
+
+def make_icon_play(size=24, color=QColor(255, 255, 255, 180)) -> QIcon:
+    """Draw play icon (triangle)."""
+    from PyQt6.QtGui import QPolygon
+    from PyQt6.QtCore import QPoint
+    pixmap = QPixmap(size, size)
+    pixmap.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    painter.setBrush(color)
+    painter.setPen(Qt.PenStyle.NoPen)
+    margin = size // 5
+    triangle = QPolygon([
+        QPoint(margin, margin),
+        QPoint(margin, size - margin),
+        QPoint(size - margin, size // 2)
+    ])
+    painter.drawPolygon(triangle)
+    painter.end()
+    return QIcon(pixmap)
+
+
+def make_icon_x(size=24, color=QColor(255, 255, 255, 180)) -> QIcon:
+    """Draw X icon (two diagonal lines)."""
+    pixmap = QPixmap(size, size)
+    pixmap.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    painter.setPen(QPen(color, 2))
+    margin = size // 4
+    painter.drawLine(margin, margin, size - margin, size - margin)
+    painter.drawLine(size - margin, margin, margin, size - margin)
+    painter.end()
+    return QIcon(pixmap)
+
+
+def make_icon_volume(size=24, color=QColor(255, 255, 255, 180)) -> QIcon:
+    """Draw volume/speaker icon."""
+    from PyQt6.QtGui import QPolygon
+    from PyQt6.QtCore import QPoint
+    pixmap = QPixmap(size, size)
+    pixmap.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    painter.setBrush(color)
+    painter.setPen(Qt.PenStyle.NoPen)
+    # Speaker cone
+    cone = QPolygon([
+        QPoint(size // 6, size // 3),
+        QPoint(size // 3, size // 3),
+        QPoint(size // 2, size // 6),
+        QPoint(size // 2, size - size // 6),
+        QPoint(size // 3, size - size // 3),
+        QPoint(size // 6, size - size // 3),
+    ])
+    painter.drawPolygon(cone)
+    # Sound waves
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    painter.setPen(QPen(color, 2))
+    painter.drawArc(size // 2, size // 3, size // 4, size // 3, -60 * 16, 120 * 16)
+    painter.drawArc(size // 2 + size // 8, size // 4, size // 3, size // 2, -60 * 16, 120 * 16)
+    painter.end()
+    return QIcon(pixmap)
 
 
 class RoundedScrollArea(QScrollArea):
@@ -121,8 +203,14 @@ class VoiceThingWindow(QWidget):
         self.is_focused = False
         self.first_show = True
 
+        self.last_audio_path = None
+        self.paused = False
+
         self.setWindowTitle("Voice Thing")
-        self.setWindowFlags(Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.FramelessWindowHint)
+        self.setWindowFlags(
+            Qt.WindowType.WindowStaysOnTopHint |
+            Qt.WindowType.FramelessWindowHint
+        )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
         # Load 7-segment font
@@ -151,6 +239,55 @@ class VoiceThingWindow(QWidget):
         self.timer_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.timer_label.hide()
         layout.addWidget(self.timer_label)
+
+        # Control buttons row
+        btn_style = (
+            "QPushButton { color: rgba(255,255,255,0.6); background: rgba(255,255,255,0.1); "
+            "border: 1px solid rgba(255,255,255,0.2); border-radius: 4px; padding: 4px 8px; font-size: 11px; }"
+            "QPushButton:hover { background: rgba(255,255,255,0.2); }"
+            "QPushButton:disabled { color: rgba(255,255,255,0.2); background: transparent; border-color: rgba(255,255,255,0.1); }"
+        )
+
+        # Create icons with QPainter (most reliable method)
+        icon_size = 18
+        self.pause_icon = make_icon_pause(icon_size)
+        self.play_icon = make_icon_play(icon_size)
+        self.x_icon = make_icon_x(icon_size)
+        self.volume_icon = make_icon_volume(icon_size)
+
+        self.controls_row = QWidget()
+        controls_layout = QHBoxLayout(self.controls_row)
+        controls_layout.setContentsMargins(0, 4, 0, 4)
+        controls_layout.setSpacing(8)
+
+        from PyQt6.QtCore import QSize
+        icon_qsize = QSize(icon_size, icon_size)
+
+        self.pause_btn = QPushButton("Space")
+        self.pause_btn.setIcon(self.pause_icon)
+        self.pause_btn.setIconSize(icon_qsize)
+        self.pause_btn.setStyleSheet(btn_style)
+        self.pause_btn.clicked.connect(self.toggle_pause)
+        controls_layout.addWidget(self.pause_btn)
+
+        self.cancel_btn = QPushButton("Esc")
+        self.cancel_btn.setIcon(self.x_icon)
+        self.cancel_btn.setIconSize(icon_qsize)
+        self.cancel_btn.setStyleSheet(btn_style)
+        self.cancel_btn.clicked.connect(self.cancel_recording)
+        controls_layout.addWidget(self.cancel_btn)
+
+        self.audio_btn = QPushButton()
+        self.audio_btn.setIcon(self.volume_icon)
+        self.audio_btn.setIconSize(icon_qsize)
+        self.audio_btn.setStyleSheet(btn_style)
+        self.audio_btn.setToolTip("Open audio file location")
+        self.audio_btn.clicked.connect(self.open_audio_location)
+        self.audio_btn.setEnabled(False)
+        controls_layout.addWidget(self.audio_btn)
+
+        self.controls_row.hide()
+        layout.addWidget(self.controls_row)
 
         self.waveform = WaveformWidget()
         layout.addWidget(self.waveform)
@@ -204,7 +341,7 @@ class VoiceThingWindow(QWidget):
 
     def _maybe_hide(self):
         if not self.is_focused and not self.scroll_locked:
-            QTimer.singleShot(2000, self.hide)
+            self.hide()
 
     def _on_scroll(self):
         scrollbar = self.scroll_area.verticalScrollBar()
@@ -228,6 +365,8 @@ class VoiceThingWindow(QWidget):
         if self.is_focused:
             # Don't paste into our own window
             return
+        # Paste chime: soft high "sent" ping
+        rp.play_chords([12, 16], gap=0, t=0.05)
         time.sleep(0.1)
         kb = KeyboardController()
         with kb.pressed(Key.cmd):
@@ -276,6 +415,14 @@ class VoiceThingWindow(QWidget):
             self.update()
         super().changeEvent(e)
 
+    def keyPressEvent(self, e):
+        if e.key() == Qt.Key.Key_Escape and self.recording:
+            self.cancel_recording()
+        elif e.key() == Qt.Key.Key_Space and self.recording:
+            self.toggle_pause()
+        else:
+            super().keyPressEvent(e)
+
     def paintEvent(self, e):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -298,8 +445,51 @@ class VoiceThingWindow(QWidget):
         print(f"toggle_recording called, recording={self.recording}")
         self.stop_recording() if self.recording else self.start_recording()
 
+    def toggle_pause(self):
+        if not self.recording:
+            return
+        self.paused = not self.paused
+        if self.paused:
+            if self.stream:
+                self.stream.stop()
+            self.status_label.setText("Paused")
+            self.pause_btn.setIcon(self.play_icon)
+        else:
+            if self.stream:
+                self.stream.start()
+            self.status_label.setText("Recording")
+            self.pause_btn.setIcon(self.pause_icon)
+
+    def cancel_recording(self):
+        if not self.recording:
+            return
+        self.recording = False
+        self.paused = False
+        if self.stream:
+            self.stream.stop()
+            self.stream.close()
+            self.stream = None
+        self.update_timer.stop()
+        self.timer_label.hide()
+        self.controls_row.hide()
+        if self.tee:
+            self.tee.__exit__(None, None, None)
+            self.tee = None
+        self.audio_chunks = []
+        self.waveform.set_samples(np.array([]))
+        self.status_label.setText("Cancelled")
+        # Cancel: minor third, abrupt "stopped" feeling
+        rp.play_chords([7, 3], gap=0, t=0.06)
+        print("Recording cancelled.")
+        self.hide_signal.emit()
+
+    def open_audio_location(self):
+        if self.last_audio_path and os.path.exists(self.last_audio_path):
+            subprocess.run(["open", "-R", self.last_audio_path])
+
     def start_recording(self):
         self.recording = True
+        self.paused = False
         self.audio_chunks = []
         self.tee = rp.TeeStdout()
         self.tee.__enter__()
@@ -312,6 +502,8 @@ class VoiceThingWindow(QWidget):
         self.status_label.setText("Recording")
         self.timer_label.setText("0:00.00")
         self.timer_label.show()
+        self.controls_row.show()
+        self.pause_btn.setIcon(self.pause_icon)
 
         rp.play_chords([0, 4], [7, 12], gap=0, t=0.08)
         print("Recording started...")
@@ -319,7 +511,8 @@ class VoiceThingWindow(QWidget):
         def callback(indata, frames, time, status):
             if status:
                 print(f"Audio callback status: {status}")
-            self.audio_chunks.append(indata[:, 0].copy())
+            if not self.paused:
+                self.audio_chunks.append(indata[:, 0].copy())
 
         self.stream = sd.InputStream(samplerate=SAMPLE_RATE, channels=1, dtype=np.float32, callback=callback)
         self.stream.start()
@@ -327,6 +520,7 @@ class VoiceThingWindow(QWidget):
 
     def stop_recording(self):
         self.recording = False
+        self.paused = False
 
         if self.stream:
             self.stream.stop()
@@ -336,6 +530,7 @@ class VoiceThingWindow(QWidget):
         rp.play_chords([12, 7], [4, 0], gap=0, t=0.08)
         print("Recording stopped.")
         self.timer_label.hide()
+        self.controls_row.hide()
         self.status_label.setText("Transcribing...")
 
         audio = np.concatenate(self.audio_chunks) if self.audio_chunks else np.array([])
@@ -360,6 +555,7 @@ class VoiceThingWindow(QWidget):
             # Convert float32 to int16 for pywhispercpp compatibility
             audio_int16 = (audio * 32767).astype(np.int16)
             scipy.io.wavfile.write(f.name, SAMPLE_RATE, audio_int16)
+            self.last_audio_path = f.name
             self._log(f"Saved: {f.name}")
 
             self._log("Transcribing...")
@@ -367,6 +563,12 @@ class VoiceThingWindow(QWidget):
             text = result.text
 
         self._log(f"Result: {text!r}")
+
+        # Completion chime: triumphant ascending arpeggio
+        rp.play_chords([0], [4], [7], [12], gap=0, t=0.08)
+
+        # Enable audio button
+        self.audio_btn.setEnabled(True)
 
         if text:
             print("Emitting paste signal...")

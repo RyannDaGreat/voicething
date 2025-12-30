@@ -14,9 +14,9 @@ WHISPER_MODEL_NAME = "large-v3"
 
 
 def preload_whisper_model():
-    """Preload the whisper model (rp caches it via @memoized)."""
+    """Preload the whisper model (rp.r caches it via @memoized)."""
     print(f"Loading Whisper model ({WHISPER_MODEL_NAME}) with Metal GPU...")
-    rp._get_pywhispercpp_model(WHISPER_MODEL_NAME)
+    rp.r._get_pywhispercpp_model(WHISPER_MODEL_NAME)
     print("Whisper model loaded.")
 
 
