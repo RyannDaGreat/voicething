@@ -10,19 +10,14 @@ from PyQt6.QtWidgets import QApplication
 
 from ui import VoiceThingWindow
 
-WHISPER_MODEL = None
 WHISPER_MODEL_NAME = "large-v3"
 
 
-def get_whisper_model():
-    """Get cached pywhispercpp model with Metal GPU support."""
-    global WHISPER_MODEL
-    if WHISPER_MODEL is None:
-        from pywhispercpp.model import Model
-        print(f"Loading Whisper model ({WHISPER_MODEL_NAME}) with Metal GPU...")
-        WHISPER_MODEL = Model(WHISPER_MODEL_NAME, n_threads=4)
-        print("Whisper model loaded.")
-    return WHISPER_MODEL
+def preload_whisper_model():
+    """Preload the whisper model (rp caches it via @memoized)."""
+    print(f"Loading Whisper model ({WHISPER_MODEL_NAME}) with Metal GPU...")
+    rp._get_pywhispercpp_model(WHISPER_MODEL_NAME)
+    print("Whisper model loaded.")
 
 
 def main():
@@ -31,7 +26,7 @@ def main():
     print("Starting app...")
     app = QApplication([])
     print("QApplication created")
-    window = VoiceThingWindow(get_whisper_model)
+    window = VoiceThingWindow(WHISPER_MODEL_NAME)
     print("Window created")
 
     # Double-tap Option (only if no other keys pressed)
@@ -53,7 +48,7 @@ def main():
 
     keyboard.Listener(on_press=on_press, on_release=on_release).start()
 
-    get_whisper_model()
+    preload_whisper_model()
     rp.play_chords([0, 4, 7], [12], gap=0, t=0.15)  # Ready chime
     print("Voice Thing running. Double-tap Option to record.")
     app.exec()

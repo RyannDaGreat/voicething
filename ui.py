@@ -11,7 +11,8 @@ import rp
 from pynput.keyboard import Controller as KeyboardController, Key
 from PyQt6.QtWidgets import QApplication, QWidget, QVBoxLayout, QLabel, QScrollArea, QSystemTrayIcon, QMenu
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QPainter, QColor, QPen, QIcon, QPixmap
+from PyQt6.QtGui import QPainter, QColor, QPen, QIcon, QPixmap, QFontDatabase
+import os
 
 SAMPLE_RATE = 16000
 
@@ -69,15 +70,11 @@ class WaveformWidget(QWidget):
         max_samples = 10 * SAMPLE_RATE
         self.samples = samples[-max_samples:] if len(samples) > max_samples else samples
 
-        # Exponential decay for amplitude normalization
+        # Symmetric exponential smoothing for amplitude (same speed up and down)
         if len(self.samples) > 0:
-            current_max = np.max(np.abs(self.samples))
-            if current_max > self.display_max:
-                # Jump up quickly
-                self.display_max = current_max
-            else:
-                # Decay very slowly (~3 sec decay at 120hz)
-                self.display_max = max(self.display_max * 0.992, current_max, 0.01)
+            current_max = max(np.max(np.abs(self.samples)), 0.01)
+            # Smooth towards target (~1.5 sec at 120hz, same for louder and quieter)
+            self.display_max += (current_max - self.display_max) * 0.04
 
         self.update()
 
@@ -85,22 +82,31 @@ class WaveformWidget(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        # Transparent background - inherits from parent
+        # Transparent background
         painter.fillRect(self.rect(), Qt.GlobalColor.transparent)
 
         if len(self.samples) == 0:
             return
 
         w, h = self.width(), self.height()
+        center_y = h // 2
         chunk_size = max(1, len(self.samples) // w)
         n = len(self.samples) // chunk_size
         peaks = np.max(np.abs(self.samples[:n * chunk_size].reshape(n, chunk_size)), axis=1)
 
-        # Semi-transparent waveform
-        painter.setPen(QPen(QColor(100, 200, 255, 180), 2))
+        # Gradient density waveform - draw multiple layers with decreasing alpha
+        max_bar = int(h // 2 * 0.9)
         for x, peak in enumerate(peaks):
-            bar = int((peak / self.display_max) * h // 2 * 0.9)
-            painter.drawLine(x, h // 2 - bar, x, h // 2 + bar)
+            bar = int((peak / self.display_max) * max_bar)
+            if bar < 1:
+                continue
+            # Draw gradient: bright at center, fading outward
+            for y_offset in range(bar):
+                # Alpha decreases as we move away from center
+                alpha = int(200 * (1 - y_offset / max_bar))
+                painter.setPen(QPen(QColor(100, 200, 255, alpha), 1))
+                painter.drawPoint(x, center_y - y_offset)
+                painter.drawPoint(x, center_y + y_offset)
 
 
 class VoiceThingWindow(QWidget):
@@ -112,9 +118,9 @@ class VoiceThingWindow(QWidget):
     paste_signal = pyqtSignal(str)
     log_signal = pyqtSignal(str)
 
-    def __init__(self, get_whisper_model):
+    def __init__(self, whisper_model_name="large-v3"):
         super().__init__()
-        self.get_whisper_model = get_whisper_model
+        self.whisper_model_name = whisper_model_name
         self.recording = False
         self.audio_chunks = []
         self.stream = None
@@ -128,16 +134,29 @@ class VoiceThingWindow(QWidget):
         self.setWindowFlags(Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.FramelessWindowHint)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
+        # Load 7-segment font
+        font_path = os.path.join(os.path.dirname(__file__), "fonts", "DSEG7Classic-Regular.ttf")
+        QFontDatabase.addApplicationFont(font_path)
+
         layout = QVBoxLayout(self)
         layout.setContentsMargins(10, 10, 10, 10)
 
         self.status_label = QLabel("Double-tap Option to record")
         self.status_label.setStyleSheet(
-            "color: #fff; font-size: 14px; font-weight: 500; "
-            "background: rgba(30,30,40,200); padding: 8px 12px; border-radius: 8px;"
+            "color: rgba(255,255,255,0.7); font-size: 14px; font-weight: 500; "
+            "background: transparent; padding: 4px 12px;"
         )
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.status_label)
+
+        self.timer_label = QLabel("")
+        self.timer_label.setStyleSheet(
+            "color: rgba(100,200,255,0.9); font-size: 28px; font-family: 'DSEG7 Classic'; "
+            "background: transparent; padding: 0px;"
+        )
+        self.timer_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.timer_label.hide()
+        layout.addWidget(self.timer_label)
 
         self.waveform = WaveformWidget()
         layout.addWidget(self.waveform)
@@ -225,7 +244,10 @@ class VoiceThingWindow(QWidget):
         if self.audio_chunks:
             audio = np.concatenate(self.audio_chunks)
             self.waveform.set_samples(audio)
-            self.status_label.setText(f"Recording... {len(audio) / SAMPLE_RATE:.1f}s")
+            secs = len(audio) / SAMPLE_RATE
+            mins = int(secs // 60)
+            secs_remaining = secs % 60
+            self.timer_label.setText(f"{mins}:{secs_remaining:05.2f}")
         if self.tee and len(self.tee.text) > self.tee_last_len:
             new_text = self.tee.text[self.tee_last_len:]
             for line in new_text.split("\n"):
@@ -291,7 +313,9 @@ class VoiceThingWindow(QWidget):
         self.show()
         screen = QApplication.primaryScreen().geometry()
         self.move((screen.width() - self.width()) // 2, screen.height() // 4)
-        self.status_label.setText("Recording... 0.0s")
+        self.status_label.setText("Recording")
+        self.timer_label.setText("0:00.00")
+        self.timer_label.show()
 
         rp.play_chords([0, 4], [7, 12], gap=0, t=0.08)
         print("Recording started...")
@@ -315,10 +339,11 @@ class VoiceThingWindow(QWidget):
 
         rp.play_chords([12, 7], [4, 0], gap=0, t=0.08)
         print("Recording stopped.")
+        self.timer_label.hide()
+        self.status_label.setText("Transcribing...")
 
         audio = np.concatenate(self.audio_chunks) if self.audio_chunks else np.array([])
         self.waveform.set_samples(audio)
-        self.status_label.setText("Transcribing...")
 
         threading.Thread(target=self._transcribe_and_type, args=(audio,), daemon=True).start()
 
@@ -342,8 +367,8 @@ class VoiceThingWindow(QWidget):
             self._log(f"Saved: {f.name}")
 
             self._log("Transcribing...")
-            segments = self.get_whisper_model().transcribe(f.name, print_progress=True, print_realtime=True)
-            text = " ".join(seg.text.strip() for seg in segments if seg.text.strip())
+            result = rp.transcribe_audio_file_via_whisper(f.name, model=self.whisper_model_name, show_progress=True)
+            text = result.text
 
         self._log(f"Result: {text!r}")
 
