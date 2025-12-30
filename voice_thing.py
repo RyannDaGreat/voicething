@@ -69,6 +69,21 @@ BLOCKSIZE = 256
 WHISPER_MODEL = "large-v3"
 ICON_COLOR = QColor(255, 255, 255, 255)
 ACCENT = QColor(100, 200, 255)
+TRAY_ICON_SIZE = 44  # Menu bar icon size (2x for retina)
+
+# Accessibility permission error message
+PERMISSION_ERROR_TITLE = "Accessibility Permission Required"
+PERMISSION_ERROR_MSG = (
+    "This process is not trusted for input monitoring.\n\n"
+    "Global keyboard shortcuts (double-tap ⌥) will not work until "
+    "accessibility permissions are granted.\n\n"
+    "To fix this:\n"
+    "1. Open System Settings → Privacy & Security → Accessibility\n"
+    "2. Add your terminal app (Terminal.app, iTerm, etc.)\n"
+    "3. Restart this application\n\n"
+    "Note: Some terminals (like Alacritty) may not work - try the default Terminal.app.\n\n"
+    "Recording via the Space button and copy to clipboard (⌘V) will still work."
+)
 
 # Whisper hallucinations when given silence/noise - normalized (lowercase, no punctuation)
 BLACKLISTED_TRANSCRIPTIONS = {"thank you"}
@@ -240,6 +255,24 @@ def draw_model(p, s):
     p.drawEllipse(s * 2 // 3 - 3, s // 2 - 2, 5, 5)
 
 
+def draw_warning(p, s):
+    """Draw a filled warning triangle with exclamation mark."""
+    bg = QColor(255, 80, 80)  # Red background
+    fg = QColor(30, 30, 40)  # Dark foreground for contrast
+    # Filled triangle
+    p.setBrush(bg)
+    p.setPen(Qt.PenStyle.NoPen)
+    pts = QPolygon([QPoint(s // 2, s // 8), QPoint(s // 8, s * 7 // 8), QPoint(s * 7 // 8, s * 7 // 8)])
+    p.drawPolygon(pts)
+    # Exclamation mark (dark on red)
+    p.setPen(QPen(fg, max(2, s // 8)))
+    p.drawLine(s // 2, s * 3 // 10, s // 2, s * 11 // 20)
+    p.setBrush(fg)
+    p.setPen(Qt.PenStyle.NoPen)
+    dot_r = max(2, s // 10)
+    p.drawEllipse(s // 2 - dot_r // 2, s * 13 // 20, dot_r, dot_r)
+
+
 def make_icon(draw_fn, size=64):
     px = QPixmap(size, size)
     px.fill(Qt.GlobalColor.transparent)
@@ -258,19 +291,20 @@ WHISPER_MODELS = [
     ("L", "large-v3", "Best accuracy, slowest (~10GB VRAM)"),
 ]
 
-# Button definitions: (key, icon_fn, description)
-# Used for creating buttons and help dialog (DRY)
-BUTTONS = [
-    ("Space", draw_mic, "Start/finish recording"),
-    ("X", draw_x, "Cancel recording"),
-    ("Esc", None, "Minimize window"),
-    ("C", draw_copy, "Copy last transcription to clipboard"),
-    ("L", draw_load, "Load audio file to transcribe"),
-    ("F", draw_folder, "Open recordings folder"),
-    ("S", draw_sound, "Toggle sound effects"),
-    ("V", draw_eye, "Toggle auto-minimize after transcription"),
-    ("M", draw_model, "Change Whisper model"),
-    ("?", draw_help, "Show this help"),
+# Action definitions: (id, key, icon_fn, description, menu_text or None)
+# Single source of truth for buttons, keyboard shortcuts, help dialog, and menu items
+ACTIONS = [
+    ("record", "Space", draw_mic, "Start/finish recording", "Start/Stop Recording"),
+    ("cancel", "X", draw_x, "Cancel recording", None),
+    ("minimize", "Esc", None, "Minimize window", None),
+    ("small_mode", "E", None, "Toggle small mode", None),
+    ("copy", "C", draw_copy, "Copy last transcription", "Copy Last Transcription"),
+    ("load", "L", draw_load, "Load audio file", "Load Audio File..."),
+    ("folder", "F", draw_folder, "Open recordings folder", "Open Recordings Folder"),
+    ("sound", "S", draw_sound, "Toggle sound effects", None),
+    ("auto_hide", "V", draw_eye, "Toggle auto-minimize", None),
+    ("model", "M", draw_model, "Change Whisper model", None),
+    ("help", "?", draw_help, "Show help", "Help"),
 ]
 
 # Tab definitions
@@ -278,6 +312,9 @@ TABS = [
     ("O", "Output", "Show console output"),
     ("T", "Transcriptions", "Show transcription history"),
 ]
+
+# Build lookup dict for actions
+ACTIONS_BY_ID = {a[0]: a for a in ACTIONS}
 
 
 GITHUB_URL = "https://github.com/RyannDaGreat/VoiceThing"
@@ -352,6 +389,8 @@ class HelpDialog(DraggableDialog):
             "• Drag & drop audio files to transcribe\n"
             "• ⌘Q to quit\n\n"
             "100% keyboard-driven - no mouse needed! (hover buttons to see shortcuts)\n\n"
+            "Small mode (E or green button): Compact view with just status and timer - "
+            "great for keeping visible while using keyboard shortcuts.\n\n"
             "Pro tip: Right-click in Transcriptions tab to copy a single transcription.\n\n"
             "By Clara Burgert"
         )
@@ -381,7 +420,7 @@ class HelpDialog(DraggableDialog):
         keymap_label.setStyleSheet("color: rgb(100,200,255); font-size: 12px; font-weight: bold;")
         keymap_box.addWidget(keymap_label)
 
-        for key, icon_fn, description in BUTTONS:
+        for action_id, key, icon_fn, desc, menu_text in ACTIONS:
             row = QHBoxLayout()
             row.setSpacing(4)
             btn = QPushButton(key)
@@ -392,7 +431,7 @@ class HelpDialog(DraggableDialog):
             btn.setFixedWidth(60)
             btn.setEnabled(False)
             row.addWidget(btn)
-            lbl = QLabel(description)
+            lbl = QLabel(desc)
             lbl.setStyleSheet("color: rgba(255,255,255,0.7); font-size: 9px;")
             row.addWidget(lbl, 1)
             keymap_box.addLayout(row)
@@ -478,6 +517,40 @@ class ModelDialog(DraggableDialog):
             super().keyPressEvent(e)
 
 
+class PermissionDialog(DraggableDialog):
+    """Dialog explaining accessibility permission requirements."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(12)
+
+        title = QLabel(PERMISSION_ERROR_TITLE)
+        title.setStyleSheet("color: rgb(255,80,80); font-size: 16px; font-weight: bold;")
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(title)
+
+        msg = QLabel(PERMISSION_ERROR_MSG)
+        msg.setStyleSheet("color: rgba(255,255,255,0.9); font-size: 13px;")
+        msg.setWordWrap(True)
+        layout.addWidget(msg)
+
+        close_btn = QPushButton("Esc  Close")
+        close_btn.setStyleSheet(BTN_CSS)
+        close_btn.clicked.connect(self.accept)
+        layout.addWidget(close_btn)
+
+        # Auto-size to fit content
+        self.adjustSize()
+
+    def keyPressEvent(self, e):
+        if e.key() == Qt.Key.Key_Escape:
+            self.accept()
+        else:
+            super().keyPressEvent(e)
+
+
 class TextPanel(QTextEdit):
     """Read-only text panel."""
 
@@ -500,7 +573,7 @@ class TextPanel(QTextEdit):
     def keyPressEvent(self, e):
         # Pass shortcut keys to parent window
         if e.key() in (Qt.Key.Key_Space, Qt.Key.Key_Escape, Qt.Key.Key_X, Qt.Key.Key_C, Qt.Key.Key_L, Qt.Key.Key_F,
-                       Qt.Key.Key_S, Qt.Key.Key_V, Qt.Key.Key_O, Qt.Key.Key_T, Qt.Key.Key_M, Qt.Key.Key_Question):
+                       Qt.Key.Key_S, Qt.Key.Key_V, Qt.Key.Key_E, Qt.Key.Key_O, Qt.Key.Key_T, Qt.Key.Key_M, Qt.Key.Key_Question):
             self.window().keyPressEvent(e)
         else:
             super().keyPressEvent(e)
@@ -525,7 +598,8 @@ class TextPanel(QTextEdit):
 
         menu = QMenu(self)
         menu.setStyleSheet(
-            "QMenu { background: rgb(40,40,50); color: white; border: 1px solid rgb(80,80,80); }"
+            "QMenu { background: rgb(40,40,50); color: white; border: 1px solid rgb(80,80,80); border-radius: 6px; padding: 4px; }"
+            "QMenu::item { padding: 4px 12px; border-radius: 4px; }"
             "QMenu::item:selected { background: rgb(60,60,70); }"
         )
         if self.textCursor().hasSelection():
@@ -575,6 +649,7 @@ class VoiceThingWindow(QWidget):
     focus_signal = pyqtSignal()
     paste_signal = pyqtSignal(str)
     add_transcription_signal = pyqtSignal(str)
+    permission_error_signal = pyqtSignal()
 
     def __init__(self):
         super().__init__()
@@ -590,6 +665,7 @@ class VoiceThingWindow(QWidget):
         self.last_audio_path = None
         self.last_transcription = None
         self.transcriptions = []  # List of transcription strings
+        self.permission_error = False  # True if accessibility permission denied
         self.auto_hide = True  # Whether to auto-hide after transcription
         self._prev_app = None  # For restoring focus when toggling window
         self.sound_enabled = True  # Whether to play chimes
@@ -611,26 +687,49 @@ class VoiceThingWindow(QWidget):
         layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(4)
 
-        # Status row with minimize button on left
+        # Status row with window control buttons on left (macOS order: close, minimize, zoom)
         status_row = QHBoxLayout()
         status_row.setContentsMargins(0, 0, 0, 0)
+        status_row.setSpacing(8)
+        self.small_mode = False  # Track small mode state
         self.minimize_btn = QPushButton()
         self.minimize_btn.setFixedSize(12, 12)
         self.minimize_btn.setStyleSheet(
             "QPushButton { background: rgb(255, 189, 68); border: none; border-radius: 6px; }"
             "QPushButton:hover { background: rgb(255, 210, 100); }"
         )
-        self.minimize_btn.setToolTip("Minimize window")
+        self.minimize_btn.setToolTip("Minimize window (Esc)")
         self.minimize_btn.clicked.connect(self.hide)
         status_row.addWidget(self.minimize_btn)
-        self.status_label = QLabel("Double-tap ⌥ to record")
+        self.small_btn = QPushButton()
+        self.small_btn.setFixedSize(12, 12)
+        self.small_btn.setStyleSheet(
+            "QPushButton { background: rgb(52, 199, 89); border: none; border-radius: 6px; }"
+            "QPushButton:hover { background: rgb(80, 220, 110); }"
+        )
+        self.small_btn.setToolTip("Toggle small mode (E)")
+        self.small_btn.clicked.connect(self.toggle_small_mode)
+        status_row.addWidget(self.small_btn)
+        # Warning button for permission errors (hidden by default)
+        self.warning_btn = QPushButton()
+        self.warning_btn.setFixedSize(20, 20)
+        self.warning_btn.setIcon(make_icon(draw_warning, 32))
+        self.warning_btn.setIconSize(QSize(18, 18))
+        self.warning_btn.setStyleSheet("QPushButton { background: transparent; border: none; }")
+        self.warning_btn.setToolTip(PERMISSION_ERROR_TITLE)
+        self.warning_btn.clicked.connect(self.show_permission_dialog)
+        self.warning_btn.hide()
+        status_row.addWidget(self.warning_btn)
+        self.status_label = QLabel("Double-tap ⌥")
         self.status_label.setStyleSheet(
             "color: rgba(255,255,255,0.7); font-size: 14px;"
         )
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         status_row.addWidget(self.status_label, 1)
-        # Spacer to balance the minimize button
-        status_row.addSpacing(12)
+        # Spacer to balance the window control buttons
+        self.status_spacer = QWidget()
+        self.status_spacer.setFixedWidth(28)
+        status_row.addWidget(self.status_spacer)
         layout.addLayout(status_row)
 
         self.timer_label = QLabel("0:00.0")
@@ -641,7 +740,9 @@ class VoiceThingWindow(QWidget):
         self.timer_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.timer_label)
 
-        btn_row = QHBoxLayout()
+        self.btn_row_widget = QWidget()
+        btn_row = QHBoxLayout(self.btn_row_widget)
+        btn_row.setContentsMargins(0, 0, 0, 0)
         btn_row.setSpacing(8)
 
         def make_btn(text, icon_fn, handler):
@@ -678,7 +779,7 @@ class VoiceThingWindow(QWidget):
         self.help_btn = make_btn("?", draw_help, self.show_help)
         self.help_btn.setToolTip("Show help")
         self.help_btn.setEnabled(True)
-        layout.addLayout(btn_row)
+        layout.addWidget(self.btn_row_widget)
 
         # Key-to-button mapping for visual feedback
         self.key_buttons = {
@@ -693,7 +794,8 @@ class VoiceThingWindow(QWidget):
         layout.addWidget(self.waveform)
 
         # Tab bar for Output/Transcriptions
-        tab_row = QHBoxLayout()
+        self.tab_row_widget = QWidget()
+        tab_row = QHBoxLayout(self.tab_row_widget)
         tab_row.setSpacing(4)
         tab_row.setContentsMargins(0, 4, 0, 0)
         self.output_tab = QPushButton("O  Output")
@@ -710,7 +812,7 @@ class VoiceThingWindow(QWidget):
         self.transcriptions_tab.setToolTip("Show transcription history")
         self.transcriptions_tab.clicked.connect(lambda: self._switch_tab(1))
         tab_row.addWidget(self.transcriptions_tab, 1)
-        layout.addLayout(tab_row)
+        layout.addWidget(self.tab_row_widget)
 
         # Add tab buttons to key mapping
         self.key_buttons[Qt.Key.Key_O] = self.output_tab
@@ -732,6 +834,7 @@ class VoiceThingWindow(QWidget):
         self.focus_signal.connect(self._focus_window)
         self.paste_signal.connect(self._do_paste)
         self.add_transcription_signal.connect(self._add_transcription)
+        self.permission_error_signal.connect(self._on_permission_error)
 
         self.update_timer = QTimer()
         self.update_timer.timeout.connect(self._update_display)
@@ -742,11 +845,36 @@ class VoiceThingWindow(QWidget):
 
         self._setup_tray()
 
+    def _get_action_handler(self, action_id):
+        """Get the handler method for an action ID."""
+        handlers = {
+            "record": self.toggle_recording,
+            "cancel": self.cancel_recording,
+            "minimize": self.hide,
+            "small_mode": self.toggle_small_mode,
+            "copy": self.copy_transcription,
+            "load": self.load_audio_file,
+            "folder": self.open_folder,
+            "sound": self.toggle_sound,
+            "auto_hide": self.toggle_auto_hide,
+            "model": self.show_model_dialog,
+            "help": self.show_help,
+        }
+        return handlers.get(action_id)
+
     def _setup_tray(self):
         self.tray = QSystemTrayIcon(self)
-        self.tray.setIcon(make_icon(draw_mic, 22))
+        self.tray.setIcon(make_icon(draw_mic, TRAY_ICON_SIZE))
         menu = QMenu()
         menu.addAction("Show", self.show)
+        menu.addSeparator()
+        # Add menu items from ACTIONS
+        for action_id, key, icon_fn, desc, menu_text in ACTIONS:
+            if menu_text:
+                handler = self._get_action_handler(action_id)
+                if handler:
+                    menu.addAction(menu_text, handler)
+        menu.addSeparator()
         menu.addAction("Quit", QApplication.quit)
         self.tray.setContextMenu(menu)
         self.tray.setToolTip(APP_NAME)
@@ -907,6 +1035,8 @@ class VoiceThingWindow(QWidget):
             self.toggle_sound()
         elif no_mods and key == Qt.Key.Key_V:
             self.toggle_auto_hide()
+        elif no_mods and key == Qt.Key.Key_E:
+            self.toggle_small_mode()
         elif no_mods and key == Qt.Key.Key_O:
             self._switch_tab(0)
         elif no_mods and key == Qt.Key.Key_T:
@@ -980,6 +1110,31 @@ class VoiceThingWindow(QWidget):
         # Eye open = stays visible (no auto-hide), eye slashed = auto-hide enabled
         self.eye_btn.setIcon(make_icon(lambda p, s: draw_eye(p, s, not self.auto_hide)))
 
+    def toggle_small_mode(self):
+        self.small_mode = not self.small_mode
+        self.btn_row_widget.setVisible(not self.small_mode)
+        self.waveform.setVisible(not self.small_mode)
+        self.tab_row_widget.setVisible(not self.small_mode)
+        self.tab_stack.setVisible(not self.small_mode)
+        self.status_spacer.setVisible(not self.small_mode)
+        # Adjust status label font size for small mode
+        font_size = 10 if self.small_mode else 14
+        self.status_label.setStyleSheet(f"color: rgba(255,255,255,0.7); font-size: {font_size}px;")
+        if self.small_mode:
+            self._normal_size = self.size()
+            self.setMinimumSize(0, 0)
+            self.setMaximumSize(16777215, 16777215)
+            self.adjustSize()
+            # Use fixed width (1/3 of normal) so status text changes don't resize
+            small_width = self._normal_size.width() // 3
+            small_height = self.sizeHint().height()
+            self.setFixedSize(small_width, small_height)
+        else:
+            self.setMinimumSize(300, 250)
+            self.setMaximumSize(16777215, 16777215)  # Reset to default max
+            if hasattr(self, '_normal_size'):
+                self.resize(self._normal_size)
+
     def toggle_sound(self):
         self.sound_enabled = not self.sound_enabled
         self.sound_btn.setIcon(make_icon(lambda p, s: draw_sound(p, s, self.sound_enabled)))
@@ -998,6 +1153,19 @@ class VoiceThingWindow(QWidget):
         dialog = HelpDialog(self)
         dialog.center_on_parent()
         dialog.exec()
+
+    def show_permission_dialog(self):
+        """Show permission error dialog."""
+        dialog = PermissionDialog(self)
+        dialog.center_on_parent()
+        dialog.exec()
+
+    def _on_permission_error(self):
+        """Handle accessibility permission error."""
+        self.permission_error = True
+        self.auto_hide = False  # Disable auto-hide since global shortcuts won't work
+        self.eye_btn.setIcon(make_icon(lambda p, s: draw_eye(p, s, True)))
+        self.warning_btn.show()
 
     def show_model_dialog(self):
         """Show dialog to select Whisper model."""
@@ -1032,7 +1200,7 @@ class VoiceThingWindow(QWidget):
 
             waiting_timer[0] = False
             self._chime([5, 9, 12], [17], t=0.15)  # F key: model loaded
-            self._set_state("idle", "Double-tap ⌥ to record")
+            self._set_state("idle", "Double-tap ⌥")
 
         threading.Thread(target=load, daemon=True).start()
 
@@ -1149,14 +1317,14 @@ class VoiceThingWindow(QWidget):
 
     def _finish(self):
         self._cleanup()
-        self._set_state("idle", "Double-tap ⌥ to record")
+        self._set_state("idle", "Double-tap ⌥")
         self.hide_signal.emit()
 
 
 def main():
     signal.signal(signal.SIGINT, signal.SIG_DFL)
     app = QApplication([])
-    app.setStyleSheet("QToolTip { background: #333; color: white; border: 1px solid #555; }")
+    app.setStyleSheet("QToolTip { background: #333; color: white; border: 1px solid #555; border-radius: 4px; }")
     window = VoiceThingWindow()
 
     tap_state = [0.0, 0]  # [last_tap_time, tap_count]
@@ -1187,7 +1355,16 @@ def main():
                 tap_state[1] = 1
             tap_state[0] = now
 
-    keyboard.Listener(on_press=on_press, on_release=on_release).start()
+    listener = keyboard.Listener(on_press=on_press, on_release=on_release)
+    listener.start()
+
+    # Check for permission error after listener starts
+    def check_permission():
+        time.sleep(0.5)  # Give listener time to print error
+        if "not trusted" in window.tee.text.lower():
+            window.permission_error_signal.emit()
+
+    threading.Thread(target=check_permission, daemon=True).start()
 
     # Show window on boot
     screen = QApplication.primaryScreen().geometry()
