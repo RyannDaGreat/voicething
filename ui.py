@@ -63,6 +63,7 @@ class WaveformWidget(QWidget):
         self.samples = np.array([])
         self.display_max = 0.01  # Current display amplitude (smoothed)
         self.setMinimumHeight(100)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
     def set_samples(self, samples: np.ndarray):
         max_samples = 10 * SAMPLE_RATE
@@ -75,15 +76,17 @@ class WaveformWidget(QWidget):
                 # Jump up quickly
                 self.display_max = current_max
             else:
-                # Decay slowly (0.95 per frame at 120hz = ~1 sec decay)
-                self.display_max = max(self.display_max * 0.95, current_max, 0.01)
+                # Decay very slowly (~3 sec decay at 120hz)
+                self.display_max = max(self.display_max * 0.992, current_max, 0.01)
 
         self.update()
 
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.fillRect(self.rect(), QColor(30, 30, 40))
+
+        # Transparent background - inherits from parent
+        painter.fillRect(self.rect(), Qt.GlobalColor.transparent)
 
         if len(self.samples) == 0:
             return
@@ -93,7 +96,8 @@ class WaveformWidget(QWidget):
         n = len(self.samples) // chunk_size
         peaks = np.max(np.abs(self.samples[:n * chunk_size].reshape(n, chunk_size)), axis=1)
 
-        painter.setPen(QPen(QColor(100, 200, 255), 2))
+        # Semi-transparent waveform
+        painter.setPen(QPen(QColor(100, 200, 255, 180), 2))
         for x, peak in enumerate(peaks):
             bar = int((peak / self.display_max) * h // 2 * 0.9)
             painter.drawLine(x, h // 2 - bar, x, h // 2 + bar)
@@ -115,7 +119,6 @@ class VoiceThingWindow(QWidget):
         self.audio_chunks = []
         self.stream = None
         self.drag_pos = None
-        self.expanded = False
         self.tee = None
         self.tee_last_len = 0
         self.scroll_locked = False
@@ -134,7 +137,6 @@ class VoiceThingWindow(QWidget):
             "background: rgba(30,30,40,200); padding: 8px 12px; border-radius: 8px;"
         )
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.status_label.mousePressEvent = lambda e: self._toggle_expand()
         layout.addWidget(self.status_label)
 
         self.waveform = WaveformWidget()
@@ -153,8 +155,7 @@ class VoiceThingWindow(QWidget):
         self.scroll_area.verticalScrollBar().valueChanged.connect(self._on_scroll)
         layout.addWidget(self.scroll_area)
 
-        self.expanded = True
-        self._update_size()
+        self.setFixedSize(400, 350)
 
         self.update_signal.connect(self._update_display)
         self.hide_signal.connect(self._maybe_hide)
@@ -188,16 +189,8 @@ class VoiceThingWindow(QWidget):
         self.tray.setToolTip("Voice Thing")
         self.tray.show()
 
-    def _toggle_expand(self):
-        self.expanded = not self.expanded
-        self.scroll_area.setVisible(self.expanded)
-        self._update_size()
-
-    def _update_size(self):
-        self.setFixedSize(400, 350 if self.expanded else 150)
-
     def _maybe_hide(self):
-        if not self.is_focused:
+        if not self.is_focused and not self.scroll_locked:
             QTimer.singleShot(2000, self.hide)
 
     def _on_scroll(self):
