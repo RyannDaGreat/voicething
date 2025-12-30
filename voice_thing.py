@@ -61,10 +61,18 @@ def draw_folder(p, size):
     p.setBrush(ICON_COLOR)
     p.setPen(Qt.PenStyle.NoPen)
     m = size // 6
-    # Folder body
     p.drawRoundedRect(m, size // 3, size - 2 * m, size // 2, 2, 2)
-    # Folder tab
     p.drawRoundedRect(m, size // 4, size // 3, size // 6, 2, 2)
+
+
+def draw_copy(p, size):
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    p.setPen(QPen(ICON_COLOR, 2))
+    m = size // 5
+    # Back rectangle
+    p.drawRoundedRect(m, m, size // 2, size // 2, 2, 2)
+    # Front rectangle (offset)
+    p.drawRoundedRect(size // 3, size // 3, size // 2, size // 2, 2, 2)
 
 
 def make_icon(draw_fn, size=ICON_SIZE):
@@ -125,6 +133,9 @@ class VoiceThingWindow(QWidget):
         self.is_focused = False
         self.first_show = True
         self.last_audio_path = None
+        self.last_transcription = None
+        self.resize_edge = None
+        self.resize_margin = 8
 
         self.setWindowTitle(APP_NAME)
         self.setWindowFlags(Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.FramelessWindowHint)
@@ -168,10 +179,11 @@ class VoiceThingWindow(QWidget):
             btn_row.addWidget(btn)
             return btn
 
-        self.record_btn = make_btn("", draw_mic, self.toggle_recording)
+        self.record_btn = make_btn("Space", draw_mic, self.toggle_recording)
         self.record_btn.setEnabled(True)
         self.cancel_btn = make_btn("Esc", draw_x, self.cancel_recording)
-        self.folder_btn = make_btn("", draw_folder, self.open_recordings_folder)
+        self.copy_btn = make_btn("C", draw_copy, self.copy_last_transcription)
+        self.folder_btn = make_btn("F", draw_folder, self.open_recordings_folder)
         layout.addLayout(btn_row)
 
         self.waveform = WaveformWidget()
@@ -192,7 +204,8 @@ class VoiceThingWindow(QWidget):
         self._update_scroll_style()
         layout.addWidget(self.scroll_area)
 
-        self.setFixedSize(400, 350)
+        self.setMinimumSize(300, 250)
+        self.resize(400, 350)
         self.hide_signal.connect(self._maybe_hide)
         self.toggle_signal.connect(self.toggle_recording)
         self.paste_signal.connect(self._do_paste)
@@ -280,16 +293,48 @@ class VoiceThingWindow(QWidget):
                     self._append_log(line)
             self.tee_last_len = len(self.tee.text)
 
+    def _get_resize_edge(self, pos):
+        m = self.resize_margin
+        r = self.rect()
+        edge = ""
+        if pos.y() >= r.height() - m:
+            edge += "b"
+        if pos.x() >= r.width() - m:
+            edge += "r"
+        return edge or None
+
     def mousePressEvent(self, e):
         if e.button() == Qt.MouseButton.LeftButton:
-            self.drag_pos = e.globalPosition().toPoint() - self.frameGeometry().topLeft()
+            self.resize_edge = self._get_resize_edge(e.position().toPoint())
+            if not self.resize_edge:
+                self.drag_pos = e.globalPosition().toPoint() - self.frameGeometry().topLeft()
 
     def mouseMoveEvent(self, e):
-        if self.drag_pos and e.buttons() & Qt.MouseButton.LeftButton:
-            self.move(e.globalPosition().toPoint() - self.drag_pos)
+        if e.buttons() & Qt.MouseButton.LeftButton:
+            if self.resize_edge:
+                gpos = e.globalPosition().toPoint()
+                geo = self.geometry()
+                if 'r' in self.resize_edge:
+                    geo.setRight(gpos.x())
+                if 'b' in self.resize_edge:
+                    geo.setBottom(gpos.y())
+                self.setGeometry(geo)
+            elif self.drag_pos:
+                self.move(e.globalPosition().toPoint() - self.drag_pos)
+        else:
+            edge = self._get_resize_edge(e.position().toPoint())
+            if edge == "br":
+                self.setCursor(Qt.CursorShape.SizeFDiagCursor)
+            elif edge == "r":
+                self.setCursor(Qt.CursorShape.SizeHorCursor)
+            elif edge == "b":
+                self.setCursor(Qt.CursorShape.SizeVerCursor)
+            else:
+                self.setCursor(Qt.CursorShape.ArrowCursor)
 
     def mouseReleaseEvent(self, e):
         self.drag_pos = None
+        self.resize_edge = None
 
     def changeEvent(self, e):
         if e.type() == e.Type.ActivationChange:
@@ -299,6 +344,12 @@ class VoiceThingWindow(QWidget):
     def keyPressEvent(self, e):
         if e.key() == Qt.Key.Key_Escape and self.state == STATE_RECORDING:
             self.cancel_recording()
+        elif e.key() == Qt.Key.Key_Space:
+            self.toggle_recording()
+        elif e.key() == Qt.Key.Key_C:
+            self.copy_last_transcription()
+        elif e.key() == Qt.Key.Key_F:
+            self.open_recordings_folder()
         else:
             super().keyPressEvent(e)
 
@@ -349,17 +400,18 @@ class VoiceThingWindow(QWidget):
         self.hide_signal.emit()
 
     def _update_buttons(self):
-        if self.state == STATE_IDLE:
-            self.record_btn.setIcon(make_icon(draw_mic))
-            self.record_btn.setEnabled(True)
-            self.cancel_btn.setEnabled(False)
-        elif self.state == STATE_RECORDING:
-            self.record_btn.setIcon(make_icon(draw_stop))
-            self.record_btn.setEnabled(True)
-            self.cancel_btn.setEnabled(True)
-        else:  # STATE_TRANSCRIBING
-            self.record_btn.setEnabled(False)
-            self.cancel_btn.setEnabled(False)
+        is_idle = self.state == STATE_IDLE
+        is_recording = self.state == STATE_RECORDING
+        self.record_btn.setIcon(make_icon(draw_stop if is_recording else draw_mic))
+        self.record_btn.setEnabled(is_idle or is_recording)
+        self.cancel_btn.setEnabled(is_recording)
+        self.copy_btn.setEnabled(self.last_transcription is not None)
+        self.folder_btn.setEnabled(True)
+
+    def copy_last_transcription(self):
+        if self.last_transcription:
+            rp.string_to_clipboard(self.last_transcription)
+            rp.play_chords([12, 16], gap=0, t=0.05)
 
     def open_recordings_folder(self):
         os.makedirs(RECORDINGS_DIR, exist_ok=True)
@@ -423,10 +475,10 @@ class VoiceThingWindow(QWidget):
         if result.text:
             with open(txt_path, 'w') as f:
                 f.write(result.text)
+            self.last_transcription = result.text
             self.paste_signal.emit(result.text)
 
         rp.play_chords([0], [4], [7], [12], gap=0, t=0.08)
-        self.folder_btn.setEnabled(True)
         self._finish_transcription()
 
     def _finish_transcription(self):
