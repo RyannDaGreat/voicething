@@ -67,9 +67,30 @@ APP_NAME = "VoiceThing"
 SAMPLE_RATE = 16000
 BLOCKSIZE = 256
 WHISPER_MODEL = "large-v3"
+TRAY_ICON_SIZE = 44  # Menu bar icon size (2x for retina)
+
+# UI Colors
 ICON_COLOR = QColor(255, 255, 255, 255)
 ACCENT = QColor(100, 200, 255)
-TRAY_ICON_SIZE = 44  # Menu bar icon size (2x for retina)
+ACCENT_BG = "rgba(100,200,255,0.3)"  # For selected/checked states
+
+# LLM post-processing settings
+LLM_MODEL = "OLLAMA:qwen2.5:7b"
+LLM_PREFIX = (
+    "The following text is a voice transcription, starting on the next line onward. "
+    "Your job is to take that voice transcription and make it coherent - or potentially "
+    "don't touch it. We touch it if there is rambling involved - if the user backtracks "
+    "and says \"no wait actually\" etc - but leave it alone if it's coherent as is. "
+    "If it's a super long ramble with a list of instructions or talking points, you might "
+    "want to format it in markdown potentially with bullet points if it's really rambley. "
+    "Your output should STRICTLY be the formatted text, with no chitchat or conversation "
+    "from your side. No escaping the output - you return it raw. If the user has any "
+    "instructions for how to format his text, follow them - but make sure he's talking to "
+    f"YOU - this will be done exclusively by referring to you by your name \"{APP_NAME}\" - "
+    "so saying \"make this into a bullet point list\" for example does NOT mean they are "
+    f"talking to you, but \"{APP_NAME}, format this into a bullet point list\" does. "
+    "Ok here is the voice transcription:\n"
+)
 
 # Accessibility permission error message
 PERMISSION_ERROR_TITLE = "Accessibility Permission Required"
@@ -105,8 +126,9 @@ BTN_CSS = (
     "QPushButton:hover { background: rgba(255,255,255,0.2); }"
     "QPushButton:pressed { background: rgba(100,200,255,0.4); }"
     "QPushButton:disabled { color: rgba(255,255,255,0.2); background: transparent; }"
-    "QPushButton:checked { background: rgba(100,200,255,0.3); }"
+    f"QPushButton:checked {{ background: {ACCENT_BG}; }}"
 )
+BTN_CHECKED_CSS = BTN_CSS + f"QPushButton {{ background: {ACCENT_BG}; }}"
 
 CHIME_SHIFT = -12  # Shift all chimes (semitones, -12 = 1 octave lower)
 
@@ -239,6 +261,23 @@ def draw_sound(p, s, enabled=True):
         p.drawLine(s * 3 // 4, s // 4, s // 4, s * 3 // 4)
 
 
+def draw_pen(p, s):
+    """Draw a fountain pen nib icon for LLM editing."""
+    p.setBrush(ICON_COLOR)
+    p.setPen(Qt.PenStyle.NoPen)
+    # Nib shape - pointed at top (writing position), wider at bottom
+    pts = QPolygon([
+        QPoint(s // 2, s // 6),           # Top point (tip)
+        QPoint(s // 4, s * 3 // 4),       # Bottom left
+        QPoint(s // 2, s * 5 // 6),       # Bottom center notch
+        QPoint(s * 3 // 4, s * 3 // 4),   # Bottom right
+    ])
+    p.drawPolygon(pts)
+    # Center slit
+    p.setPen(QPen(QColor(30, 30, 40), 2))
+    p.drawLine(s // 2, s // 3, s // 2, s * 2 // 3)
+
+
 def draw_model(p, s):
     """Draw a robot head icon."""
     p.setBrush(Qt.BrushStyle.NoBrush)
@@ -303,6 +342,7 @@ ACTIONS = [
     ("folder", "F", draw_folder, "Open recordings folder", "Open Recordings Folder"),
     ("sound", "S", draw_sound, "Toggle sound effects", None),
     ("auto_hide", "V", draw_eye, "Toggle auto-minimize", None),
+    ("llm", "R", draw_pen, "Toggle LLM post-processing", None),
     ("model", "M", draw_model, "Change Whisper model", None),
     ("help", "?", draw_help, "Show help", "Help"),
 ]
@@ -391,6 +431,8 @@ class HelpDialog(DraggableDialog):
             "100% keyboard-driven - no mouse needed! (hover buttons to see shortcuts)\n\n"
             "Small mode (E or green button): Compact view with just status and timer - "
             "great for keeping visible while using keyboard shortcuts.\n\n"
+            "LLM mode (R): Post-process transcriptions with an LLM to clean up rambling. "
+            f"Say \"{APP_NAME}, ...\" in your recording to give formatting instructions.\n\n"
             "Pro tip: Right-click in Transcriptions tab to copy a single transcription.\n\n"
             "By Clara Burgert"
         )
@@ -573,7 +615,7 @@ class TextPanel(QTextEdit):
     def keyPressEvent(self, e):
         # Pass shortcut keys to parent window
         if e.key() in (Qt.Key.Key_Space, Qt.Key.Key_Escape, Qt.Key.Key_X, Qt.Key.Key_C, Qt.Key.Key_L, Qt.Key.Key_F,
-                       Qt.Key.Key_S, Qt.Key.Key_V, Qt.Key.Key_E, Qt.Key.Key_O, Qt.Key.Key_T, Qt.Key.Key_M, Qt.Key.Key_Question):
+                       Qt.Key.Key_S, Qt.Key.Key_V, Qt.Key.Key_R, Qt.Key.Key_E, Qt.Key.Key_O, Qt.Key.Key_T, Qt.Key.Key_M, Qt.Key.Key_Question):
             self.window().keyPressEvent(e)
         else:
             super().keyPressEvent(e)
@@ -648,7 +690,7 @@ class VoiceThingWindow(QWidget):
     toggle_signal = pyqtSignal()
     focus_signal = pyqtSignal()
     paste_signal = pyqtSignal(str)
-    add_transcription_signal = pyqtSignal(str)
+    add_transcription_signal = pyqtSignal(str, str)  # (raw_text, processed_text or "")
     permission_error_signal = pyqtSignal()
 
     def __init__(self):
@@ -669,6 +711,7 @@ class VoiceThingWindow(QWidget):
         self.auto_hide = True  # Whether to auto-hide after transcription
         self._prev_app = None  # For restoring focus when toggling window
         self.sound_enabled = True  # Whether to play chimes
+        self.llm_enabled = False  # Whether to use LLM post-processing
         self.current_model = WHISPER_MODEL  # Current Whisper model
 
         self.setWindowTitle(APP_NAME)
@@ -773,6 +816,9 @@ class VoiceThingWindow(QWidget):
         self.eye_btn = make_btn("V", lambda p, s: draw_eye(p, s, open=False), self.toggle_auto_hide)
         self.eye_btn.setToolTip("Toggle auto-minimize after transcription")
         self.eye_btn.setEnabled(True)
+        self.llm_btn = make_btn("R", draw_pen, self.toggle_llm)
+        self.llm_btn.setToolTip("Toggle LLM post-processing")
+        self.llm_btn.setEnabled(True)
         self.model_btn = make_btn("M", draw_model, self.show_model_dialog)
         self.model_btn.setToolTip("Change Whisper model")
         self.model_btn.setEnabled(True)
@@ -786,8 +832,8 @@ class VoiceThingWindow(QWidget):
             Qt.Key.Key_Space: self.record_btn, Qt.Key.Key_X: self.cancel_btn,
             Qt.Key.Key_C: self.copy_btn, Qt.Key.Key_L: self.load_btn,
             Qt.Key.Key_F: self.folder_btn, Qt.Key.Key_S: self.sound_btn,
-            Qt.Key.Key_V: self.eye_btn, Qt.Key.Key_M: self.model_btn,
-            Qt.Key.Key_Question: self.help_btn,
+            Qt.Key.Key_V: self.eye_btn, Qt.Key.Key_R: self.llm_btn,
+            Qt.Key.Key_M: self.model_btn, Qt.Key.Key_Question: self.help_btn,
         }
 
         self.waveform = WaveformWidget()
@@ -857,6 +903,7 @@ class VoiceThingWindow(QWidget):
             "folder": self.open_folder,
             "sound": self.toggle_sound,
             "auto_hide": self.toggle_auto_hide,
+            "llm": self.toggle_llm,
             "model": self.show_model_dialog,
             "help": self.show_help,
         }
@@ -914,15 +961,26 @@ class VoiceThingWindow(QWidget):
             btn.setDown(True)
             QTimer.singleShot(100, lambda: btn.setDown(False))
 
-    def _add_transcription(self, text):
-        self.transcriptions.append(text)
+    def _add_transcription(self, raw_text, processed_text):
+        # Store as tuple: (raw, processed) - processed is "" if not LLM processed
+        self.transcriptions.append((raw_text, processed_text))
         self._update_transcriptions_display()
         self._switch_tab(1)
 
     def _update_transcriptions_display(self):
-        html = "<hr>".join(f"<p style='margin:4px 0;'>{t}</p>" for t in self.transcriptions)
+        parts = []
+        for raw, processed in self.transcriptions:
+            if processed:
+                # Show raw first, then bold processed below - as one unit
+                parts.append(f"<p style='margin:4px 0;'>{raw}<br/><b>{processed}</b></p>")
+            else:
+                parts.append(f"<p style='margin:4px 0;'>{raw}</p>")
+        html = "<hr>".join(parts)
         self.transcriptions_panel.setHtml(html)
-        self.transcriptions_panel.paragraphs = self.transcriptions  # For right-click copy
+        # For right-click copy, provide both raw and processed together
+        self.transcriptions_panel.paragraphs = [
+            f"{r}\n{p}" if p else r for r, p in self.transcriptions
+        ]
         # Scroll to bottom for new transcription
         sb = self.transcriptions_panel.verticalScrollBar()
         sb.setValue(sb.maximum())
@@ -1035,6 +1093,8 @@ class VoiceThingWindow(QWidget):
             self.toggle_sound()
         elif no_mods and key == Qt.Key.Key_V:
             self.toggle_auto_hide()
+        elif no_mods and key == Qt.Key.Key_R:
+            self.toggle_llm()
         elif no_mods and key == Qt.Key.Key_E:
             self.toggle_small_mode()
         elif no_mods and key == Qt.Key.Key_O:
@@ -1139,6 +1199,11 @@ class VoiceThingWindow(QWidget):
         self.sound_enabled = not self.sound_enabled
         self.sound_btn.setIcon(make_icon(lambda p, s: draw_sound(p, s, self.sound_enabled)))
 
+    def toggle_llm(self):
+        self.llm_enabled = not self.llm_enabled
+        # Update button style to match selected tab appearance
+        self.llm_btn.setStyleSheet(BTN_CHECKED_CSS if self.llm_enabled else BTN_CSS)
+
     def _chime(self, *args, **kwargs):
         """Play chime only if sound is enabled."""
         if self.sound_enabled:
@@ -1240,12 +1305,14 @@ class VoiceThingWindow(QWidget):
         result = rp.transcribe_audio_file_via_whisper(
             path, model=self.current_model, show_progress=True
         )
-        text = "" if is_blacklisted(result.text) else result.text
-        print(f"Result: {text!r}")
-        if text:
-            self.last_transcription = text
-            self.paste_signal.emit(text)
-            self.add_transcription_signal.emit(text)
+        raw_text = "" if is_blacklisted(result.text) else result.text
+        print(f"Result: {raw_text!r}")
+        if raw_text:
+            raw_text, processed_text = self._process_with_llm(raw_text)
+            final_text = processed_text if processed_text else raw_text
+            self.last_transcription = final_text
+            self.paste_signal.emit(final_text)
+            self.add_transcription_signal.emit(raw_text, processed_text)
         self._chime([2], [6], [9], [14], t=0.08)  # D key: transcription done
         self._finish()
 
@@ -1285,6 +1352,18 @@ class VoiceThingWindow(QWidget):
         self.waveform.set_samples(audio)
         threading.Thread(target=self._transcribe, args=(audio,), daemon=True).start()
 
+    def _process_with_llm(self, text):
+        """Post-process transcription with LLM if enabled. Returns (raw, processed) or (raw, "")."""
+        if not self.llm_enabled or not text:
+            return text, ""
+        self._chime([7, 11], t=0.06)  # LLM processing start
+        print("Processing with LLM...")
+        prompt = LLM_PREFIX + text
+        result = rp.run_llm_api(prompt, model=LLM_MODEL)
+        print(f"LLM result: {result!r}")
+        self._chime([11, 14, 18], t=0.08)  # LLM processing done
+        return text, result
+
     def _transcribe(self, audio):
         if len(audio) == 0:
             print("No audio.")
@@ -1303,14 +1382,16 @@ class VoiceThingWindow(QWidget):
             wav_path, model=self.current_model, show_progress=True
         )
 
-        text = "" if is_blacklisted(result.text) else result.text
-        print(f"Result: {text!r}")
-        if text:
+        raw_text = "" if is_blacklisted(result.text) else result.text
+        print(f"Result: {raw_text!r}")
+        if raw_text:
+            raw_text, processed_text = self._process_with_llm(raw_text)
+            final_text = processed_text if processed_text else raw_text
             with open(txt_path, "w") as f:
-                f.write(text)
-            self.last_transcription = text
-            self.paste_signal.emit(text)
-            self.add_transcription_signal.emit(text)
+                f.write(final_text)
+            self.last_transcription = final_text
+            self.paste_signal.emit(final_text)
+            self.add_transcription_signal.emit(raw_text, processed_text)
 
         self._chime([2], [6], [9], [14], t=0.08)  # D key: transcription done
         self._finish()
