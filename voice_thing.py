@@ -180,7 +180,7 @@ class VoiceThingWindow(QWidget):
         self.log_output = QLabel("")
         self.log_output.setStyleSheet(
             "color: #b0b0b0; font-size: 11px; font-family: 'SF Mono', Menlo, monospace; "
-            "background: rgba(20,20,30,200); padding: 8px; border-radius: 8px;")
+            "background: transparent; padding: 8px;")
         self.log_output.setWordWrap(True)
         self.log_output.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
 
@@ -188,13 +188,8 @@ class VoiceThingWindow(QWidget):
         self.scroll_area.setWidget(self.log_output)
         self.scroll_area.setWidgetResizable(True)
         self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.scroll_area.setStyleSheet(
-            "QScrollArea { background: transparent; border: none; }"
-            "QScrollBar:vertical { width: 6px; background: transparent; }"
-            "QScrollBar::handle:vertical { background: rgba(255,255,255,0.2); border-radius: 3px; }"
-            "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }"
-        )
         self.scroll_area.verticalScrollBar().valueChanged.connect(self._on_scroll)
+        self._update_scroll_style()
         layout.addWidget(self.scroll_area)
 
         self.setFixedSize(400, 350)
@@ -234,7 +229,28 @@ class VoiceThingWindow(QWidget):
         was_locked = self.scroll_locked
         self.scroll_locked = sb.value() < sb.maximum() - 10
         if self.scroll_locked != was_locked:
-            self.update()
+            self._update_scroll_style()
+
+    def _update_scroll_style(self):
+        border = "2px solid rgba(255,150,50,0.6)" if self.scroll_locked else "none"
+        self.scroll_area.setStyleSheet(f"""
+            QScrollArea {{
+                background: rgba(20,20,30,200);
+                border: {border};
+                border-radius: 8px;
+            }}
+            QScrollBar:vertical {{
+                width: 6px;
+                background: transparent;
+            }}
+            QScrollBar::handle:vertical {{
+                background: rgba(255,255,255,0.2);
+                border-radius: 3px;
+            }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+                height: 0;
+            }}
+        """)
 
     def _append_log(self, text):
         self.log_output.setText((self.log_output.text() + "\n" + text).strip())
@@ -292,10 +308,9 @@ class VoiceThingWindow(QWidget):
         p.setBrush(QColor(30, 30, 40, 220))
         p.setPen(Qt.PenStyle.NoPen)
         p.drawRoundedRect(self.rect().adjusted(2, 2, -2, -2), 12, 12)
-        if self.is_focused or self.scroll_locked:
-            color = QColor(255, 150, 50, 150) if self.scroll_locked else QColor(100, 200, 255, 100)
+        if self.is_focused:
             p.setBrush(Qt.BrushStyle.NoBrush)
-            p.setPen(QPen(color, 3))
+            p.setPen(QPen(QColor(100, 200, 255, 100), 3))
             p.drawRoundedRect(self.rect().adjusted(2, 2, -2, -2), 12, 12)
 
     def _cleanup_stream(self):
