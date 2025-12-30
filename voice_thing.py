@@ -69,6 +69,18 @@ BLOCKSIZE = 256
 WHISPER_MODEL = "large-v3"
 ICON_COLOR = QColor(255, 255, 255, 255)
 ACCENT = QColor(100, 200, 255)
+
+# Whisper hallucinations when given silence/noise - normalized (lowercase, no punctuation)
+BLACKLISTED_TRANSCRIPTIONS = {"thank you"}
+
+def is_blacklisted(text):
+    """Check if transcription is a known Whisper hallucination."""
+    if not text:
+        return False
+    import re
+    normalized = re.sub(r'[^\w\s]', '', text.lower()).strip()
+    return normalized in BLACKLISTED_TRANSCRIPTIONS
+
 RECORDINGS_DIR = os.path.join(tempfile.gettempdir(), APP_NAME)
 
 # Shared styling for buttons and tabs
@@ -298,12 +310,12 @@ class HelpDialog(QDialog):
 
         about_text = QLabel(
             "Voice transcription powered by Whisper.\n\n"
-            "• Double-tap Option to record from anywhere (works in fullscreen apps and terminals!)\n"
-            "• Double-tap Option again to stop and auto-paste the transcription via Cmd+V\n"
-            "• Cmd + double-tap Option to toggle focus\n"
+            "• Double-tap ⌥ to record from anywhere (works in fullscreen apps and terminals!)\n"
+            "• Double-tap ⌥ again to stop and auto-paste the transcription via ⌘V\n"
+            "• ⌘ + double-tap ⌥ to toggle focus\n"
             "• Access from menu bar (top right of Mac)\n"
             "• Drag & drop audio files to transcribe\n"
-            "• Cmd+Q to quit\n\n"
+            "• ⌘Q to quit\n\n"
             "100% keyboard-driven - no mouse needed! (hover buttons to see shortcuts)\n\n"
             "Pro tip: Right-click in Transcriptions tab to copy a single transcription.\n\n"
             "By Clara Burgert"
@@ -604,7 +616,7 @@ class VoiceThingWindow(QWidget):
         self.minimize_btn.setToolTip("Minimize window")
         self.minimize_btn.clicked.connect(self.hide)
         status_row.addWidget(self.minimize_btn)
-        self.status_label = QLabel("Double-tap Option to record")
+        self.status_label = QLabel("Double-tap ⌥ to record")
         self.status_label.setStyleSheet(
             "color: rgba(255,255,255,0.7); font-size: 14px;"
         )
@@ -993,7 +1005,7 @@ class VoiceThingWindow(QWidget):
 
             waiting_timer[0] = False
             self._chime([0, 4, 7], [12], t=0.15)
-            self._set_state("idle", "Double-tap Option to record")
+            self._set_state("idle", "Double-tap ⌥ to record")
 
         threading.Thread(target=load, daemon=True).start()
 
@@ -1033,11 +1045,12 @@ class VoiceThingWindow(QWidget):
         result = rp.transcribe_audio_file_via_whisper(
             path, model=self.current_model, show_progress=True
         )
-        print(f"Result: {result.text!r}")
-        if result.text:
-            self.last_transcription = result.text
-            self.paste_signal.emit(result.text)
-            self.add_transcription_signal.emit(result.text)
+        text = "" if is_blacklisted(result.text) else result.text
+        print(f"Result: {text!r}")
+        if text:
+            self.last_transcription = text
+            self.paste_signal.emit(text)
+            self.add_transcription_signal.emit(text)
         self._chime([0], [4], [7], [12], t=0.08)
         self._finish()
 
@@ -1095,20 +1108,21 @@ class VoiceThingWindow(QWidget):
             wav_path, model=self.current_model, show_progress=True
         )
 
-        print(f"Result: {result.text!r}")
-        if result.text:
+        text = "" if is_blacklisted(result.text) else result.text
+        print(f"Result: {text!r}")
+        if text:
             with open(txt_path, "w") as f:
-                f.write(result.text)
-            self.last_transcription = result.text
-            self.paste_signal.emit(result.text)
-            self.add_transcription_signal.emit(result.text)
+                f.write(text)
+            self.last_transcription = text
+            self.paste_signal.emit(text)
+            self.add_transcription_signal.emit(text)
 
         self._chime([0], [4], [7], [12], t=0.08)
         self._finish()
 
     def _finish(self):
         self._cleanup()
-        self._set_state("idle", "Double-tap Option to record")
+        self._set_state("idle", "Double-tap ⌥ to record")
         self.hide_signal.emit()
 
 
@@ -1157,7 +1171,7 @@ def main():
     print(f"Loading Whisper ({WHISPER_MODEL})...")
     rp.r._get_pywhispercpp_model(WHISPER_MODEL)
     chime([0, 4, 7], [12], t=0.15)
-    print(f"{APP_NAME} ready. Double-tap Option to record.")
+    print(f"{APP_NAME} ready. Double-tap ⌥ to record.")
     app.exec()
 
 
