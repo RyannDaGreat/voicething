@@ -275,7 +275,7 @@ class VoiceThingWindow(QWidget):
 
     def _copy_to_clipboard(self, text):
         rp.string_to_clipboard(text)
-        rp.play_chords([12, 16], gap=0, t=0.05, sampler=quiet_sampler)
+        rp.play_chords([12, 16], gap=0, t=0.05, sampler=quiet_sampler, block=False)
 
     def _do_paste(self, text):
         self._copy_to_clipboard(text)
@@ -394,7 +394,7 @@ class VoiceThingWindow(QWidget):
         elif self.state == "recording":
             self.stop_recording()
         else:
-            rp.play_chords([3, 0], gap=0, t=0.08, sampler=quiet_sampler)
+            rp.play_chords([3, 0], gap=0, t=0.08, sampler=quiet_sampler, block=False)
 
     def cancel_recording(self):
         if self.state != "recording":
@@ -403,7 +403,7 @@ class VoiceThingWindow(QWidget):
         self._set_state("idle", "Cancelled")
         self.audio_chunks = []
         self.waveform.set_samples(np.array([]))
-        rp.play_chords([7, 3], gap=0, t=0.06, sampler=quiet_sampler)
+        rp.play_chords([7, 3], gap=0, t=0.06, sampler=quiet_sampler, block=False)
         self.hide_signal.emit()
 
     def _set_state(self, state, status):
@@ -438,7 +438,7 @@ class VoiceThingWindow(QWidget):
             self.first_show = False
         self.timer_label.setText("0:00.0")
         self._set_state("recording", "Recording")
-        rp.play_chords([0, 4], [7, 12], gap=0, t=0.08, sampler=quiet_sampler)
+        rp.play_chords([0, 4], [7, 12], gap=0, t=0.08, sampler=quiet_sampler, block=False)
 
         def callback(indata, frames, time_info, status):
             self.audio_chunks.append(indata[:, 0].copy())
@@ -459,7 +459,7 @@ class VoiceThingWindow(QWidget):
             self.stream.close()
             self.stream = None
         self._set_state("transcribing", "Transcribing...")
-        rp.play_chords([12, 7], [4, 0], gap=0, t=0.08, sampler=quiet_sampler)
+        rp.play_chords([12, 7], [4, 0], gap=0, t=0.08, sampler=quiet_sampler, block=False)
         audio = np.concatenate(self.audio_chunks) if self.audio_chunks else np.array([])
         self.waveform.set_samples(audio)
         threading.Thread(target=self._transcribe, args=(audio,), daemon=True).start()
@@ -489,7 +489,7 @@ class VoiceThingWindow(QWidget):
             self.last_transcription = result.text
             self.paste_signal.emit(result.text)
 
-        rp.play_chords([0], [4], [7], [12], gap=0, t=0.08, sampler=quiet_sampler)
+        rp.play_chords([0], [4], [7], [12], gap=0, t=0.08, sampler=quiet_sampler, block=False)
         self._finish()
 
     def _finish(self):
@@ -526,7 +526,7 @@ def main():
 
     print(f"Loading Whisper ({WHISPER_MODEL})...")
     rp.r._get_pywhispercpp_model(WHISPER_MODEL)
-    rp.play_chords([0, 4, 7], [12], gap=0, t=0.15, sampler=quiet_sampler)
+    rp.play_chords([0, 4, 7], [12], gap=0, t=0.15, sampler=quiet_sampler, block=False)
     print(f"{APP_NAME} ready. Double-tap Option to record.")
     app.exec()
 
