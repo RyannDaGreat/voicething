@@ -59,14 +59,13 @@ from PyQt6.QtWidgets import (
     QStackedWidget,
     QTextEdit,
     QDialog,
-    QToolTip,
 )
 
 APP_NAME = "VoiceThing"
 SAMPLE_RATE = 16000
 BLOCKSIZE = 256
 WHISPER_MODEL = "large-v3"
-ICON_COLOR = QColor(255, 255, 255, 180)
+ICON_COLOR = QColor(255, 255, 255, 255)
 ACCENT = QColor(100, 200, 255)
 RECORDINGS_DIR = os.path.join(tempfile.gettempdir(), APP_NAME)
 
@@ -172,34 +171,19 @@ def draw_sound(p, s, enabled=True):
 
 
 def draw_model(p, s):
-    """Draw a circuit brain AI icon."""
+    """Draw a robot head icon."""
     p.setBrush(Qt.BrushStyle.NoBrush)
     p.setPen(QPen(ICON_COLOR, 2))
-    cx, cy = s // 2, s // 2
-    r = s // 3
-    # Brain outline (circle)
-    p.drawEllipse(cx - r, cy - r, r * 2, r * 2)
-    # Circuit nodes inside
+    m = s // 6
+    # Head (rounded rectangle)
+    p.drawRoundedRect(m, m + s // 8, s - 2 * m, s - 2 * m - s // 8, 3, 3)
+    # Antenna
+    p.drawLine(s // 2, m + s // 8, s // 2, m)
     p.setBrush(ICON_COLOR)
-    node_r = s // 12
-    p.drawEllipse(cx - node_r, cy - node_r, node_r * 2, node_r * 2)
-    # Circuit lines extending out
-    p.setBrush(Qt.BrushStyle.NoBrush)
-    for dx, dy in [(-1, -1), (1, -1), (-1, 1), (1, 1)]:
-        p.drawLine(cx + dx * node_r, cy + dy * node_r,
-                   cx + dx * r, cy + dy * r)
-
-
-class InstantTipButton(QPushButton):
-    """Button that shows tooltip immediately on hover."""
-    def enterEvent(self, e):
-        if self.toolTip():
-            QToolTip.showText(self.mapToGlobal(QPoint(0, self.height())), self.toolTip(), self)
-        super().enterEvent(e)
-
-    def leaveEvent(self, e):
-        QToolTip.hideText()
-        super().leaveEvent(e)
+    p.drawEllipse(s // 2 - 2, m - 2, 4, 4)
+    # Eyes
+    p.drawEllipse(s // 3 - 2, s // 2 - 2, 5, 5)
+    p.drawEllipse(s * 2 // 3 - 3, s // 2 - 2, 5, 5)
 
 
 def make_icon(draw_fn, size=64):
@@ -435,7 +419,7 @@ class VoiceThingWindow(QWidget):
         btn_row.setSpacing(8)
 
         def make_btn(text, icon_fn, handler):
-            btn = InstantTipButton(text)
+            btn = QPushButton(text)
             btn.setIcon(make_icon(icon_fn))
             btn.setIconSize(QSize(16, 16))
             btn.setStyleSheet(BTN_CSS)
@@ -456,7 +440,7 @@ class VoiceThingWindow(QWidget):
         self.sound_btn = make_btn("S", draw_sound, self.toggle_sound)
         self.sound_btn.setToolTip("Toggle sound effects")
         self.sound_btn.setEnabled(True)
-        self.eye_btn = make_btn("V", draw_eye, self.toggle_auto_hide)
+        self.eye_btn = make_btn("V", lambda p, s: draw_eye(p, s, open=False), self.toggle_auto_hide)
         self.eye_btn.setToolTip("Toggle auto-minimize after transcription")
         self.eye_btn.setEnabled(True)
         self.model_btn = make_btn("M", draw_model, self.show_model_dialog)
@@ -840,8 +824,6 @@ def main():
     signal.signal(signal.SIGINT, signal.SIG_DFL)
     app = QApplication([])
     app.setStyleSheet("QToolTip { background: #333; color: white; border: 1px solid #555; }")
-    # Instant tooltips
-    app.setAttribute(Qt.ApplicationAttribute.AA_EnableToolTips, True)
     window = VoiceThingWindow()
 
     last_tap = [0.0]
