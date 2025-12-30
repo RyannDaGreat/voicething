@@ -110,8 +110,25 @@ def draw_x(p, s):
 
 
 def draw_help(p, s):
-    """No icon - just shows the ? text."""
-    pass
+    """Open book icon - viewed from above with curved pages."""
+    from PyQt6.QtGui import QPainterPath
+    p.setPen(QPen(ICON_COLOR, 1.5))
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    cx, cy = s // 2, s * 2 // 3
+    # Left page (curved)
+    left = QPainterPath()
+    left.moveTo(cx, cy)
+    left.quadTo(s // 4, s // 3, s // 6, s // 4)
+    left.lineTo(s // 8, s * 3 // 5)
+    left.quadTo(s // 3, s // 2, cx, cy)
+    p.drawPath(left)
+    # Right page (curved)
+    right = QPainterPath()
+    right.moveTo(cx, cy)
+    right.quadTo(s * 3 // 4, s // 3, s * 5 // 6, s // 4)
+    right.lineTo(s * 7 // 8, s * 3 // 5)
+    right.quadTo(s * 2 // 3, s // 2, cx, cy)
+    p.drawPath(right)
 
 
 def draw_folder(p, s):
@@ -226,8 +243,9 @@ WHISPER_MODELS = [
 # Button definitions: (key, icon_fn, description)
 # Used for creating buttons and help dialog (DRY)
 BUTTONS = [
-    ("Space", draw_mic, "Start/stop recording"),
-    ("Esc", draw_x, "Cancel recording"),
+    ("Space", draw_mic, "Start/finish recording"),
+    ("X", draw_x, "Cancel recording"),
+    ("Esc", None, "Minimize window"),
     ("C", draw_copy, "Copy last transcription to clipboard"),
     ("L", draw_load, "Load audio file to transcribe"),
     ("F", draw_folder, "Open recordings folder"),
@@ -282,14 +300,17 @@ class HelpDialog(QDialog):
             "  (works in fullscreen apps and terminals!)\n"
             "• Double-tap Option again to stop and\n"
             "  auto-paste the transcription via Cmd+V\n"
-            "• Access from the menu bar icon (top right)\n"
+            "• Cmd + double-tap Option to toggle focus\n"
+            "• Access from menu bar (top right of Mac)\n"
             "• Drag & drop audio files to transcribe\n"
-            "• Toggle auto-minimize with V key\n\n"
+            "• Cmd+Q to quit\n\n"
+            "Pro tip: Right-click in Transcriptions tab\n"
+            "to copy a single transcription.\n\n"
             "By Clara Burgert"
         )
         about_text.setStyleSheet("color: rgba(255,255,255,0.7); font-size: 10px;")
         about_text.setWordWrap(True)
-        about_text.setFixedWidth(180)
+        about_text.setFixedWidth(190)
         about_box.addWidget(about_text)
         about_box.addStretch()
 
@@ -363,7 +384,7 @@ class HelpDialog(QDialog):
     def paintEvent(self, e):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        p.setBrush(QColor(30, 30, 40, 240))
+        p.setBrush(QColor(30, 30, 40, 255))
         p.setPen(QPen(QColor(100, 100, 100), 1))
         p.drawRoundedRect(self.rect().adjusted(1, 1, -1, -1), 10, 10)
 
@@ -440,17 +461,48 @@ class TextPanel(QTextEdit):
     def __init__(self, selectable=True, parent=None):
         super().__init__(parent)
         self.setReadOnly(True)
+        self.paragraphs = None  # Set externally for paragraph-aware context menu
         if not selectable:
             self.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
         self.setStyleSheet(self.STYLE)
 
     def keyPressEvent(self, e):
         # Pass shortcut keys to parent window
-        if e.key() in (Qt.Key.Key_Space, Qt.Key.Key_Escape, Qt.Key.Key_C, Qt.Key.Key_L, Qt.Key.Key_F,
+        if e.key() in (Qt.Key.Key_Space, Qt.Key.Key_Escape, Qt.Key.Key_X, Qt.Key.Key_C, Qt.Key.Key_L, Qt.Key.Key_F,
                        Qt.Key.Key_S, Qt.Key.Key_V, Qt.Key.Key_O, Qt.Key.Key_T, Qt.Key.Key_M, Qt.Key.Key_Question):
             self.window().keyPressEvent(e)
         else:
             super().keyPressEvent(e)
+
+    def contextMenuEvent(self, e):
+        if self.paragraphs is None:
+            super().contextMenuEvent(e)
+            return
+        # Auto-select paragraph under cursor if nothing selected
+        if not self.textCursor().hasSelection():
+            self.setFocus()  # Ensure proper selection highlighting
+            cursor = self.cursorForPosition(e.pos())
+            block_num = cursor.blockNumber()
+            # Each transcription is a <p> tag, map block to paragraph index
+            # Blocks: p0, hr, p1, hr, p2... so paragraph i is at block 2*i
+            para_idx = block_num // 2
+            if self.paragraphs and 0 <= para_idx < len(self.paragraphs):
+                # Select the entire block (paragraph)
+                cursor.movePosition(cursor.MoveOperation.StartOfBlock)
+                cursor.movePosition(cursor.MoveOperation.EndOfBlock, cursor.MoveMode.KeepAnchor)
+                self.setTextCursor(cursor)
+
+        menu = QMenu(self)
+        menu.setStyleSheet(
+            "QMenu { background: rgb(40,40,50); color: white; border: 1px solid rgb(80,80,80); }"
+            "QMenu::item:selected { background: rgb(60,60,70); }"
+        )
+        if self.textCursor().hasSelection():
+            copy_action = menu.addAction("Copy")
+            copy_action.triggered.connect(self.copy)
+        select_all = menu.addAction("Select All")
+        select_all.triggered.connect(self.selectAll)
+        menu.exec(e.globalPos())
 
 
 class WaveformWidget(QWidget):
@@ -489,6 +541,7 @@ class WaveformWidget(QWidget):
 class VoiceThingWindow(QWidget):
     hide_signal = pyqtSignal()
     toggle_signal = pyqtSignal()
+    focus_signal = pyqtSignal()
     paste_signal = pyqtSignal(str)
     add_transcription_signal = pyqtSignal(str)
 
@@ -572,7 +625,7 @@ class VoiceThingWindow(QWidget):
         self.record_btn = make_btn("Space", draw_mic, self.toggle_recording)
         self.record_btn.setToolTip("Start/stop recording")
         self.record_btn.setEnabled(True)
-        self.cancel_btn = make_btn("Esc", draw_x, self.cancel_recording)
+        self.cancel_btn = make_btn("X", draw_x, self.cancel_recording)
         self.cancel_btn.setToolTip("Cancel recording")
         self.copy_btn = make_btn("C", draw_copy, self.copy_transcription)
         self.copy_btn.setToolTip("Copy last transcription to clipboard")
@@ -631,6 +684,7 @@ class VoiceThingWindow(QWidget):
         self.resize(400, 350)
         self.hide_signal.connect(self._maybe_hide)
         self.toggle_signal.connect(self.toggle_recording)
+        self.focus_signal.connect(self._focus_window)
         self.paste_signal.connect(self._do_paste)
         self.add_transcription_signal.connect(self._add_transcription)
 
@@ -659,6 +713,16 @@ class VoiceThingWindow(QWidget):
         if not self.is_focused:
             self.hide()
 
+    def _focus_window(self):
+        if self.isActiveWindow():
+            self.hide()
+            self._chime([7, 0], t=0.06)  # Descending: unfocus
+        else:
+            self.show()
+            self.raise_()
+            self.activateWindow()
+            self._chime([0, 7], t=0.06)  # Ascending: focus
+
     def _switch_tab(self, index):
         self.tab_stack.setCurrentIndex(index)
         self.output_tab.setChecked(index == 0)
@@ -672,6 +736,7 @@ class VoiceThingWindow(QWidget):
     def _update_transcriptions_display(self):
         html = "<hr>".join(f"<p style='margin:4px 0;'>{t}</p>" for t in self.transcriptions)
         self.transcriptions_panel.setHtml(html)
+        self.transcriptions_panel.paragraphs = self.transcriptions  # For right-click copy
         # Scroll to bottom for new transcription
         sb = self.transcriptions_panel.verticalScrollBar()
         sb.setValue(sb.maximum())
@@ -747,6 +812,7 @@ class VoiceThingWindow(QWidget):
     def changeEvent(self, e):
         if e.type() == e.Type.ActivationChange:
             self.is_focused = self.isActiveWindow()
+            self.update()  # Repaint for opacity change
         super().changeEvent(e)
 
     def dragEnterEvent(self, e):
@@ -764,7 +830,9 @@ class VoiceThingWindow(QWidget):
 
     def keyPressEvent(self, e):
         key = e.key()
-        if key == Qt.Key.Key_Escape and self.state == "recording":
+        if key == Qt.Key.Key_Escape:
+            self.hide()
+        elif key == Qt.Key.Key_X and self.state == "recording":
             self.cancel_recording()
         elif key == Qt.Key.Key_Space:
             self.toggle_recording()
@@ -792,7 +860,8 @@ class VoiceThingWindow(QWidget):
     def paintEvent(self, e):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        p.setBrush(QColor(30, 30, 40, 220))
+        alpha = 255 if self.is_focused else 220
+        p.setBrush(QColor(30, 30, 40, alpha))
         p.setPen(Qt.PenStyle.NoPen)
         p.drawRoundedRect(self.rect().adjusted(2, 2, -2, -2), 12, 12)
         if self.is_focused:
@@ -1030,24 +1099,30 @@ def main():
     app.setStyleSheet("QToolTip { background: #333; color: white; border: 1px solid #555; }")
     window = VoiceThingWindow()
 
-    last_tap = [0.0]
+    tap_state = [0.0, 0]  # [last_tap_time, tap_count]
     pressed = set()
+    CMD_KEYS = (keyboard.Key.cmd, keyboard.Key.cmd_l, keyboard.Key.cmd_r)
+    ALT_KEYS = (keyboard.Key.alt, keyboard.Key.alt_l, keyboard.Key.alt_r)
 
     def on_press(key):
         pressed.add(key)
 
     def on_release(key):
         pressed.discard(key)
-        if (
-            key in (keyboard.Key.alt, keyboard.Key.alt_l, keyboard.Key.alt_r)
-            and len(pressed) == 0
-        ):
+        if key in ALT_KEYS:
             now = time.time()
-            if now - last_tap[0] < 0.3:
-                window.toggle_signal.emit()
-                last_tap[0] = 0.0
+            cmd_held = any(k in pressed for k in CMD_KEYS)
+            if now - tap_state[0] < 0.3:
+                tap_state[1] += 1
+                if tap_state[1] == 2:
+                    if cmd_held:
+                        window.focus_signal.emit()
+                    else:
+                        window.toggle_signal.emit()
+                    tap_state[1] = 0
             else:
-                last_tap[0] = now
+                tap_state[1] = 1
+            tap_state[0] = now
 
     keyboard.Listener(on_press=on_press, on_release=on_release).start()
 
