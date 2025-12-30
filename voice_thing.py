@@ -282,16 +282,46 @@ TABS = [
 GITHUB_URL = "https://github.com/RyannDaGreat/VoiceThing"
 
 
-class HelpDialog(QDialog):
-    """Help dialog with about info and keymap."""
+class DraggableDialog(QDialog):
+    """Base class for frameless, draggable dialogs."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.drag_pos = None
-        self.setWindowTitle("Help")
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
+    def center_on_parent(self):
+        self.adjustSize()
+        if self.parent():
+            p = self.parent()
+            self.move(p.x() + (p.width() - self.width()) // 2,
+                      p.y() + (p.height() - self.height()) // 2)
+
+    def mousePressEvent(self, e):
+        if e.button() == Qt.MouseButton.LeftButton:
+            self.drag_pos = e.globalPosition().toPoint() - self.frameGeometry().topLeft()
+
+    def mouseMoveEvent(self, e):
+        if self.drag_pos and e.buttons() & Qt.MouseButton.LeftButton:
+            self.move(e.globalPosition().toPoint() - self.drag_pos)
+
+    def mouseReleaseEvent(self, e):
+        self.drag_pos = None
+
+    def paintEvent(self, e):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setBrush(QColor(30, 30, 40, 255))
+        p.setPen(QPen(QColor(100, 100, 100), 1))
+        p.drawRoundedRect(self.rect().adjusted(1, 1, -1, -1), 10, 10)
+
+
+class HelpDialog(DraggableDialog):
+    """Help dialog with about info and keymap."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(15, 15, 15, 15)
         layout.setSpacing(10)
@@ -398,34 +428,13 @@ class HelpDialog(QDialog):
         else:
             super().keyPressEvent(e)
 
-    def mousePressEvent(self, e):
-        if e.button() == Qt.MouseButton.LeftButton:
-            self.drag_pos = e.globalPosition().toPoint() - self.frameGeometry().topLeft()
 
-    def mouseMoveEvent(self, e):
-        if self.drag_pos and e.buttons() & Qt.MouseButton.LeftButton:
-            self.move(e.globalPosition().toPoint() - self.drag_pos)
-
-    def mouseReleaseEvent(self, e):
-        self.drag_pos = None
-
-    def paintEvent(self, e):
-        p = QPainter(self)
-        p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        p.setBrush(QColor(30, 30, 40, 255))
-        p.setPen(QPen(QColor(100, 100, 100), 1))
-        p.drawRoundedRect(self.rect().adjusted(1, 1, -1, -1), 10, 10)
-
-
-class ModelDialog(QDialog):
+class ModelDialog(DraggableDialog):
     """Dialog to select Whisper model with keyboard shortcuts."""
 
     def __init__(self, current_model, parent=None):
         super().__init__(parent)
         self.selected_model = None
-        self.setWindowTitle("Select Model")
-        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(15, 15, 15, 15)
@@ -466,13 +475,6 @@ class ModelDialog(QDialog):
             self.reject()
         else:
             super().keyPressEvent(e)
-
-    def paintEvent(self, e):
-        p = QPainter(self)
-        p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        p.setBrush(QColor(30, 30, 40, 240))
-        p.setPen(QPen(QColor(100, 100, 100), 1))
-        p.drawRoundedRect(self.rect().adjusted(1, 1, -1, -1), 10, 10)
 
 
 class TextPanel(QTextEdit):
@@ -972,9 +974,7 @@ class VoiceThingWindow(QWidget):
     def show_help(self):
         """Show help dialog."""
         dialog = HelpDialog(self)
-        dialog.adjustSize()  # Ensure size is computed
-        dialog.move(self.x() + (self.width() - dialog.width()) // 2,
-                    self.y() + (self.height() - dialog.height()) // 2)
+        dialog.center_on_parent()
         dialog.exec()
 
     def show_model_dialog(self):
@@ -982,8 +982,7 @@ class VoiceThingWindow(QWidget):
         if self.state != "idle":
             return
         dialog = ModelDialog(self.current_model, self)
-        dialog.move(self.x() + (self.width() - dialog.width()) // 2,
-                    self.y() + (self.height() - dialog.height()) // 2)
+        dialog.center_on_parent()
         if dialog.exec() and dialog.selected_model and dialog.selected_model != self.current_model:
             self._change_model(dialog.selected_model)
 
