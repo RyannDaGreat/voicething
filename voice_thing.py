@@ -17,8 +17,17 @@ from pynput import keyboard
 from pynput.keyboard import Controller as KeyboardController, Key
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QSize, QPoint
 from PyQt6.QtGui import QPainter, QColor, QPen, QIcon, QPixmap, QFontDatabase, QPolygon
-from PyQt6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout,
-                              QLabel, QScrollArea, QSystemTrayIcon, QMenu, QPushButton)
+from PyQt6.QtWidgets import (
+    QApplication,
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QLabel,
+    QScrollArea,
+    QSystemTrayIcon,
+    QMenu,
+    QPushButton,
+)
 
 APP_NAME = "VoiceThing"
 SAMPLE_RATE = 16000
@@ -31,41 +40,41 @@ RECORDINGS_DIR = os.path.join(tempfile.gettempdir(), APP_NAME)
 def draw_mic(p, s):
     p.setBrush(ICON_COLOR)
     p.setPen(Qt.PenStyle.NoPen)
-    p.drawEllipse(s//3, s//6, s//3, s//2)
-    p.drawRect(s*5//12, s//2, s//6, s//6)
+    p.drawEllipse(s // 3, s // 6, s // 3, s // 2)
+    p.drawRect(s * 5 // 12, s // 2, s // 6, s // 6)
     p.setBrush(Qt.BrushStyle.NoBrush)
     p.setPen(QPen(ICON_COLOR, 2))
-    p.drawArc(s//4, s//3, s//2, s//2, 0, -180*16)
+    p.drawArc(s // 4, s // 3, s // 2, s // 2, 0, -180 * 16)
 
 
 def draw_stop(p, s):
     p.setBrush(ICON_COLOR)
     p.setPen(Qt.PenStyle.NoPen)
     m = s // 4
-    p.drawRect(m, m, s - 2*m, s - 2*m)
+    p.drawRect(m, m, s - 2 * m, s - 2 * m)
 
 
 def draw_x(p, s):
     p.setPen(QPen(ICON_COLOR, 2))
     m = s // 4
-    p.drawLine(m, m, s-m, s-m)
-    p.drawLine(s-m, m, m, s-m)
+    p.drawLine(m, m, s - m, s - m)
+    p.drawLine(s - m, m, m, s - m)
 
 
 def draw_folder(p, s):
     p.setBrush(ICON_COLOR)
     p.setPen(Qt.PenStyle.NoPen)
     m = s // 6
-    p.drawRoundedRect(m, s//3, s - 2*m, s//2, 2, 2)
-    p.drawRoundedRect(m, s//4, s//3, s//6, 2, 2)
+    p.drawRoundedRect(m, s // 3, s - 2 * m, s // 2, 2, 2)
+    p.drawRoundedRect(m, s // 4, s // 3, s // 6, 2, 2)
 
 
 def draw_copy(p, s):
     p.setBrush(Qt.BrushStyle.NoBrush)
     p.setPen(QPen(ICON_COLOR, 2))
     m = s // 5
-    p.drawRoundedRect(m, m, s//2, s//2, 2, 2)
-    p.drawRoundedRect(s//3, s//3, s//2, s//2, 2, 2)
+    p.drawRoundedRect(m, m, s // 2, s // 2, 2, 2)
+    p.drawRoundedRect(s // 3, s // 3, s // 2, s // 2, 2, 2)
 
 
 def make_icon(draw_fn, size=64):
@@ -90,7 +99,9 @@ class WaveformWidget(QWidget):
         max_samples = 10 * SAMPLE_RATE
         self.samples = samples[-max_samples:] if len(samples) > max_samples else samples
         if len(self.samples) > 0:
-            self.display_max += (max(np.max(np.abs(self.samples)), 0.01) - self.display_max) * 0.04
+            self.display_max += (
+                max(np.max(np.abs(self.samples)), 0.01) - self.display_max
+            ) * 0.04
         self.update()
 
     def paintEvent(self, event):
@@ -102,7 +113,7 @@ class WaveformWidget(QWidget):
         cy = h // 2
         chunk = max(1, len(self.samples) // w)
         n = len(self.samples) // chunk
-        peaks = np.max(np.abs(self.samples[:n * chunk].reshape(n, chunk)), axis=1)
+        peaks = np.max(np.abs(self.samples[: n * chunk].reshape(n, chunk)), axis=1)
         p.setPen(QPen(QColor(ACCENT.red(), ACCENT.green(), ACCENT.blue(), 180), 2))
         for x, peak in enumerate(peaks):
             bar = int((peak / self.display_max) * h // 2 * 0.9)
@@ -130,10 +141,12 @@ class VoiceThingWindow(QWidget):
         self.last_transcription = None
 
         self.setWindowTitle(APP_NAME)
-        self.setWindowFlags(Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.FramelessWindowHint)
+        self.setWindowFlags(
+            Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.FramelessWindowHint
+        )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
-        font_id = QFontDatabase.addApplicationFont(rp.download_font('R:DSEG7'))
+        font_id = QFontDatabase.addApplicationFont(rp.download_font("R:DSEG7"))
         if font_id < 0:
             raise RuntimeError("Failed to load 7-segment font")
         seg_font = QFontDatabase.applicationFontFamilies(font_id)[0]
@@ -142,12 +155,16 @@ class VoiceThingWindow(QWidget):
         layout.setContentsMargins(10, 10, 10, 10)
 
         self.status_label = QLabel("Double-tap Option to record")
-        self.status_label.setStyleSheet("color: rgba(255,255,255,0.7); font-size: 14px;")
+        self.status_label.setStyleSheet(
+            "color: rgba(255,255,255,0.7); font-size: 14px;"
+        )
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.status_label)
 
         self.timer_label = QLabel("")
-        self.timer_label.setStyleSheet(f"color: rgba(100,200,255,0.9); font-size: 28px; font-family: '{seg_font}';")
+        self.timer_label.setStyleSheet(
+            f"color: rgba(100,200,255,0.9); font-size: 28px; font-family: '{seg_font}';"
+        )
         self.timer_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.timer_label.hide()
         layout.addWidget(self.timer_label)
@@ -184,14 +201,19 @@ class VoiceThingWindow(QWidget):
         self.log_output = QLabel("")
         self.log_output.setStyleSheet(
             "color: #b0b0b0; font-size: 11px; font-family: 'SF Mono', Menlo, monospace; "
-            "background: transparent; padding: 8px;")
+            "background: transparent; padding: 8px;"
+        )
         self.log_output.setWordWrap(True)
-        self.log_output.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+        self.log_output.setAlignment(
+            Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft
+        )
 
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidget(self.log_output)
         self.scroll_area.setWidgetResizable(True)
-        self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.scroll_area.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
         self.scroll_area.verticalScrollBar().valueChanged.connect(self._on_scroll)
         self._update_scroll_border()
         layout.addWidget(self.scroll_area)
@@ -233,13 +255,18 @@ class VoiceThingWindow(QWidget):
             f"QScrollArea {{ background: rgba(20,20,30,200); border: {border}; border-radius: 8px; }}"
             "QScrollBar:vertical { width: 6px; background: transparent; }"
             "QScrollBar::handle:vertical { background: rgba(255,255,255,0.2); border-radius: 3px; }"
-            "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }")
+            "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }"
+        )
 
     def _append_log(self, text):
         self.log_output.setText((self.log_output.text() + "\n" + text).strip())
         if not self.scroll_locked:
-            QTimer.singleShot(10, lambda: self.scroll_area.verticalScrollBar().setValue(
-                self.scroll_area.verticalScrollBar().maximum()))
+            QTimer.singleShot(
+                10,
+                lambda: self.scroll_area.verticalScrollBar().setValue(
+                    self.scroll_area.verticalScrollBar().maximum()
+                ),
+            )
 
     def _copy_to_clipboard(self, text):
         rp.string_to_clipboard(text)
@@ -252,7 +279,7 @@ class VoiceThingWindow(QWidget):
         time.sleep(0.1)
         kb = KeyboardController()
         with kb.pressed(Key.cmd):
-            kb.tap('v')
+            kb.tap("v")
 
     def _update_display(self):
         if self.audio_chunks:
@@ -261,7 +288,7 @@ class VoiceThingWindow(QWidget):
             secs = len(audio) / SAMPLE_RATE
             self.timer_label.setText(f"{int(secs // 60)}:{secs % 60:05.2f}")
         if self.tee and len(self.tee.text) > self.tee_last_len:
-            for line in self.tee.text[self.tee_last_len:].split("\n"):
+            for line in self.tee.text[self.tee_last_len :].split("\n"):
                 if line.strip():
                     self._append_log(line)
             self.tee_last_len = len(self.tee.text)
@@ -279,23 +306,32 @@ class VoiceThingWindow(QWidget):
         if e.button() == Qt.MouseButton.LeftButton:
             self.resize_edge = self._edge_at(e.position().toPoint())
             if not self.resize_edge:
-                self.drag_pos = e.globalPosition().toPoint() - self.frameGeometry().topLeft()
+                self.drag_pos = (
+                    e.globalPosition().toPoint() - self.frameGeometry().topLeft()
+                )
 
     def mouseMoveEvent(self, e):
         if e.buttons() & Qt.MouseButton.LeftButton:
             if self.resize_edge:
                 gpos, geo = e.globalPosition().toPoint(), self.geometry()
-                if 'r' in self.resize_edge:
+                if "r" in self.resize_edge:
                     geo.setRight(gpos.x())
-                if 'b' in self.resize_edge:
+                if "b" in self.resize_edge:
                     geo.setBottom(gpos.y())
                 self.setGeometry(geo)
             elif self.drag_pos:
                 self.move(e.globalPosition().toPoint() - self.drag_pos)
         else:
-            cursors = {"br": Qt.CursorShape.SizeFDiagCursor, "r": Qt.CursorShape.SizeHorCursor,
-                       "b": Qt.CursorShape.SizeVerCursor}
-            self.setCursor(cursors.get(self._edge_at(e.position().toPoint()), Qt.CursorShape.ArrowCursor))
+            cursors = {
+                "br": Qt.CursorShape.SizeFDiagCursor,
+                "r": Qt.CursorShape.SizeHorCursor,
+                "b": Qt.CursorShape.SizeVerCursor,
+            }
+            self.setCursor(
+                cursors.get(
+                    self._edge_at(e.position().toPoint()), Qt.CursorShape.ArrowCursor
+                )
+            )
 
     def mouseReleaseEvent(self, e):
         self.drag_pos = self.resize_edge = None
@@ -399,7 +435,9 @@ class VoiceThingWindow(QWidget):
         def callback(indata, frames, time_info, status):
             self.audio_chunks.append(indata[:, 0].copy())
 
-        self.stream = sd.InputStream(samplerate=SAMPLE_RATE, channels=1, dtype=np.float32, callback=callback)
+        self.stream = sd.InputStream(
+            samplerate=SAMPLE_RATE, channels=1, dtype=np.float32, callback=callback
+        )
         self.stream.start()
         self.update_timer.start(8)
 
@@ -428,11 +466,13 @@ class VoiceThingWindow(QWidget):
 
         scipy.io.wavfile.write(wav_path, SAMPLE_RATE, (audio * 32767).astype(np.int16))
         self.last_audio_path = wav_path
-        result = rp.transcribe_audio_file_via_whisper(wav_path, model=WHISPER_MODEL, show_progress=True)
+        result = rp.transcribe_audio_file_via_whisper(
+            wav_path, model=WHISPER_MODEL, show_progress=True
+        )
 
         print(f"Result: {result.text!r}")
         if result.text:
-            with open(txt_path, 'w') as f:
+            with open(txt_path, "w") as f:
                 f.write(result.text)
             self.last_transcription = result.text
             self.paste_signal.emit(result.text)
@@ -459,7 +499,10 @@ def main():
 
     def on_release(key):
         pressed.discard(key)
-        if key in (keyboard.Key.alt, keyboard.Key.alt_l, keyboard.Key.alt_r) and len(pressed) == 0:
+        if (
+            key in (keyboard.Key.alt, keyboard.Key.alt_l, keyboard.Key.alt_r)
+            and len(pressed) == 0
+        ):
             now = time.time()
             if now - last_tap[0] < 0.3:
                 window.toggle_signal.emit()
