@@ -46,8 +46,8 @@ import sounddevice as sd
 from AppKit import NSWorkspace, NSApplicationActivateIgnoringOtherApps
 from pynput import keyboard
 from pynput.keyboard import Controller as KeyboardController, Key
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QSize, QPoint
-from PyQt6.QtGui import QPainter, QColor, QPen, QIcon, QPixmap, QFontDatabase, QPolygon
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QSize, QPoint, QPointF
+from PyQt6.QtGui import QPainter, QColor, QPen, QIcon, QPixmap, QFontDatabase, QPolygonF
 from PyQt6.QtWidgets import (
     QApplication,
     QWidget,
@@ -76,20 +76,45 @@ ACCENT_BG = "rgba(100,200,255,0.3)"  # For selected/checked states
 
 # LLM post-processing settings
 LLM_MODEL = "OLLAMA:qwen2.5:7b"
+
+# # Original prompt (commented out):
+# LLM_PREFIX = (
+#     "The following text is a voice transcription, starting on the next line onward. "
+#     "Your job is to take that voice transcription and make it coherent - or potentially "
+#     "don't touch it. We touch it if there is rambling involved - if the user backtracks "
+#     "and says \"no wait actually\" etc - but leave it alone if it's coherent as is. "
+#     "Use bullet points only when the user is clearly dictating a list of distinct items, steps, or tasks. "
+#     "Regular sentences and prose should never be bullet points. "
+#     "Your output should STRICTLY be the formatted text, with no chitchat or conversation "
+#     "from your side. No escaping the output - you return it raw. If the user has any "
+#     "instructions for how to format his text, follow them - but make sure he's talking to "
+#     f"YOU - this will be done exclusively by referring to you by your name \"{APP_NAME}\" - "
+#     "so saying \"make this into a bullet point list\" for example does NOT mean they are "
+#     f"talking to you, but \"{APP_NAME}, format this into a bullet point list\" does. "
+#     "Ok here is the voice transcription:\n"
+# )
+
 LLM_PREFIX = (
-    "The following text is a voice transcription, starting on the next line onward. "
-    "Your job is to take that voice transcription and make it coherent - or potentially "
-    "don't touch it. We touch it if there is rambling involved - if the user backtracks "
-    "and says \"no wait actually\" etc - but leave it alone if it's coherent as is. "
-    "Use bullet points only when the user is clearly dictating a list of distinct items, steps, or tasks. "
-    "Regular sentences and prose should never be bullet points. "
-    "Your output should STRICTLY be the formatted text, with no chitchat or conversation "
-    "from your side. No escaping the output - you return it raw. If the user has any "
-    "instructions for how to format his text, follow them - but make sure he's talking to "
-    f"YOU - this will be done exclusively by referring to you by your name \"{APP_NAME}\" - "
-    "so saying \"make this into a bullet point list\" for example does NOT mean they are "
-    f"talking to you, but \"{APP_NAME}, format this into a bullet point list\" does. "
-    "Ok here is the voice transcription:\n"
+    "Task: Clean up voice transcript.\n\n"
+    "Rules:\n"
+    "1. Remove filler words (um, uh, \"you know\", filler \"like\")\n"
+    "2. Collapse stutters: \"set the- set the-\" → \"set the\"\n"
+    "3. Apply retrospective edits when speaker self-corrects:\n"
+    "   - \"actually change X to Y\" / \"make X into Y\" → apply change\n"
+    "   - \"add X to the list\" / \"also include X\" → add X seamlessly (remove \"add\")\n"
+    "   - \"remove X\" / \"scratch X\" / \"delete X\" → remove X\n"
+    "   - \"no wait\" / \"I meant\" / \"sorry,\" → use the correction\n"
+    "   - \"change the [ordinal] item to X\" → modify that item\n"
+    "4. NEVER alter grammar, tense, or word forms. Preserve exact words.\n"
+    "5. Filler removal is SURGICAL: remove ONLY the filler, keep surrounding content.\n"
+    f"6. EXCEPTION: \"{APP_NAME},\" prefix → ignore rules 1-5, follow that instruction\n\n"
+    "Examples:\n"
+    "INPUT: \"You know, stop worrying. Get to commit things.\"\n"
+    "OUTPUT: \"Stop worrying. Get to commit things.\"\n\n"
+    "INPUT: \"Apples, oranges... oh and also add grapes.\"\n"
+    "OUTPUT: \"Apples, oranges, grapes.\"\n\n"
+    "CRITICAL: Output ONLY cleaned text. No explanations. Input is always text to clean.\n\n"
+    "Output:\n"
 )
 
 # Accessibility permission error message
@@ -158,10 +183,11 @@ def draw_stop(p, s):
 
 
 def draw_x(p, s):
+    """Circle with slash (cancel/prohibit icon)."""
     p.setPen(QPen(ICON_COLOR, 2))
-    m = s // 4
-    p.drawLine(m, m, s - m, s - m)
-    p.drawLine(s - m, m, m, s - m)
+    m = s // 5
+    p.drawEllipse(m, m, s - 2 * m, s - 2 * m)
+    p.drawLine(m + 2, s - m - 2, s - m - 2, m + 2)
 
 
 def draw_help(p, s):
@@ -242,11 +268,11 @@ def draw_sound(p, s, enabled=True):
     m = s // 4
     p.drawRect(m, s * 3 // 8, s // 6, s // 4)
     # Speaker cone
-    pts = QPolygon([
-        QPoint(m + s // 6, s * 3 // 8),
-        QPoint(m + s // 3, s // 4),
-        QPoint(m + s // 3, s * 3 // 4),
-        QPoint(m + s // 6, s * 5 // 8),
+    pts = QPolygonF([
+        QPointF(m + s / 6, s * 3 / 8),
+        QPointF(m + s / 3, s / 4),
+        QPointF(m + s / 3, s * 3 / 4),
+        QPointF(m + s / 6, s * 5 / 8),
     ])
     p.drawPolygon(pts)
     # Sound waves
@@ -266,11 +292,11 @@ def draw_pen(p, s):
     p.setBrush(ICON_COLOR)
     p.setPen(Qt.PenStyle.NoPen)
     # Nib shape - pointed at top (writing position), wider at bottom
-    pts = QPolygon([
-        QPoint(s // 2, s // 6),           # Top point (tip)
-        QPoint(s // 4, s * 3 // 4),       # Bottom left
-        QPoint(s // 2, s * 5 // 6),       # Bottom center notch
-        QPoint(s * 3 // 4, s * 3 // 4),   # Bottom right
+    pts = QPolygonF([
+        QPointF(s / 2, s / 6),           # Top point (tip)
+        QPointF(s / 4, s * 3 / 4),       # Bottom left
+        QPointF(s / 2, s * 5 / 6),       # Bottom center notch
+        QPointF(s * 3 / 4, s * 3 / 4),   # Bottom right
     ])
     p.drawPolygon(pts)
     # Center slit
@@ -301,7 +327,7 @@ def draw_warning(p, s):
     # Filled triangle
     p.setBrush(bg)
     p.setPen(Qt.PenStyle.NoPen)
-    pts = QPolygon([QPoint(s // 2, s // 8), QPoint(s // 8, s * 7 // 8), QPoint(s * 7 // 8, s * 7 // 8)])
+    pts = QPolygonF([QPointF(s / 2, s / 8), QPointF(s / 8, s * 7 / 8), QPointF(s * 7 / 8, s * 7 / 8)])
     p.drawPolygon(pts)
     # Exclamation mark (dark on red)
     p.setPen(QPen(fg, max(2, s // 8)))
@@ -431,7 +457,7 @@ class HelpDialog(DraggableDialog):
             "100% keyboard-driven - no mouse needed! (hover buttons to see shortcuts)\n\n"
             "Small mode (E or green button): Compact view with just status and timer - "
             "great for keeping visible while using keyboard shortcuts.\n\n"
-            "LLM mode (R): Post-process transcriptions with an LLM to clean up rambling. "
+            "Anti-Ramble mode (R): Post-process transcriptions with an LLM to clean up rambling."
             f"Say \"{APP_NAME}, ...\" in your recording to give formatting instructions.\n\n"
             "Pro tip: Right-click in Transcriptions tab to copy a single transcription.\n\n"
             "By Clara Burgert"
@@ -505,7 +531,7 @@ class HelpDialog(DraggableDialog):
         self.setFixedWidth(480)
 
     def keyPressEvent(self, e):
-        if e.key() in (Qt.Key.Key_Escape, Qt.Key.Key_Question):
+        if e.key() in (Qt.Key.Key_Escape, Qt.Key.Key_Question, Qt.Key.Key_Return, Qt.Key.Key_Enter):
             self.accept()
         else:
             super().keyPressEvent(e)
@@ -624,6 +650,18 @@ class TextPanel(QTextEdit):
         if self.paragraphs is None:
             super().contextMenuEvent(e)
             return
+        # Auto-select paragraph under cursor if nothing selected
+        if not self.textCursor().hasSelection():
+            self.setFocus()
+            cursor = self.cursorForPosition(e.pos())
+            block_num = cursor.blockNumber()
+            # Each transcription is a <p> tag, map block to paragraph index
+            # Blocks: p0, hr, p1, hr, p2... so paragraph i is at block 2*i
+            para_idx = block_num // 2
+            if self.paragraphs and 0 <= para_idx < len(self.paragraphs):
+                cursor.movePosition(cursor.MoveOperation.StartOfBlock)
+                cursor.movePosition(cursor.MoveOperation.EndOfBlock, cursor.MoveMode.KeepAnchor)
+                self.setTextCursor(cursor)
 
         menu = QMenu(self)
         menu.setStyleSheet(
@@ -631,23 +669,9 @@ class TextPanel(QTextEdit):
             "QMenu::item { padding: 4px 12px; border-radius: 4px; }"
             "QMenu::item:selected { background: rgb(60,60,70); }"
         )
-
-        # If user has a selection, copy that selection
         if self.textCursor().hasSelection():
-            copy_action = menu.addAction("Copy Selection")
+            copy_action = menu.addAction("Copy")
             copy_action.triggered.connect(self.copy)
-
-        # Find which transcription was clicked and offer to copy it
-        cursor = self.cursorForPosition(e.pos())
-        block_num = cursor.blockNumber()
-        # Each transcription is separated by <hr> which creates blocks
-        # Count <hr> elements before this block to find paragraph index
-        para_idx = block_num // 2  # Approximate: p0, hr, p1, hr, ...
-        if self.paragraphs and 0 <= para_idx < len(self.paragraphs):
-            para_text = self.paragraphs[para_idx]
-            copy_para = menu.addAction("Copy This Transcription")
-            copy_para.triggered.connect(lambda: QApplication.clipboard().setText(para_text))
-
         select_all = menu.addAction("Select All")
         select_all.triggered.connect(self.selectAll)
         menu.exec(e.globalPos())
@@ -656,34 +680,49 @@ class TextPanel(QTextEdit):
 class WaveformWidget(QWidget):
     def __init__(self):
         super().__init__()
-        self.peaks = np.array([])
+        self.samples = np.array([])
         self.display_max = 0.01
         self.setMinimumHeight(100)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
     def set_samples(self, samples):
         max_samples = 10 * SAMPLE_RATE
-        samples = samples[-max_samples:] if len(samples) > max_samples else samples
-        if len(samples) > 0:
-            chunk = max(1, len(samples) // 400)
-            n = len(samples) // chunk
-            self.peaks = np.max(np.abs(samples[:n * chunk].reshape(n, chunk)), axis=1)
-            self.display_max += (max(np.max(self.peaks), 0.01) - self.display_max) * 0.04
+        self.samples = samples[-max_samples:] if len(samples) > max_samples else samples
+        if len(self.samples) > 0:
+            self.display_max += (max(np.max(np.abs(self.samples)), 0.01) - self.display_max) * 0.04
         self.update()
 
     def paintEvent(self, event):
-        if len(self.peaks) == 0:
+        if len(self.samples) == 0:
             return
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         w, h = self.width(), self.height()
-        cy = h // 2
-        p.setPen(QPen(ACCENT, 2))
-        scale = w / len(self.peaks)
-        for i, peak in enumerate(self.peaks):
-            x = int(i * scale)
-            bar = int((peak / self.display_max) * h // 2 * 0.9)
-            p.drawLine(x, cy - bar, x, cy + bar)
+        cy = h / 2
+        abs_samples = np.abs(self.samples)
+        n_samples = len(abs_samples)
+        # One peak per pixel
+        points = []
+        for x in range(w):
+            s0 = int(x * n_samples / w)
+            s1 = int((x + 1) * n_samples / w)
+            s1 = max(s1, s0 + 1)
+            peak = np.max(abs_samples[s0:s1])
+            bar = (peak / self.display_max) * h / 2 * 0.9
+            points.append(QPointF(x, cy - bar))
+        for x in range(w - 1, -1, -1):
+            s0 = int(x * n_samples / w)
+            s1 = int((x + 1) * n_samples / w)
+            s1 = max(s1, s0 + 1)
+            peak = np.max(abs_samples[s0:s1])
+            bar = (peak / self.display_max) * h / 2 * 0.9
+            points.append(QPointF(x, cy + bar))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(ACCENT)
+        p.drawPolygon(QPolygonF(points))
+        # Center line
+        p.setPen(QPen(QColor(255, 255, 255, 40), 1))
+        p.drawLine(0, int(cy), w, int(cy))
 
 
 class VoiceThingWindow(QWidget):
@@ -709,7 +748,7 @@ class VoiceThingWindow(QWidget):
         self.last_transcription = None
         self.transcriptions = []  # List of transcription strings
         self.permission_error = False  # True if accessibility permission denied
-        self.auto_hide = True  # Whether to auto-hide after transcription
+        self.auto_hide = False  # Whether to auto-hide after transcription
         self._prev_app = None  # For restoring focus when toggling window
         self.sound_enabled = True  # Whether to play chimes
         self.llm_enabled = False  # Whether to use LLM post-processing
@@ -814,11 +853,12 @@ class VoiceThingWindow(QWidget):
         self.sound_btn = make_btn("S", draw_sound, self.toggle_sound)
         self.sound_btn.setToolTip("Toggle sound effects")
         self.sound_btn.setEnabled(True)
-        self.eye_btn = make_btn("V", lambda p, s: draw_eye(p, s, open=False), self.toggle_auto_hide)
+        self.eye_btn = make_btn("V", lambda p, s: draw_eye(p, s, open=True), self.toggle_auto_hide)
         self.eye_btn.setToolTip("Toggle auto-minimize after transcription")
         self.eye_btn.setEnabled(True)
         self.llm_btn = make_btn("R", draw_pen, self.toggle_llm)
         self.llm_btn.setToolTip("Toggle LLM post-processing")
+        self.llm_btn.setCheckable(True)
         self.llm_btn.setEnabled(True)
         self.model_btn = make_btn("M", draw_model, self.show_model_dialog)
         self.model_btn.setToolTip("Change Whisper model")
@@ -874,8 +914,8 @@ class VoiceThingWindow(QWidget):
 
         layout.addWidget(self.tab_stack)
 
-        self.setMinimumSize(300, 250)
-        self.resize(400, 350)
+        self.setMinimumSize(360, 250)
+        self.resize(460, 350)
         self.hide_signal.connect(self._maybe_hide)
         self.toggle_signal.connect(self.toggle_recording)
         self.focus_signal.connect(self._focus_window)
@@ -969,19 +1009,24 @@ class VoiceThingWindow(QWidget):
         self._switch_tab(1)
 
     def _update_transcriptions_display(self):
-        parts = []
+        groups = []  # Each group is one transcription (may have raw + processed)
+        paragraphs = []  # For right-click copy - one entry per <p>
         for raw, processed in self.transcriptions:
             if processed:
-                # Show raw first, then bold processed below - as one unit
-                parts.append(f"<p style='margin:4px 0;'>{raw}<br/><b>{processed}</b></p>")
+                # Show raw (dimmed) and processed (bold) as separate paragraphs in same group
+                group = (
+                    f"<p style='margin:4px 0; color: rgba(130,150,170,0.7);'>{raw}</p>"
+                    f"<p style='margin:4px 0;'><b>{processed}</b></p>"
+                )
+                groups.append(group)
+                paragraphs.append(raw)
+                paragraphs.append(processed)
             else:
-                parts.append(f"<p style='margin:4px 0;'>{raw}</p>")
-        html = "<hr>".join(parts)
+                groups.append(f"<p style='margin:4px 0;'>{raw}</p>")
+                paragraphs.append(raw)
+        html = "<hr>".join(groups)
         self.transcriptions_panel.setHtml(html)
-        # For right-click "Copy This Transcription", use final text (processed if available)
-        self.transcriptions_panel.paragraphs = [
-            p if p else r for r, p in self.transcriptions
-        ]
+        self.transcriptions_panel.paragraphs = paragraphs
         # Scroll to bottom for new transcription
         sb = self.transcriptions_panel.verticalScrollBar()
         sb.setValue(sb.maximum())
@@ -1186,8 +1231,8 @@ class VoiceThingWindow(QWidget):
             self.setMinimumSize(0, 0)
             self.setMaximumSize(16777215, 16777215)
             self.adjustSize()
-            # Use fixed width (1/3 of normal) so status text changes don't resize
-            small_width = self._normal_size.width() // 3
+            # Use fixed small mode width
+            small_width = 143
             small_height = self.sizeHint().height()
             self.setFixedSize(small_width, small_height)
         else:
@@ -1202,8 +1247,7 @@ class VoiceThingWindow(QWidget):
 
     def toggle_llm(self):
         self.llm_enabled = not self.llm_enabled
-        # Update button style to match selected tab appearance
-        self.llm_btn.setStyleSheet(BTN_CHECKED_CSS if self.llm_enabled else BTN_CSS)
+        self.llm_btn.setChecked(self.llm_enabled)
 
     def _chime(self, *args, **kwargs):
         """Play chime only if sound is enabled."""
