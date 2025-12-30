@@ -1,9 +1,11 @@
 #!/usr/bin/env /opt/homebrew/opt/python@3.10/bin/python3.10
 """Voice transcription: double-tap Option to record, transcribe, and type."""
 
+import io
 import os
 import signal
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -11,6 +13,33 @@ from datetime import datetime
 
 import numpy as np
 import rp
+
+
+class TeeOutput:
+    """Captures stdout/stderr including C output via fd redirection."""
+
+    def __init__(self):
+        self._buf = []
+        self._orig_fd = os.dup(1)
+        self._pipe_r, self._pipe_w = os.pipe()
+
+    def __enter__(self):
+        os.dup2(self._pipe_w, 1)
+        os.dup2(self._pipe_w, 2)
+        threading.Thread(target=self._read, daemon=True).start()
+        return self
+
+    def _read(self):
+        while True:
+            data = os.read(self._pipe_r, 16)
+            if not data:
+                break
+            self._buf.append(data.decode('utf-8', errors='replace'))
+            os.write(self._orig_fd, data)
+
+    @property
+    def text(self):
+        return ''.join(self._buf)
 import scipy.io.wavfile
 import sounddevice as sd
 from pynput import keyboard
@@ -27,6 +56,8 @@ from PyQt6.QtWidgets import (
     QSystemTrayIcon,
     QMenu,
     QPushButton,
+    QStackedWidget,
+    QFrame,
 )
 
 APP_NAME = "VoiceThing"
@@ -36,6 +67,15 @@ WHISPER_MODEL = "large-v3"
 ICON_COLOR = QColor(255, 255, 255, 180)
 ACCENT = QColor(100, 200, 255)
 RECORDINGS_DIR = os.path.join(tempfile.gettempdir(), APP_NAME)
+
+# Shared styling for buttons and tabs
+BTN_CSS = (
+    "QPushButton { color: rgba(255,255,255,0.6); background: rgba(255,255,255,0.1); "
+    "border: 1px solid rgba(255,255,255,1); border-radius: 3px; padding: 1px 2px; font-size: 10px; }"
+    "QPushButton:hover { background: rgba(255,255,255,0.2); }"
+    "QPushButton:disabled { color: rgba(255,255,255,0.2); background: transparent; }"
+    "QPushButton:checked { background: rgba(100,200,255,0.3); }"
+)
 
 
 def quiet_sampler(f=None, T=None, samplerate=None):
@@ -92,6 +132,39 @@ def make_icon(draw_fn, size=64):
     return QIcon(px)
 
 
+class LockableScrollArea(QScrollArea):
+    """Scroll area that locks position when user scrolls up, shows orange border when locked."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.locked = False
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.verticalScrollBar().valueChanged.connect(self._on_scroll)
+        self._update_style()
+
+    def _on_scroll(self):
+        sb = self.verticalScrollBar()
+        was_locked = self.locked
+        self.locked = sb.value() < sb.maximum() - 10
+        if self.locked != was_locked:
+            self._update_style()
+
+    def _update_style(self):
+        border = "2px solid rgb(255,150,50)" if self.locked else "none"
+        self.setStyleSheet(
+            f"QScrollArea {{ background: rgba(20,20,30,200); border: {border}; border-radius: 8px; }}"
+            "QScrollBar:vertical { width: 6px; background: transparent; }"
+            "QScrollBar::handle:vertical { background: rgba(255,255,255,0.2); border-radius: 3px; }"
+            "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }"
+        )
+
+    def scroll_to_bottom(self):
+        if not self.locked:
+            QTimer.singleShot(10, lambda: self.verticalScrollBar().setValue(
+                self.verticalScrollBar().maximum()
+            ))
+
+
 class WaveformWidget(QWidget):
     def __init__(self):
         super().__init__()
@@ -117,7 +190,7 @@ class WaveformWidget(QWidget):
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         w, h = self.width(), self.height()
         cy = h // 2
-        p.setPen(QPen(QColor(ACCENT.red(), ACCENT.green(), ACCENT.blue(), 180), 2))
+        p.setPen(QPen(ACCENT, 2))
         scale = w / len(self.peaks)
         for i, peak in enumerate(self.peaks):
             x = int(i * scale)
@@ -129,21 +202,22 @@ class VoiceThingWindow(QWidget):
     hide_signal = pyqtSignal()
     toggle_signal = pyqtSignal()
     paste_signal = pyqtSignal(str)
+    add_transcription_signal = pyqtSignal(str)
 
     def __init__(self):
         super().__init__()
         self.state = "idle"
         self.audio_chunks = []
         self.stream = None
-        self.tee = None
-        self.tee_last_len = 0
+        self.tee = TeeOutput()
+        self.tee.__enter__()
         self.drag_pos = None
         self.resize_edge = None
-        self.scroll_locked = False
         self.is_focused = False
         self.first_show = True
         self.last_audio_path = None
         self.last_transcription = None
+        self.transcriptions = []  # List of transcription strings
 
         self.setWindowTitle(APP_NAME)
         self.setWindowFlags(
@@ -176,18 +250,12 @@ class VoiceThingWindow(QWidget):
 
         btn_row = QHBoxLayout()
         btn_row.setSpacing(8)
-        btn_css = (
-            "QPushButton { color: rgba(255,255,255,0.6); background: rgba(255,255,255,0.1); "
-            "border: 1px solid rgba(255,255,255,0.2); border-radius: 3px; padding: 1px 2px; font-size: 10px; }"
-            "QPushButton:hover { background: rgba(255,255,255,0.2); }"
-            "QPushButton:disabled { color: rgba(255,255,255,0.2); background: transparent; }"
-        )
 
         def make_btn(text, icon_fn, handler):
             btn = QPushButton(text)
             btn.setIcon(make_icon(icon_fn))
             btn.setIconSize(QSize(16, 16))
-            btn.setStyleSheet(btn_css)
+            btn.setStyleSheet(BTN_CSS)
             btn.clicked.connect(handler)
             btn.setEnabled(False)
             btn_row.addWidget(btn)
@@ -203,34 +271,70 @@ class VoiceThingWindow(QWidget):
         self.waveform = WaveformWidget()
         layout.addWidget(self.waveform)
 
+        # Tab bar for Output/Transcriptions
+        tab_row = QHBoxLayout()
+        tab_row.setSpacing(0)
+        tab_row.setContentsMargins(0, 0, 0, 0)
+        self.output_tab = QPushButton("Output")
+        self.output_tab.setCheckable(True)
+        self.output_tab.setChecked(True)
+        self.output_tab.setStyleSheet(BTN_CSS)
+        self.output_tab.clicked.connect(lambda: self._switch_tab(0))
+        tab_row.addWidget(self.output_tab, 1)
+
+        self.transcriptions_tab = QPushButton("Transcriptions")
+        self.transcriptions_tab.setCheckable(True)
+        self.transcriptions_tab.setStyleSheet(BTN_CSS)
+        self.transcriptions_tab.clicked.connect(lambda: self._switch_tab(1))
+        tab_row.addWidget(self.transcriptions_tab, 1)
+        layout.addLayout(tab_row)
+
+        # Stacked widget for tab content
+        self.tab_stack = QStackedWidget()
+
+        # Output panel (stdout)
         self.log_output = QLabel("")
         self.log_output.setStyleSheet(
             "color: #b0b0b0; font-size: 11px; font-family: Menlo, monospace;"
             "background: transparent; padding: 8px;"
         )
         self.log_output.setWordWrap(True)
-        self.log_output.setAlignment(
-            Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft
-        )
+        self.log_output.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+        self.output_scroll = LockableScrollArea()
+        self.output_scroll.setWidget(self.log_output)
+        self.output_scroll.setWidgetResizable(True)
+        self.tab_stack.addWidget(self.output_scroll)
 
-        self.scroll_area = QScrollArea()
-        self.scroll_area.setWidget(self.log_output)
-        self.scroll_area.setWidgetResizable(True)
-        self.scroll_area.setHorizontalScrollBarPolicy(
-            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        # Transcriptions panel
+        self.transcriptions_label = QLabel("")
+        self.transcriptions_label.setStyleSheet(
+            "color: #b0b0b0; font-size: 11px; font-family: Menlo, monospace;"
+            "background: transparent; padding: 8px;"
         )
-        self.scroll_area.verticalScrollBar().valueChanged.connect(self._on_scroll)
-        self._update_scroll_border()
-        layout.addWidget(self.scroll_area)
+        self.transcriptions_label.setWordWrap(True)
+        self.transcriptions_label.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+        self.transcriptions_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.transcriptions_scroll = LockableScrollArea()
+        self.transcriptions_scroll.setWidget(self.transcriptions_label)
+        self.transcriptions_scroll.setWidgetResizable(True)
+        self.tab_stack.addWidget(self.transcriptions_scroll)
+
+        layout.addWidget(self.tab_stack)
 
         self.setMinimumSize(300, 250)
         self.resize(400, 350)
         self.hide_signal.connect(self._maybe_hide)
         self.toggle_signal.connect(self.toggle_recording)
         self.paste_signal.connect(self._do_paste)
+        self.add_transcription_signal.connect(self._add_transcription)
 
         self.update_timer = QTimer()
         self.update_timer.timeout.connect(self._update_display)
+
+        self.log_timer = QTimer()
+        self.log_timer.timeout.connect(self._update_log)
+        self.log_timer.start(100)  # Update log output 10x/sec
+
         self._setup_tray()
 
     def _setup_tray(self):
@@ -244,34 +348,24 @@ class VoiceThingWindow(QWidget):
         self.tray.show()
 
     def _maybe_hide(self):
-        if not self.is_focused and not self.scroll_locked:
+        current_scroll = self.output_scroll if self.tab_stack.currentIndex() == 0 else self.transcriptions_scroll
+        if not self.is_focused and not current_scroll.locked:
             self.hide()
 
-    def _on_scroll(self):
-        sb = self.scroll_area.verticalScrollBar()
-        was_locked = self.scroll_locked
-        self.scroll_locked = sb.value() < sb.maximum() - 10
-        if self.scroll_locked != was_locked:
-            self._update_scroll_border()
+    def _switch_tab(self, index):
+        self.tab_stack.setCurrentIndex(index)
+        self.output_tab.setChecked(index == 0)
+        self.transcriptions_tab.setChecked(index == 1)
 
-    def _update_scroll_border(self):
-        border = "2px solid rgba(255,150,50,0.6)" if self.scroll_locked else "none"
-        self.scroll_area.setStyleSheet(
-            f"QScrollArea {{ background: rgba(20,20,30,200); border: {border}; border-radius: 8px; }}"
-            "QScrollBar:vertical { width: 6px; background: transparent; }"
-            "QScrollBar::handle:vertical { background: rgba(255,255,255,0.2); border-radius: 3px; }"
-            "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }"
-        )
+    def _add_transcription(self, text):
+        self.transcriptions.append(text)
+        self._update_transcriptions_display()
+        self._switch_tab(1)
+        self.transcriptions_scroll.scroll_to_bottom()
 
-    def _append_log(self, text):
-        self.log_output.setText((self.log_output.text() + "\n" + text).strip())
-        if not self.scroll_locked:
-            QTimer.singleShot(
-                10,
-                lambda: self.scroll_area.verticalScrollBar().setValue(
-                    self.scroll_area.verticalScrollBar().maximum()
-                ),
-            )
+    def _update_transcriptions_display(self):
+        html = "<hr>".join(f"<p>{t}</p>" for t in self.transcriptions)
+        self.transcriptions_label.setText(html)
 
     def _copy_to_clipboard(self, text):
         rp.string_to_clipboard(text)
@@ -292,11 +386,10 @@ class VoiceThingWindow(QWidget):
             self.waveform.set_samples(audio)
             secs = len(audio) / SAMPLE_RATE
             self.timer_label.setText(f"{int(secs // 60)}:{secs % 60:04.1f}")
-        if self.tee and len(self.tee.text) > self.tee_last_len:
-            for line in self.tee.text[self.tee_last_len :].split("\n"):
-                if line.strip():
-                    self._append_log(line)
-            self.tee_last_len = len(self.tee.text)
+
+    def _update_log(self):
+        self.log_output.setText(rp.strip_ansi_escapes(self.tee.text))
+        self.output_scroll.scroll_to_bottom()
 
     def _edge_at(self, pos):
         m, r = 8, self.rect()
@@ -367,7 +460,7 @@ class VoiceThingWindow(QWidget):
         p.drawRoundedRect(self.rect().adjusted(2, 2, -2, -2), 12, 12)
         if self.is_focused:
             p.setBrush(Qt.BrushStyle.NoBrush)
-            p.setPen(QPen(QColor(100, 200, 255, 100), 3))
+            p.setPen(QPen(ACCENT, 3))
             p.drawRoundedRect(self.rect().adjusted(2, 2, -2, -2), 12, 12)
 
     def _cleanup(self):
@@ -375,9 +468,6 @@ class VoiceThingWindow(QWidget):
             self.stream.stop()
             self.stream.close()
             self.stream = None
-        if self.tee:
-            self.tee.__exit__(None, None, None)
-            self.tee = None
         self.update_timer.stop()
 
     def _update_buttons(self):
@@ -428,9 +518,6 @@ class VoiceThingWindow(QWidget):
 
     def start_recording(self):
         self.audio_chunks = []
-        self.tee = rp.TeeStdout()
-        self.tee.__enter__()
-        self.tee_last_len = 0
         self.show()
         if self.first_show:
             screen = QApplication.primaryScreen().geometry()
@@ -459,6 +546,7 @@ class VoiceThingWindow(QWidget):
             self.stream.close()
             self.stream = None
         self._set_state("transcribing", "Transcribing...")
+        self._switch_tab(0)  # Switch to Output tab during transcription
         rp.play_chords([12, 7], [4, 0], gap=0, t=0.08, sampler=quiet_sampler, block=False)
         audio = np.concatenate(self.audio_chunks) if self.audio_chunks else np.array([])
         self.waveform.set_samples(audio)
@@ -488,6 +576,7 @@ class VoiceThingWindow(QWidget):
                 f.write(result.text)
             self.last_transcription = result.text
             self.paste_signal.emit(result.text)
+            self.add_transcription_signal.emit(result.text)
 
         rp.play_chords([0], [4], [7], [12], gap=0, t=0.08, sampler=quiet_sampler, block=False)
         self._finish()
