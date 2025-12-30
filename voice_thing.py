@@ -92,10 +92,14 @@ BTN_CSS = (
     "QPushButton:checked { background: rgba(100,200,255,0.3); }"
 )
 
+CHIME_SHIFT = -12  # Shift all chimes (semitones, -12 = 1 octave lower)
+
 def quiet_sampler(f=None, T=None, samplerate=None):
     return rp.triangle_tone_sampler(f, T, samplerate) * 0.25
 
-chime = partial(rp.play_chords, gap=0, sampler=quiet_sampler, block=True)
+def chime(*chords, **kwargs):
+    shifted = [[n + CHIME_SHIFT for n in chord] for chord in chords]
+    rp.play_chords(*shifted, gap=0, sampler=quiet_sampler, block=True, **kwargs)
 
 
 def draw_mic(p, s):
@@ -745,14 +749,14 @@ class VoiceThingWindow(QWidget):
             if self._prev_app:
                 self._prev_app.activateWithOptions_(NSApplicationActivateIgnoringOtherApps)
                 self._prev_app = None
-            self._chime([7, 0], t=0.06)  # Descending: unfocus
+            self._chime([14, 7], t=0.06)  # G key: descending unfocus
         else:
             # Remember current app before stealing focus
             self._prev_app = NSWorkspace.sharedWorkspace().frontmostApplication()
             self.show()
             self.raise_()
             self.activateWindow()
-            self._chime([0, 7], t=0.06)  # Ascending: focus
+            self._chime([7, 14], t=0.06)  # G key: ascending focus
 
     def _switch_tab(self, index):
         self.tab_stack.setCurrentIndex(index)
@@ -774,7 +778,7 @@ class VoiceThingWindow(QWidget):
 
     def _copy_to_clipboard(self, text):
         rp.string_to_clipboard(text)
-        self._chime([12, 16], t=0.05)
+        self._chime([16, 20], t=0.05)  # E key: copy
 
     def _do_paste(self, text):
         self._copy_to_clipboard(text)
@@ -861,27 +865,29 @@ class VoiceThingWindow(QWidget):
 
     def keyPressEvent(self, e):
         key = e.key()
+        mods = e.modifiers()
+        no_mods = mods == Qt.KeyboardModifier.NoModifier
         if key == Qt.Key.Key_Escape:
             self.hide()
-        elif key == Qt.Key.Key_X and self.state == "recording":
+        elif no_mods and key == Qt.Key.Key_X and self.state == "recording":
             self.cancel_recording()
-        elif key == Qt.Key.Key_Space:
+        elif no_mods and key == Qt.Key.Key_Space:
             self.toggle_recording()
-        elif key == Qt.Key.Key_C:
+        elif no_mods and key == Qt.Key.Key_C:
             self.copy_transcription()
-        elif key == Qt.Key.Key_F:
+        elif no_mods and key == Qt.Key.Key_F:
             self.open_folder()
-        elif key == Qt.Key.Key_L:
+        elif no_mods and key == Qt.Key.Key_L:
             self.load_audio_file()
-        elif key == Qt.Key.Key_S:
+        elif no_mods and key == Qt.Key.Key_S:
             self.toggle_sound()
-        elif key == Qt.Key.Key_V:
+        elif no_mods and key == Qt.Key.Key_V:
             self.toggle_auto_hide()
-        elif key == Qt.Key.Key_O:
+        elif no_mods and key == Qt.Key.Key_O:
             self._switch_tab(0)
-        elif key == Qt.Key.Key_T:
+        elif no_mods and key == Qt.Key.Key_T:
             self._switch_tab(1)
-        elif key == Qt.Key.Key_M:
+        elif no_mods and key == Qt.Key.Key_M:
             self.show_model_dialog()
         elif key == Qt.Key.Key_Question:
             self.show_help()
@@ -924,7 +930,7 @@ class VoiceThingWindow(QWidget):
         elif self.state == "recording":
             self.stop_recording()
         else:
-            self._chime([3, 0], t=0.08)
+            self._chime([0, -3], t=0.08)  # Minor: busy/error
 
     def cancel_recording(self):
         if self.state != "recording":
@@ -933,7 +939,7 @@ class VoiceThingWindow(QWidget):
         self._set_state("idle", "Cancelled")
         self.audio_chunks = []
         self.waveform.set_samples(np.array([]))
-        self._chime([7, 3], t=0.06)
+        self._chime([3, -1], t=0.06)  # Minor: cancel
         self.hide_signal.emit()
 
     def _set_state(self, state, status):
@@ -987,7 +993,7 @@ class VoiceThingWindow(QWidget):
         self._switch_tab(0)
 
         def load():
-            self._chime([0], [7], t=0.1)  # Rising "marco"
+            self._chime([5], [12], t=0.1)  # F key: model loading start
             # Start waiting chime timer
             waiting_timer = [True]
             def chime_loop():
@@ -1004,7 +1010,7 @@ class VoiceThingWindow(QWidget):
             print(f"Model {new_model} loaded")
 
             waiting_timer[0] = False
-            self._chime([0, 4, 7], [12], t=0.15)
+            self._chime([5, 9, 12], [17], t=0.15)  # F key: model loaded
             self._set_state("idle", "Double-tap ⌥ to record")
 
         threading.Thread(target=load, daemon=True).start()
@@ -1036,7 +1042,7 @@ class VoiceThingWindow(QWidget):
         self.show()
         self._set_state("transcribing", "Transcribing...")
         self._switch_tab(0)
-        self._chime([0, 4], [7, 12], t=0.08)
+        self._chime([2, 6], [9, 14], t=0.08)  # D key
         self.last_audio_path = path
         threading.Thread(target=self._transcribe_file_thread, args=(path,), daemon=True).start()
 
@@ -1051,7 +1057,7 @@ class VoiceThingWindow(QWidget):
             self.last_transcription = text
             self.paste_signal.emit(text)
             self.add_transcription_signal.emit(text)
-        self._chime([0], [4], [7], [12], t=0.08)
+        self._chime([2], [6], [9], [14], t=0.08)  # D key: transcription done
         self._finish()
 
     def start_recording(self):
@@ -1063,7 +1069,7 @@ class VoiceThingWindow(QWidget):
             self.first_show = False
         self.timer_label.setText("0:00.0")
         self._set_state("recording", "Recording")
-        self._chime([0, 4], [7, 12], t=0.08)
+        self._chime([2, 6], [9, 14], t=0.08)  # D key
 
         def callback(indata, frames, time_info, status):
             self.audio_chunks.append(indata[:, 0].copy())
@@ -1085,7 +1091,7 @@ class VoiceThingWindow(QWidget):
             self.stream = None
         self._set_state("transcribing", "Transcribing...")
         self._switch_tab(0)  # Switch to Output tab during transcription
-        self._chime([12, 7], [4, 0], t=0.08)
+        self._chime([14, 9], [6, 2], t=0.08)  # D key: stop recording
         audio = np.concatenate(self.audio_chunks) if self.audio_chunks else np.array([])
         self.waveform.set_samples(audio)
         threading.Thread(target=self._transcribe, args=(audio,), daemon=True).start()
@@ -1117,7 +1123,7 @@ class VoiceThingWindow(QWidget):
             self.paste_signal.emit(text)
             self.add_transcription_signal.emit(text)
 
-        self._chime([0], [4], [7], [12], t=0.08)
+        self._chime([2], [6], [9], [14], t=0.08)  # D key: transcription done
         self._finish()
 
     def _finish(self):
