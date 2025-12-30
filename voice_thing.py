@@ -1125,6 +1125,9 @@ def main():
 
     def on_press(key):
         pressed.add(key)
+        # Reset tap count if non-modifier key pressed
+        if key not in ALT_KEYS and key not in CMD_KEYS:
+            tap_state[1] = 0
 
     def on_release(key):
         pressed.discard(key)
