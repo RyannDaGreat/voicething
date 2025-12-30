@@ -95,32 +95,32 @@ def make_icon(draw_fn, size=64):
 class WaveformWidget(QWidget):
     def __init__(self):
         super().__init__()
-        self.samples = np.array([])
+        self.peaks = np.array([])
         self.display_max = 0.01
         self.setMinimumHeight(100)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
     def set_samples(self, samples):
         max_samples = 10 * SAMPLE_RATE
-        self.samples = samples[-max_samples:] if len(samples) > max_samples else samples
-        if len(self.samples) > 0:
-            self.display_max += (
-                max(np.max(np.abs(self.samples)), 0.01) - self.display_max
-            ) * 0.04
+        samples = samples[-max_samples:] if len(samples) > max_samples else samples
+        if len(samples) > 0:
+            chunk = max(1, len(samples) // 400)
+            n = len(samples) // chunk
+            self.peaks = np.max(np.abs(samples[:n * chunk].reshape(n, chunk)), axis=1)
+            self.display_max += (max(np.max(self.peaks), 0.01) - self.display_max) * 0.04
         self.update()
 
     def paintEvent(self, event):
-        if len(self.samples) == 0:
+        if len(self.peaks) == 0:
             return
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         w, h = self.width(), self.height()
         cy = h // 2
-        chunk = max(1, len(self.samples) // w)
-        n = len(self.samples) // chunk
-        peaks = np.max(np.abs(self.samples[: n * chunk].reshape(n, chunk)), axis=1)
         p.setPen(QPen(QColor(ACCENT.red(), ACCENT.green(), ACCENT.blue(), 180), 2))
-        for x, peak in enumerate(peaks):
+        scale = w / len(self.peaks)
+        for i, peak in enumerate(self.peaks):
+            x = int(i * scale)
             bar = int((peak / self.display_max) * h // 2 * 0.9)
             p.drawLine(x, cy - bar, x, cy + bar)
 
@@ -288,16 +288,9 @@ class VoiceThingWindow(QWidget):
 
     def _update_display(self):
         if self.audio_chunks:
-            # Only concat new chunks since last update
-            if not hasattr(self, '_audio_buffer') or self._audio_buffer is None:
-                self._audio_buffer = np.concatenate(self.audio_chunks)
-                self._last_chunk_count = len(self.audio_chunks)
-            elif len(self.audio_chunks) > self._last_chunk_count:
-                new_chunks = self.audio_chunks[self._last_chunk_count:]
-                self._audio_buffer = np.concatenate([self._audio_buffer] + new_chunks)
-                self._last_chunk_count = len(self.audio_chunks)
-            self.waveform.set_samples(self._audio_buffer)
-            secs = len(self._audio_buffer) / SAMPLE_RATE
+            audio = np.concatenate(self.audio_chunks)
+            self.waveform.set_samples(audio)
+            secs = len(audio) / SAMPLE_RATE
             self.timer_label.setText(f"{int(secs // 60)}:{secs % 60:04.1f}")
         if self.tee and len(self.tee.text) > self.tee_last_len:
             for line in self.tee.text[self.tee_last_len :].split("\n"):
@@ -435,8 +428,6 @@ class VoiceThingWindow(QWidget):
 
     def start_recording(self):
         self.audio_chunks = []
-        self._audio_buffer = None
-        self._last_chunk_count = 0
         self.tee = rp.TeeStdout()
         self.tee.__enter__()
         self.tee_last_len = 0
