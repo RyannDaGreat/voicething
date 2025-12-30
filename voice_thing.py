@@ -205,7 +205,7 @@ class VoiceThingWindow(QWidget):
 
         self.log_output = QLabel("")
         self.log_output.setStyleSheet(
-            "color: #b0b0b0; font-size: 11px; font-family: 'SF Mono', Menlo, monospace; "
+            "color: #b0b0b0; font-size: 11px; font-family: Menlo, monospace;"
             "background: transparent; padding: 8px;"
         )
         self.log_output.setWordWrap(True)
