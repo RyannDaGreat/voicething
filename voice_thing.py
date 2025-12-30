@@ -31,7 +31,7 @@ from PyQt6.QtWidgets import (
 
 APP_NAME = "VoiceThing"
 SAMPLE_RATE = 16000
-BLOCKSIZE = 1024
+BLOCKSIZE = 256
 WHISPER_MODEL = "large-v3"
 ICON_COLOR = QColor(255, 255, 255, 180)
 ACCENT = QColor(100, 200, 255)
