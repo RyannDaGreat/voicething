@@ -31,6 +31,7 @@ from PyQt6.QtWidgets import (
 
 APP_NAME = "VoiceThing"
 SAMPLE_RATE = 16000
+BLOCKSIZE = 1024
 WHISPER_MODEL = "large-v3"
 ICON_COLOR = QColor(255, 255, 255, 180)
 ACCENT = QColor(100, 200, 255)
@@ -161,12 +162,12 @@ class VoiceThingWindow(QWidget):
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.status_label)
 
-        self.timer_label = QLabel("")
+        self.timer_label = QLabel("0:00.0")
+        self.seg_font = seg_font
         self.timer_label.setStyleSheet(
-            f"color: rgba(100,200,255,0.9); font-size: 28px; font-family: '{seg_font}';"
+            f"color: rgba(100,200,255,0.3); font-size: 28px; font-family: '{seg_font}';"
         )
         self.timer_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.timer_label.hide()
         layout.addWidget(self.timer_label)
 
         btn_row = QHBoxLayout()
@@ -286,7 +287,7 @@ class VoiceThingWindow(QWidget):
             audio = np.concatenate(self.audio_chunks)
             self.waveform.set_samples(audio)
             secs = len(audio) / SAMPLE_RATE
-            self.timer_label.setText(f"{int(secs // 60)}:{secs % 60:05.2f}")
+            self.timer_label.setText(f"{int(secs // 60)}:{secs % 60:04.1f}")
         if self.tee and len(self.tee.text) > self.tee_last_len:
             for line in self.tee.text[self.tee_last_len :].split("\n"):
                 if line.strip():
@@ -404,7 +405,10 @@ class VoiceThingWindow(QWidget):
     def _set_state(self, state, status):
         self.state = state
         self.status_label.setText(status)
-        self.timer_label.setVisible(state == "recording")
+        opacity = 0.9 if state == "recording" else 0.3
+        self.timer_label.setStyleSheet(
+            f"color: rgba(100,200,255,{opacity}); font-size: 28px; font-family: '{self.seg_font}';"
+        )
         self._update_buttons()
 
     def copy_transcription(self):
@@ -428,7 +432,7 @@ class VoiceThingWindow(QWidget):
             screen = QApplication.primaryScreen().geometry()
             self.move((screen.width() - self.width()) // 2, screen.height() // 4)
             self.first_show = False
-        self.timer_label.setText("0:00.00")
+        self.timer_label.setText("0:00.0")
         self._set_state("recording", "Recording")
         rp.play_chords([0, 4], [7, 12], gap=0, t=0.08)
 
@@ -436,7 +440,11 @@ class VoiceThingWindow(QWidget):
             self.audio_chunks.append(indata[:, 0].copy())
 
         self.stream = sd.InputStream(
-            samplerate=SAMPLE_RATE, channels=1, dtype=np.float32, callback=callback
+            samplerate=SAMPLE_RATE,
+            channels=1,
+            dtype=np.float32,
+            callback=callback,
+            blocksize=BLOCKSIZE,
         )
         self.stream.start()
         self.update_timer.start(8)
