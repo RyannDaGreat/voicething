@@ -88,6 +88,7 @@ BTN_CSS = (
     "QPushButton { color: rgba(255,255,255,0.6); background: rgba(255,255,255,0.1); "
     "border: 1px solid rgb(100,100,100); border-radius: 3px; padding: 1px 2px; font-size: 10px; }"
     "QPushButton:hover { background: rgba(255,255,255,0.2); }"
+    "QPushButton:pressed { background: rgba(100,200,255,0.4); }"
     "QPushButton:disabled { color: rgba(255,255,255,0.2); background: transparent; }"
     "QPushButton:checked { background: rgba(100,200,255,0.3); }"
 )
@@ -679,6 +680,15 @@ class VoiceThingWindow(QWidget):
         self.help_btn.setEnabled(True)
         layout.addLayout(btn_row)
 
+        # Key-to-button mapping for visual feedback
+        self.key_buttons = {
+            Qt.Key.Key_Space: self.record_btn, Qt.Key.Key_X: self.cancel_btn,
+            Qt.Key.Key_C: self.copy_btn, Qt.Key.Key_L: self.load_btn,
+            Qt.Key.Key_F: self.folder_btn, Qt.Key.Key_S: self.sound_btn,
+            Qt.Key.Key_V: self.eye_btn, Qt.Key.Key_M: self.model_btn,
+            Qt.Key.Key_Question: self.help_btn,
+        }
+
         self.waveform = WaveformWidget()
         layout.addWidget(self.waveform)
 
@@ -701,6 +711,10 @@ class VoiceThingWindow(QWidget):
         self.transcriptions_tab.clicked.connect(lambda: self._switch_tab(1))
         tab_row.addWidget(self.transcriptions_tab, 1)
         layout.addLayout(tab_row)
+
+        # Add tab buttons to key mapping
+        self.key_buttons[Qt.Key.Key_O] = self.output_tab
+        self.key_buttons[Qt.Key.Key_T] = self.transcriptions_tab
 
         # Stacked widget for tab content
         self.tab_stack = QStackedWidget()
@@ -764,6 +778,13 @@ class VoiceThingWindow(QWidget):
         self.tab_stack.setCurrentIndex(index)
         self.output_tab.setChecked(index == 0)
         self.transcriptions_tab.setChecked(index == 1)
+
+    def _flash_button(self, key):
+        """Visually flash the button for a key press."""
+        btn = self.key_buttons.get(key)
+        if btn and btn.isEnabled():
+            btn.setDown(True)
+            QTimer.singleShot(100, lambda: btn.setDown(False))
 
     def _add_transcription(self, text):
         self.transcriptions.append(text)
@@ -869,6 +890,7 @@ class VoiceThingWindow(QWidget):
         key = e.key()
         mods = e.modifiers()
         no_mods = mods == Qt.KeyboardModifier.NoModifier
+        self._flash_button(key)
         if key == Qt.Key.Key_Escape:
             self.hide()
         elif no_mods and key == Qt.Key.Key_X and self.state == "recording":
