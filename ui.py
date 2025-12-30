@@ -12,7 +12,6 @@ from pynput.keyboard import Controller as KeyboardController, Key
 from PyQt6.QtWidgets import QApplication, QWidget, QVBoxLayout, QLabel, QScrollArea, QSystemTrayIcon, QMenu
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QPainter, QColor, QPen, QIcon, QPixmap, QFontDatabase
-import os
 
 SAMPLE_RATE = 16000
 
@@ -94,19 +93,10 @@ class WaveformWidget(QWidget):
         n = len(self.samples) // chunk_size
         peaks = np.max(np.abs(self.samples[:n * chunk_size].reshape(n, chunk_size)), axis=1)
 
-        # Gradient density waveform - draw multiple layers with decreasing alpha
-        max_bar = int(h // 2 * 0.9)
+        painter.setPen(QPen(QColor(100, 200, 255, 180), 2))
         for x, peak in enumerate(peaks):
-            bar = int((peak / self.display_max) * max_bar)
-            if bar < 1:
-                continue
-            # Draw gradient: bright at center, fading outward
-            for y_offset in range(bar):
-                # Alpha decreases as we move away from center
-                alpha = int(200 * (1 - y_offset / max_bar))
-                painter.setPen(QPen(QColor(100, 200, 255, alpha), 1))
-                painter.drawPoint(x, center_y - y_offset)
-                painter.drawPoint(x, center_y + y_offset)
+            bar = int((peak / self.display_max) * h // 2 * 0.9)
+            painter.drawLine(x, center_y - bar, x, center_y + bar)
 
 
 class VoiceThingWindow(QWidget):
@@ -129,14 +119,18 @@ class VoiceThingWindow(QWidget):
         self.tee_last_len = 0
         self.scroll_locked = False
         self.is_focused = False
+        self.first_show = True
 
         self.setWindowTitle("Voice Thing")
         self.setWindowFlags(Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.FramelessWindowHint)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
         # Load 7-segment font
-        font_path = os.path.join(os.path.dirname(__file__), "fonts", "DSEG7Classic-Regular.ttf")
-        QFontDatabase.addApplicationFont(font_path)
+        font_path = rp.download_font('R:DSEG7')
+        font_id = QFontDatabase.addApplicationFont(font_path)
+        if font_id < 0:
+            raise RuntimeError(f"Failed to load font: {font_path}")
+        font_family = QFontDatabase.applicationFontFamilies(font_id)[0]
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(10, 10, 10, 10)
@@ -151,7 +145,7 @@ class VoiceThingWindow(QWidget):
 
         self.timer_label = QLabel("")
         self.timer_label.setStyleSheet(
-            "color: rgba(100,200,255,0.9); font-size: 28px; font-family: 'DSEG7 Classic'; "
+            f"color: rgba(100,200,255,0.9); font-size: 28px; font-family: '{font_family}'; "
             "background: transparent; padding: 0px;"
         )
         self.timer_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -311,8 +305,10 @@ class VoiceThingWindow(QWidget):
         self.tee.__enter__()
         self.tee_last_len = 0
         self.show()
-        screen = QApplication.primaryScreen().geometry()
-        self.move((screen.width() - self.width()) // 2, screen.height() // 4)
+        if self.first_show:
+            screen = QApplication.primaryScreen().geometry()
+            self.move((screen.width() - self.width()) // 2, screen.height() // 4)
+            self.first_show = False
         self.status_label.setText("Recording")
         self.timer_label.setText("0:00.00")
         self.timer_label.show()
