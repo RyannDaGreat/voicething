@@ -336,12 +336,14 @@ class VoiceThingWindow(QWidget):
         self._log(f"Recorded {len(audio) / SAMPLE_RATE:.2f}s")
 
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
-            scipy.io.wavfile.write(f.name, SAMPLE_RATE, audio)
+            # Convert float32 to int16 for pywhispercpp compatibility
+            audio_int16 = (audio * 32767).astype(np.int16)
+            scipy.io.wavfile.write(f.name, SAMPLE_RATE, audio_int16)
             self._log(f"Saved: {f.name}")
 
             self._log("Transcribing...")
-            result = self.get_whisper_model().transcribe(f.name, verbose=True)
-            text = result["text"].strip()
+            segments = self.get_whisper_model().transcribe(f.name, print_progress=True, print_realtime=True)
+            text = " ".join(seg.text.strip() for seg in segments if seg.text.strip())
 
         self._log(f"Result: {text!r}")
 

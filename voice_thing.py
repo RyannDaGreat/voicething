@@ -4,7 +4,6 @@
 import signal
 import time
 
-import whisper
 import rp
 from pynput import keyboard
 from PyQt6.QtWidgets import QApplication
@@ -12,13 +11,16 @@ from PyQt6.QtWidgets import QApplication
 from ui import VoiceThingWindow
 
 WHISPER_MODEL = None
+WHISPER_MODEL_NAME = "large-v3"
 
 
 def get_whisper_model():
+    """Get cached pywhispercpp model with Metal GPU support."""
     global WHISPER_MODEL
     if WHISPER_MODEL is None:
-        print("Loading Whisper model (large-v3)...")
-        WHISPER_MODEL = whisper.load_model("large-v3")
+        from pywhispercpp.model import Model
+        print(f"Loading Whisper model ({WHISPER_MODEL_NAME}) with Metal GPU...")
+        WHISPER_MODEL = Model(WHISPER_MODEL_NAME, n_threads=4)
         print("Whisper model loaded.")
     return WHISPER_MODEL
 
