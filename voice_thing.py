@@ -385,19 +385,22 @@ class ModelDialog(QDialog):
 
 
 class TextPanel(QTextEdit):
-    """Read-only text panel with auto-scroll to bottom.
+    """Read-only text panel."""
 
-    Auto-scrolls when at bottom. If user scrolls up, auto-scroll pauses
-    and an orange border appears. Scrolling back to bottom resumes auto-scroll.
-    """
+    STYLE = (
+        "QTextEdit { color: #b0b0b0; font-size: 11px; font-family: Menlo, monospace;"
+        "background: rgba(20,20,30,200); border: none; border-radius: 8px; padding: 8px; }"
+        "QScrollBar:vertical { width: 6px; background: transparent; }"
+        "QScrollBar::handle:vertical { background: rgba(255,255,255,0.2); border-radius: 3px; }"
+        "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }"
+    )
 
     def __init__(self, selectable=True, parent=None):
         super().__init__(parent)
         self.setReadOnly(True)
-        self._auto_scroll = True  # True = follow new content
         if not selectable:
             self.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
-        self._apply_style()
+        self.setStyleSheet(self.STYLE)
 
     def keyPressEvent(self, e):
         # Pass shortcut keys to parent window
@@ -406,44 +409,6 @@ class TextPanel(QTextEdit):
             self.window().keyPressEvent(e)
         else:
             super().keyPressEvent(e)
-
-    def wheelEvent(self, e):
-        """Detect user scrolling up to pause auto-scroll."""
-        super().wheelEvent(e)
-        sb = self.verticalScrollBar()
-        at_bottom = sb.value() >= sb.maximum() - 10
-        if self._auto_scroll and not at_bottom:
-            self._auto_scroll = False
-            self._apply_style()
-        elif not self._auto_scroll and at_bottom:
-            self._auto_scroll = True
-            self._apply_style()
-
-    def _apply_style(self):
-        # Orange border when paused (not auto-scrolling), inset to avoid size change
-        if self._auto_scroll:
-            border, padding = "none", "8px"
-        else:
-            border, padding = "2px solid rgb(255,150,50)", "6px"
-        self.setStyleSheet(
-            f"QTextEdit {{ color: #b0b0b0; font-size: 11px; font-family: Menlo, monospace;"
-            f"background: rgba(20,20,30,200); border: {border}; border-radius: 8px; padding: {padding}; }}"
-            "QScrollBar:vertical { width: 6px; background: transparent; }"
-            "QScrollBar::handle:vertical { background: rgba(255,255,255,0.2); border-radius: 3px; }"
-            "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }"
-        )
-
-    def append_text(self, text):
-        """Append text, auto-scrolling only if enabled."""
-        sb = self.verticalScrollBar()
-        self.setPlainText(text)
-        if self._auto_scroll:
-            sb.setValue(sb.maximum())
-
-    @property
-    def locked(self):
-        """For backwards compat - locked means NOT auto-scrolling."""
-        return not self._auto_scroll
 
 
 class WaveformWidget(QWidget):
@@ -649,9 +614,6 @@ class VoiceThingWindow(QWidget):
     def _maybe_hide(self):
         if not self.auto_hide:
             return
-        current_panel = self.output_panel if self.tab_stack.currentIndex() == 0 else self.transcriptions_panel
-        if current_panel.locked:
-            return
         if not self.is_focused:
             self.hide()
 
@@ -695,7 +657,7 @@ class VoiceThingWindow(QWidget):
     def _update_log(self):
         new_text = rp.strip_ansi_escapes(self.tee.text)
         if new_text != self.output_panel.toPlainText():
-            self.output_panel.append_text(new_text)
+            self.output_panel.setPlainText(new_text)
 
     def _edge_at(self, pos):
         m, r = 8, self.rect()
