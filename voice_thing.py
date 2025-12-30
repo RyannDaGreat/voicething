@@ -164,7 +164,7 @@ class VoiceThingWindow(QWidget):
         btn_row.setSpacing(8)
         btn_css = (
             "QPushButton { color: rgba(255,255,255,0.6); background: rgba(255,255,255,0.1); "
-            "border: 1px solid rgba(255,255,255,0.2); border-radius: 4px; padding: 4px 8px; font-size: 11px; }"
+            "border: 1px solid rgba(255,255,255,0.2); border-radius: 3px; padding: 2px 4px; font-size: 10px; }"
             "QPushButton:hover { background: rgba(255,255,255,0.2); }"
             "QPushButton:disabled { color: rgba(255,255,255,0.2); background: transparent; }"
         )
@@ -172,7 +172,7 @@ class VoiceThingWindow(QWidget):
         def make_btn(text, icon_fn, handler):
             btn = QPushButton(text)
             btn.setIcon(make_icon(icon_fn))
-            btn.setIconSize(QSize(24, 24))
+            btn.setIconSize(QSize(16, 16))
             btn.setStyleSheet(btn_css)
             btn.clicked.connect(handler)
             btn.setEnabled(False)
