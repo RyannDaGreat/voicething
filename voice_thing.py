@@ -59,6 +59,7 @@ from PyQt6.QtWidgets import (
     QStackedWidget,
     QTextEdit,
     QDialog,
+    QFileDialog,
 )
 
 APP_NAME = "VoiceThing"
@@ -114,6 +115,19 @@ def draw_folder(p, s):
     m = s // 6
     p.drawRoundedRect(m, s // 3, s - 2 * m, s // 2, 2, 2)
     p.drawRoundedRect(m, s // 4, s // 3, s // 6, 2, 2)
+
+
+def draw_load(p, s):
+    """Draw a CD icon."""
+    cx, cy = s // 2, s // 2
+    r = s // 3
+    # Outer circle
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    p.setPen(QPen(ICON_COLOR, 2))
+    p.drawEllipse(cx - r, cy - r, r * 2, r * 2)
+    # Inner hole
+    hole_r = s // 10
+    p.drawEllipse(cx - hole_r, cy - hole_r, hole_r * 2, hole_r * 2)
 
 
 def draw_copy(p, s):
@@ -277,7 +291,7 @@ class TextPanel(QTextEdit):
 
     def keyPressEvent(self, e):
         # Pass shortcut keys to parent window
-        if e.key() in (Qt.Key.Key_Space, Qt.Key.Key_Escape, Qt.Key.Key_C, Qt.Key.Key_F,
+        if e.key() in (Qt.Key.Key_Space, Qt.Key.Key_Escape, Qt.Key.Key_C, Qt.Key.Key_L, Qt.Key.Key_F,
                        Qt.Key.Key_S, Qt.Key.Key_V, Qt.Key.Key_O, Qt.Key.Key_T, Qt.Key.Key_M):
             self.window().keyPressEvent(e)
         else:
@@ -375,6 +389,7 @@ class VoiceThingWindow(QWidget):
             Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.FramelessWindowHint
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setAcceptDrops(True)
 
         font_id = QFontDatabase.addApplicationFont(rp.download_font("R:DSEG7"))
         if font_id < 0:
@@ -435,6 +450,9 @@ class VoiceThingWindow(QWidget):
         self.cancel_btn.setToolTip("Cancel recording")
         self.copy_btn = make_btn("C", draw_copy, self.copy_transcription)
         self.copy_btn.setToolTip("Copy last transcription to clipboard")
+        self.load_btn = make_btn("L", draw_load, self.load_audio_file)
+        self.load_btn.setToolTip("Load audio file to transcribe")
+        self.load_btn.setEnabled(True)
         self.folder_btn = make_btn("F", draw_folder, self.open_folder)
         self.folder_btn.setToolTip("Open recordings folder")
         self.sound_btn = make_btn("S", draw_sound, self.toggle_sound)
@@ -604,6 +622,19 @@ class VoiceThingWindow(QWidget):
             self.is_focused = self.isActiveWindow()
         super().changeEvent(e)
 
+    def dragEnterEvent(self, e):
+        if e.mimeData().hasUrls() and self.state == "idle":
+            e.acceptProposedAction()
+
+    def dropEvent(self, e):
+        if self.state != "idle":
+            return
+        for url in e.mimeData().urls():
+            path = url.toLocalFile()
+            if path.lower().endswith(('.wav', '.mp3', '.m4a', '.flac', '.ogg', '.aac')):
+                self._transcribe_file(path)
+                break
+
     def keyPressEvent(self, e):
         key = e.key()
         if key == Qt.Key.Key_Escape and self.state == "recording":
@@ -614,6 +645,8 @@ class VoiceThingWindow(QWidget):
             self.copy_transcription()
         elif key == Qt.Key.Key_F:
             self.open_folder()
+        elif key == Qt.Key.Key_L:
+            self.load_audio_file()
         elif key == Qt.Key.Key_S:
             self.toggle_sound()
         elif key == Qt.Key.Key_V:
@@ -653,6 +686,7 @@ class VoiceThingWindow(QWidget):
         self.cancel_btn.setEnabled(recording)
         self.copy_btn.setEnabled(self.last_transcription is not None)
         self.folder_btn.setEnabled(True)
+        self.load_btn.setEnabled(idle)
         self.model_btn.setEnabled(idle)
 
     def toggle_recording(self):
@@ -748,6 +782,39 @@ class VoiceThingWindow(QWidget):
             subprocess.run(["open", "-R", self.last_audio_path])
         else:
             subprocess.run(["open", RECORDINGS_DIR])
+
+    def load_audio_file(self):
+        """Open file dialog to load an audio file for transcription."""
+        if self.state != "idle":
+            return
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Load Audio File", "",
+            "Audio Files (*.wav *.mp3 *.m4a *.flac *.ogg *.aac);;All Files (*)"
+        )
+        if path:
+            self._transcribe_file(path)
+
+    def _transcribe_file(self, path):
+        """Transcribe an audio file."""
+        self.show()
+        self._set_state("transcribing", "Transcribing...")
+        self._switch_tab(0)
+        self._chime([0, 4], [7, 12], t=0.08)
+        self.last_audio_path = path
+        threading.Thread(target=self._transcribe_file_thread, args=(path,), daemon=True).start()
+
+    def _transcribe_file_thread(self, path):
+        print(f"Transcribing file: {path}")
+        result = rp.transcribe_audio_file_via_whisper(
+            path, model=self.current_model, show_progress=True
+        )
+        print(f"Result: {result.text!r}")
+        if result.text:
+            self.last_transcription = result.text
+            self.paste_signal.emit(result.text)
+            self.add_transcription_signal.emit(result.text)
+        self._chime([0], [4], [7], [12], t=0.08)
+        self._finish()
 
     def start_recording(self):
         self.audio_chunks = []
