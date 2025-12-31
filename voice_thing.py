@@ -719,10 +719,8 @@ class WaveformWidget(QWidget):
         for x in range(w - 1, -1, -1):
             polygon.append(QPointF(x, cy + y_scaled[x]))
 
-        # Draw filled waveform with rounded joins
-        pen = QPen(ACCENT, 1)
-        pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
-        p.setPen(pen)
+        # Draw filled waveform
+        p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(ACCENT)
         p.drawPolygon(polygon)
 
