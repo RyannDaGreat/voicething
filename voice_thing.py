@@ -61,6 +61,8 @@ from PyQt6.QtWidgets import (
     QTextEdit,
     QDialog,
     QFileDialog,
+    QScrollArea,
+    QFrame,
 )
 
 APP_NAME = "VoiceThing"
@@ -677,6 +679,99 @@ class TextPanel(QTextEdit):
         menu.exec(e.globalPos())
 
 
+class TranscriptionItem(QFrame):
+    """Single transcription entry with copy button."""
+    copy_clicked = pyqtSignal(str)
+
+    def __init__(self, raw_text, processed_text, parent=None):
+        super().__init__(parent)
+        self.raw_text = raw_text
+        self.processed_text = processed_text
+        self.final_text = processed_text if processed_text else raw_text
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(8, 4, 8, 4)
+        layout.setSpacing(8)
+
+        # Text container
+        text_layout = QVBoxLayout()
+        text_layout.setContentsMargins(0, 0, 0, 0)
+        text_layout.setSpacing(2)
+
+        if processed_text:
+            raw_label = QLabel(raw_text)
+            raw_label.setStyleSheet("color: rgba(130,150,170,0.7); font-size: 11px;")
+            raw_label.setWordWrap(True)
+            text_layout.addWidget(raw_label)
+            proc_label = QLabel(processed_text)
+            proc_label.setStyleSheet("color: #b0b0b0; font-size: 11px; font-weight: bold;")
+            proc_label.setWordWrap(True)
+            text_layout.addWidget(proc_label)
+        else:
+            label = QLabel(raw_text)
+            label.setStyleSheet("color: #b0b0b0; font-size: 11px;")
+            label.setWordWrap(True)
+            text_layout.addWidget(label)
+
+        layout.addLayout(text_layout, 1)
+
+        # Copy button
+        copy_btn = QPushButton()
+        copy_btn.setFixedSize(24, 24)
+        copy_btn.setIcon(make_icon(draw_copy, 24))
+        copy_btn.setIconSize(QSize(16, 16))
+        copy_btn.setStyleSheet(
+            "QPushButton { background: transparent; border: none; }"
+            "QPushButton:hover { background: rgba(255,255,255,0.1); border-radius: 4px; }"
+        )
+        copy_btn.setToolTip("Copy to clipboard")
+        copy_btn.clicked.connect(lambda: self.copy_clicked.emit(self.final_text))
+        layout.addWidget(copy_btn, 0, Qt.AlignmentFlag.AlignTop)
+
+        self.setStyleSheet("TranscriptionItem { border-bottom: 1px solid rgba(255,255,255,0.1); }")
+
+
+class TranscriptionList(QScrollArea):
+    """Scrollable list of transcription items with copy buttons."""
+    copy_requested = pyqtSignal(str)
+
+    STYLE = (
+        "QScrollArea { background: rgba(20,20,30,200); border: none; border-radius: 8px; }"
+        "QScrollBar:vertical { width: 6px; background: transparent; }"
+        "QScrollBar::handle:vertical { background: rgba(255,255,255,0.2); border-radius: 3px; }"
+        "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }"
+    )
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setStyleSheet(self.STYLE)
+        self.setWidgetResizable(True)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+
+        self.container = QWidget()
+        self.container.setStyleSheet("background: transparent;")
+        self.layout = QVBoxLayout(self.container)
+        self.layout.setContentsMargins(0, 0, 0, 0)
+        self.layout.setSpacing(0)
+        self.layout.addStretch()
+        self.setWidget(self.container)
+
+    def add_transcription(self, raw_text, processed_text):
+        item = TranscriptionItem(raw_text, processed_text)
+        item.copy_clicked.connect(self.copy_requested.emit)
+        # Insert before the stretch
+        self.layout.insertWidget(self.layout.count() - 1, item)
+        # Scroll to bottom
+        QTimer.singleShot(10, lambda: self.verticalScrollBar().setValue(
+            self.verticalScrollBar().maximum()))
+
+    def clear(self):
+        while self.layout.count() > 1:  # Keep the stretch
+            item = self.layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+
 class WaveformWidget(QWidget):
     def __init__(self):
         super().__init__()
@@ -913,7 +1008,8 @@ class VoiceThingWindow(QWidget):
         # Stacked widget for tab content
         self.tab_stack = QStackedWidget()
         self.output_panel = TextPanel(selectable=True)
-        self.transcriptions_panel = TextPanel(selectable=True)
+        self.transcriptions_panel = TranscriptionList()
+        self.transcriptions_panel.copy_requested.connect(self._copy_to_clipboard)
         self.tab_stack.addWidget(self.output_panel)
         self.tab_stack.addWidget(self.transcriptions_panel)
 
@@ -1008,33 +1104,9 @@ class VoiceThingWindow(QWidget):
             QTimer.singleShot(100, lambda: btn.setDown(False))
 
     def _add_transcription(self, raw_text, processed_text):
-        # Store as tuple: (raw, processed) - processed is "" if not LLM processed
         self.transcriptions.append((raw_text, processed_text))
-        self._update_transcriptions_display()
+        self.transcriptions_panel.add_transcription(raw_text, processed_text)
         self._switch_tab(1)
-
-    def _update_transcriptions_display(self):
-        groups = []  # Each group is one transcription (may have raw + processed)
-        paragraphs = []  # For right-click copy - one entry per <p>
-        for raw, processed in self.transcriptions:
-            if processed:
-                # Show raw (dimmed) and processed (bold) as separate paragraphs in same group
-                group = (
-                    f"<p style='margin:4px 0; color: rgba(130,150,170,0.7);'>{raw}</p>"
-                    f"<p style='margin:4px 0;'><b>{processed}</b></p>"
-                )
-                groups.append(group)
-                paragraphs.append(raw)
-                paragraphs.append(processed)
-            else:
-                groups.append(f"<p style='margin:4px 0;'>{raw}</p>")
-                paragraphs.append(raw)
-        html = "<hr>".join(groups)
-        self.transcriptions_panel.setHtml(html)
-        self.transcriptions_panel.paragraphs = paragraphs
-        # Scroll to bottom for new transcription
-        sb = self.transcriptions_panel.verticalScrollBar()
-        sb.setValue(sb.maximum())
 
     def _copy_to_clipboard(self, text):
         rp.string_to_clipboard(text)
