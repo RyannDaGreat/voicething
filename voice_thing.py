@@ -693,33 +693,43 @@ class WaveformWidget(QWidget):
         self.update()
 
     def paintEvent(self, event):
-        if len(self.samples) == 0:
+        n = len(self.samples)
+        if n < 1:
             return
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         w, h = self.width(), self.height()
         cy = h / 2
+
+        # Compute peaks - ensure minimum window to avoid single-sample noise
         abs_samples = np.abs(self.samples)
-        n_samples = len(abs_samples)
-        # One peak per pixel
-        points = []
+        min_window = 64  # Minimum samples per peak to smooth out zero crossings
+        n_bins = max(1, n // min_window)
+        n_bins = min(n_bins, w)  # But no more bins than pixels
+        chunk = n // n_bins
+        trim = chunk * n_bins
+        peaks = abs_samples[:trim].reshape(n_bins, chunk).max(axis=1)
+
+        # Interpolate peaks to fill entire widget width
+        x_src = np.linspace(0, w, len(peaks))
+        x_dst = np.arange(w)
+        y_vals = np.interp(x_dst, x_src, peaks)
+
+        # Scale to widget height
+        y_scaled = (y_vals / self.display_max) * h / 2 * 0.9
+
+        # Build polygon: left-to-right along top edge, right-to-left along bottom edge
+        polygon = QPolygonF()
         for x in range(w):
-            s0 = int(x * n_samples / w)
-            s1 = int((x + 1) * n_samples / w)
-            s1 = max(s1, s0 + 1)
-            peak = np.max(abs_samples[s0:s1])
-            bar = (peak / self.display_max) * h / 2 * 0.9
-            points.append(QPointF(x, cy - bar))
+            polygon.append(QPointF(x, cy - y_scaled[x]))
         for x in range(w - 1, -1, -1):
-            s0 = int(x * n_samples / w)
-            s1 = int((x + 1) * n_samples / w)
-            s1 = max(s1, s0 + 1)
-            peak = np.max(abs_samples[s0:s1])
-            bar = (peak / self.display_max) * h / 2 * 0.9
-            points.append(QPointF(x, cy + bar))
+            polygon.append(QPointF(x, cy + y_scaled[x]))
+
+        # Draw filled waveform
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(ACCENT)
-        p.drawPolygon(QPolygonF(points))
+        p.drawPolygon(polygon)
+
         # Center line
         p.setPen(QPen(QColor(255, 255, 255, 40), 1))
         p.drawLine(0, int(cy), w, int(cy))
