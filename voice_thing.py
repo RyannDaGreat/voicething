@@ -1456,7 +1456,20 @@ class VoiceThingWindow(QWidget):
 
 def main():
     signal.signal(signal.SIGINT, signal.SIG_DFL)
-    app = QApplication([])
+
+    # Set process name for macOS Activity Monitor and menu bar
+    try:
+        from Foundation import NSBundle
+        bundle = NSBundle.mainBundle()
+        info = bundle.localizedInfoDictionary() or bundle.infoDictionary()
+        if info:
+            info['CFBundleName'] = APP_NAME
+    except Exception:
+        pass
+
+    app = QApplication([APP_NAME])
+    app.setApplicationName(APP_NAME)
+    app.setApplicationDisplayName(APP_NAME)
     app.setStyleSheet("QToolTip { background: #333; color: white; border: 1px solid #555; border-radius: 4px; }")
     window = VoiceThingWindow()
 
