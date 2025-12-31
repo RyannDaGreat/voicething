@@ -164,7 +164,7 @@ def quiet_sampler(f=None, T=None, samplerate=None):
 
 def chime(*chords, **kwargs):
     shifted = [[n + CHIME_SHIFT for n in chord] for chord in chords]
-    rp.play_chords(*shifted, gap=0, sampler=quiet_sampler, block=False, **kwargs)
+    rp.play_chords(*shifted, gap=0, sampler=quiet_sampler, block=True, **kwargs)
 
 
 def draw_mic(p, s):
@@ -682,39 +682,47 @@ class TextPanel(QTextEdit):
 class TranscriptionRow(QFrame):
     """Clickable row for a single transcription text."""
     clicked = pyqtSignal(str)
+    deramble_clicked = pyqtSignal(str)
 
-    COPY_BTN_STYLE = (
+    BTN_STYLE = (
         "QPushButton { background: transparent; border: none; border-radius: 4px; }"
         "QPushButton:hover { background: rgba(255,255,255,0.15); }"
-        "QPushButton:pressed { background: rgba(255,255,255,0.3); }"
+        "QPushButton:pressed { background: rgba(100,200,255,0.4); }"
     )
 
-    def __init__(self, text, dimmed=False, bold=False, parent=None):
+    def __init__(self, text, dimmed=False, show_deramble=False, parent=None):
         super().__init__(parent)
         self.text = text
         self.setCursor(Qt.CursorShape.PointingHandCursor)
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(8, 4, 8, 4)
-        layout.setSpacing(8)
+        layout.setSpacing(4)
 
         label = QLabel(text)
-        style = "font-size: 11px;"
         if dimmed:
-            style += " color: rgba(130,150,170,0.7);"
+            style = "font-size: 11px; color: rgba(130,150,170,0.7);"
         else:
-            style += " color: #b0b0b0;"
-        if bold:
-            style += " font-weight: bold;"
+            style = "font-size: 11px; color: #b0b0b0;"
         label.setStyleSheet(style)
         label.setWordWrap(True)
         layout.addWidget(label, 1)
+
+        if show_deramble:
+            deramble_btn = QPushButton()
+            deramble_btn.setFixedSize(24, 24)
+            deramble_btn.setIcon(make_icon(draw_pen, 24))
+            deramble_btn.setIconSize(QSize(16, 16))
+            deramble_btn.setStyleSheet(self.BTN_STYLE)
+            deramble_btn.setToolTip("De-ramble with LLM")
+            deramble_btn.clicked.connect(lambda: self.deramble_clicked.emit(self.text))
+            layout.addWidget(deramble_btn, 0, Qt.AlignmentFlag.AlignTop)
 
         copy_btn = QPushButton()
         copy_btn.setFixedSize(24, 24)
         copy_btn.setIcon(make_icon(draw_copy, 24))
         copy_btn.setIconSize(QSize(16, 16))
-        copy_btn.setStyleSheet(self.COPY_BTN_STYLE)
+        copy_btn.setStyleSheet(self.BTN_STYLE)
         copy_btn.setToolTip("Copy to clipboard")
         copy_btn.clicked.connect(lambda: self.clicked.emit(self.text))
         layout.addWidget(copy_btn, 0, Qt.AlignmentFlag.AlignTop)
@@ -735,32 +743,43 @@ class TranscriptionRow(QFrame):
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
-            self.clicked.emit(self.text)
+            self._press_global_pos = event.globalPosition().toPoint()
         super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton and hasattr(self, '_press_global_pos'):
+            delta = event.globalPosition().toPoint() - self._press_global_pos
+            if abs(delta.x()) + abs(delta.y()) < 5:
+                self.clicked.emit(self.text)
+            del self._press_global_pos
+        super().mouseReleaseEvent(event)
 
 
 class TranscriptionItem(QFrame):
     """Single transcription entry with one or two rows."""
     copy_clicked = pyqtSignal(str)
+    deramble_clicked = pyqtSignal(int, str)  # (index, raw_text)
 
-    def __init__(self, raw_text, processed_text, parent=None):
+    def __init__(self, raw_text, processed_text, index, parent=None):
         super().__init__(parent)
+        self.index = index
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
         if processed_text:
-            raw_row = TranscriptionRow(raw_text, dimmed=True, bold=False)
+            raw_row = TranscriptionRow(raw_text, dimmed=True)
             raw_row.clicked.connect(self.copy_clicked.emit)
             layout.addWidget(raw_row)
 
-            proc_row = TranscriptionRow(processed_text, dimmed=False, bold=True)
+            proc_row = TranscriptionRow(processed_text, dimmed=False)
             proc_row.clicked.connect(self.copy_clicked.emit)
             layout.addWidget(proc_row)
         else:
-            row = TranscriptionRow(raw_text, dimmed=False, bold=False)
+            row = TranscriptionRow(raw_text, dimmed=False, show_deramble=True)
             row.clicked.connect(self.copy_clicked.emit)
+            row.deramble_clicked.connect(lambda t: self.deramble_clicked.emit(self.index, t))
             layout.addWidget(row)
 
         self.setStyleSheet("TranscriptionItem { border-bottom: 1px solid rgba(255,255,255,0.1); }")
@@ -769,6 +788,7 @@ class TranscriptionItem(QFrame):
 class TranscriptionList(QScrollArea):
     """Scrollable list of transcription items with copy buttons."""
     copy_requested = pyqtSignal(str)
+    deramble_requested = pyqtSignal(int, str)  # (index, raw_text)
 
     STYLE = (
         "QScrollArea { background: rgba(20,20,30,200); border: none; border-radius: 8px; }"
@@ -782,6 +802,7 @@ class TranscriptionList(QScrollArea):
         self.setStyleSheet(self.STYLE)
         self.setWidgetResizable(True)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.item_count = 0
 
         self.container = QWidget()
         self.container.setStyleSheet("background: transparent;")
@@ -792,19 +813,35 @@ class TranscriptionList(QScrollArea):
         self.setWidget(self.container)
 
     def add_transcription(self, raw_text, processed_text):
-        item = TranscriptionItem(raw_text, processed_text)
+        index = self.item_count
+        self.item_count += 1
+        item = TranscriptionItem(raw_text, processed_text, index)
         item.copy_clicked.connect(self.copy_requested.emit)
+        item.deramble_clicked.connect(self.deramble_requested.emit)
         # Insert before the stretch
         self.layout.insertWidget(self.layout.count() - 1, item)
         # Scroll to bottom
         QTimer.singleShot(10, lambda: self.verticalScrollBar().setValue(
             self.verticalScrollBar().maximum()))
 
+    def update_transcription(self, index, raw_text, processed_text):
+        """Replace transcription at index with updated raw+processed version."""
+        # Find the widget at this index (widgets are in order, stretch is last)
+        if index < self.layout.count() - 1:
+            old_item = self.layout.itemAt(index).widget()
+            if old_item:
+                old_item.deleteLater()
+            new_item = TranscriptionItem(raw_text, processed_text, index)
+            new_item.copy_clicked.connect(self.copy_requested.emit)
+            new_item.deramble_clicked.connect(self.deramble_requested.emit)
+            self.layout.insertWidget(index, new_item)
+
     def clear(self):
         while self.layout.count() > 1:  # Keep the stretch
             item = self.layout.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
+        self.item_count = 0
 
 
 class WaveformWidget(QWidget):
@@ -1045,6 +1082,7 @@ class VoiceThingWindow(QWidget):
         self.output_panel = TextPanel(selectable=True)
         self.transcriptions_panel = TranscriptionList()
         self.transcriptions_panel.copy_requested.connect(self._copy_to_clipboard)
+        self.transcriptions_panel.deramble_requested.connect(self._deramble_transcription)
         self.tab_stack.addWidget(self.output_panel)
         self.tab_stack.addWidget(self.transcriptions_panel)
 
@@ -1146,6 +1184,21 @@ class VoiceThingWindow(QWidget):
     def _copy_to_clipboard(self, text):
         rp.string_to_clipboard(text)
         self._chime([16, 20], t=0.05)  # E key: copy
+
+    def _deramble_transcription(self, index, raw_text):
+        """Process a transcription with LLM and update it in place."""
+        def do_deramble():
+            self._chime([7, 11], t=0.06)  # LLM processing start
+            print(f"De-rambling transcription {index}...")
+            prompt = LLM_PREFIX + raw_text
+            processed = rp.run_llm_api(prompt, model=LLM_MODEL)
+            print(f"LLM result: {processed!r}")
+            # Update the transcriptions list
+            self.transcriptions[index] = (raw_text, processed)
+            # Update the UI on main thread
+            self.transcriptions_panel.update_transcription(index, raw_text, processed)
+            self._chime([11, 14, 18], t=0.08)  # LLM processing done
+        threading.Thread(target=do_deramble, daemon=True).start()
 
     def _do_paste(self, text):
         self._copy_to_clipboard(text)
