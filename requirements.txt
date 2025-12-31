@@ -5,3 +5,11 @@ pynput>=1
 PyQt6>=6
 pyobjc-framework-Cocoa>=12
 rp
+pywhispercpp
+easydict
+requests
+cachetools
+lazy_loader
+tqdm
+platformdirs
+ollama
