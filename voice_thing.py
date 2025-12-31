@@ -697,7 +697,6 @@ class WaveformWidget(QWidget):
         if n < 1:
             return
         p = QPainter(self)
-        p.setRenderHint(QPainter.RenderHint.Antialiasing)
         w, h = self.width(), self.height()
         cy = h / 2
 
