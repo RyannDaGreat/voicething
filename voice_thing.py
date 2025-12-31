@@ -162,7 +162,7 @@ def quiet_sampler(f=None, T=None, samplerate=None):
 
 def chime(*chords, **kwargs):
     shifted = [[n + CHIME_SHIFT for n in chord] for chord in chords]
-    rp.play_chords(*shifted, gap=0, sampler=quiet_sampler, block=True, **kwargs)
+    rp.play_chords(*shifted, gap=0, sampler=quiet_sampler, block=False, **kwargs)
 
 
 def draw_mic(p, s):
