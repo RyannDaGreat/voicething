@@ -679,70 +679,91 @@ class TextPanel(QTextEdit):
         menu.exec(e.globalPos())
 
 
-class TranscriptionItem(QFrame):
-    """Single transcription entry with copy button(s)."""
-    copy_clicked = pyqtSignal(str)
+class TranscriptionRow(QFrame):
+    """Clickable row for a single transcription text."""
+    clicked = pyqtSignal(str)
 
     COPY_BTN_STYLE = (
         "QPushButton { background: transparent; border: none; border-radius: 4px; }"
-        "QPushButton:hover { background: rgba(255,255,255,0.1); }"
-        "QPushButton:pressed { background: rgba(255,255,255,0.25); }"
+        "QPushButton:hover { background: rgba(255,255,255,0.15); }"
+        "QPushButton:pressed { background: rgba(255,255,255,0.3); }"
     )
+
+    def __init__(self, text, dimmed=False, bold=False, parent=None):
+        super().__init__(parent)
+        self.text = text
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(8, 4, 8, 4)
+        layout.setSpacing(8)
+
+        label = QLabel(text)
+        style = "font-size: 11px;"
+        if dimmed:
+            style += " color: rgba(130,150,170,0.7);"
+        else:
+            style += " color: #b0b0b0;"
+        if bold:
+            style += " font-weight: bold;"
+        label.setStyleSheet(style)
+        label.setWordWrap(True)
+        layout.addWidget(label, 1)
+
+        copy_btn = QPushButton()
+        copy_btn.setFixedSize(24, 24)
+        copy_btn.setIcon(make_icon(draw_copy, 24))
+        copy_btn.setIconSize(QSize(16, 16))
+        copy_btn.setStyleSheet(self.COPY_BTN_STYLE)
+        copy_btn.setToolTip("Copy to clipboard")
+        copy_btn.clicked.connect(lambda: self.clicked.emit(self.text))
+        layout.addWidget(copy_btn, 0, Qt.AlignmentFlag.AlignTop)
+
+        self._update_style(False)
+
+    def _update_style(self, hovered):
+        bg = "rgba(255,255,255,0.05)" if hovered else "transparent"
+        self.setStyleSheet(f"TranscriptionRow {{ background: {bg}; border-radius: 4px; }}")
+
+    def enterEvent(self, event):
+        self._update_style(True)
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self._update_style(False)
+        super().leaveEvent(event)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.clicked.emit(self.text)
+        super().mousePressEvent(event)
+
+
+class TranscriptionItem(QFrame):
+    """Single transcription entry with one or two rows."""
+    copy_clicked = pyqtSignal(str)
 
     def __init__(self, raw_text, processed_text, parent=None):
         super().__init__(parent)
-        self.raw_text = raw_text
-        self.processed_text = processed_text
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(8, 4, 8, 4)
-        layout.setSpacing(4)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
 
         if processed_text:
-            # Raw text row (dimmed)
-            raw_row = QHBoxLayout()
-            raw_row.setSpacing(8)
-            raw_label = QLabel(raw_text)
-            raw_label.setStyleSheet("color: rgba(130,150,170,0.7); font-size: 11px;")
-            raw_label.setWordWrap(True)
-            raw_row.addWidget(raw_label, 1)
-            raw_copy = self._make_copy_btn(raw_text)
-            raw_row.addWidget(raw_copy, 0, Qt.AlignmentFlag.AlignTop)
-            layout.addLayout(raw_row)
+            raw_row = TranscriptionRow(raw_text, dimmed=True, bold=False)
+            raw_row.clicked.connect(self.copy_clicked.emit)
+            layout.addWidget(raw_row)
 
-            # Processed text row (bold)
-            proc_row = QHBoxLayout()
-            proc_row.setSpacing(8)
-            proc_label = QLabel(processed_text)
-            proc_label.setStyleSheet("color: #b0b0b0; font-size: 11px; font-weight: bold;")
-            proc_label.setWordWrap(True)
-            proc_row.addWidget(proc_label, 1)
-            proc_copy = self._make_copy_btn(processed_text)
-            proc_row.addWidget(proc_copy, 0, Qt.AlignmentFlag.AlignTop)
-            layout.addLayout(proc_row)
+            proc_row = TranscriptionRow(processed_text, dimmed=False, bold=True)
+            proc_row.clicked.connect(self.copy_clicked.emit)
+            layout.addWidget(proc_row)
         else:
-            # Single row
-            row = QHBoxLayout()
-            row.setSpacing(8)
-            label = QLabel(raw_text)
-            label.setStyleSheet("color: #b0b0b0; font-size: 11px;")
-            label.setWordWrap(True)
-            row.addWidget(label, 1)
-            copy_btn = self._make_copy_btn(raw_text)
-            row.addWidget(copy_btn, 0, Qt.AlignmentFlag.AlignTop)
-            layout.addLayout(row)
+            row = TranscriptionRow(raw_text, dimmed=False, bold=False)
+            row.clicked.connect(self.copy_clicked.emit)
+            layout.addWidget(row)
 
         self.setStyleSheet("TranscriptionItem { border-bottom: 1px solid rgba(255,255,255,0.1); }")
-
-    def _make_copy_btn(self, text):
-        btn = QPushButton()
-        btn.setFixedSize(24, 24)
-        btn.setIcon(make_icon(draw_copy, 24))
-        btn.setIconSize(QSize(16, 16))
-        btn.setStyleSheet(self.COPY_BTN_STYLE)
-        btn.setToolTip("Copy to clipboard")
-        btn.clicked.connect(lambda: self.copy_clicked.emit(text))
-        return btn
 
 
 class TranscriptionList(QScrollArea):
