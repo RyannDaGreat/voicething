@@ -701,19 +701,14 @@ class WaveformWidget(QWidget):
         w, h = self.width(), self.height()
         cy = h / 2
 
-        # Compute peaks - ensure minimum window to avoid single-sample noise
+        # Compute peaks - fixed number of bins based on width
         abs_samples = np.abs(self.samples)
-        min_window = 64  # Minimum samples per peak to smooth out zero crossings
-        n_bins = max(1, n // min_window)
-        n_bins = min(n_bins, w)  # But no more bins than pixels
-        chunk = n // n_bins
-        trim = chunk * n_bins
-        peaks = abs_samples[:trim].reshape(n_bins, chunk).max(axis=1)
-
-        # Interpolate peaks to fill entire widget width
-        x_src = np.linspace(0, w, len(peaks))
-        x_dst = np.arange(w)
-        y_vals = np.interp(x_dst, x_src, peaks)
+        n_bins = w
+        # Use linspace indices to get exactly n_bins peaks covering all samples
+        indices = np.linspace(0, n, n_bins + 1).astype(int)
+        peaks = np.array([abs_samples[indices[i]:indices[i+1]].max() if indices[i] < indices[i+1] else 0
+                         for i in range(n_bins)])
+        y_vals = peaks
 
         # Scale to widget height
         y_scaled = (y_vals / self.display_max) * h / 2 * 0.9
@@ -725,8 +720,10 @@ class WaveformWidget(QWidget):
         for x in range(w - 1, -1, -1):
             polygon.append(QPointF(x, cy + y_scaled[x]))
 
-        # Draw filled waveform
-        p.setPen(Qt.PenStyle.NoPen)
+        # Draw filled waveform with rounded joins
+        pen = QPen(ACCENT, 1)
+        pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        p.setPen(pen)
         p.setBrush(ACCENT)
         p.drawPolygon(polygon)
 
