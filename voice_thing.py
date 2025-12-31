@@ -158,6 +158,12 @@ BTN_CSS = (
 )
 BTN_CHECKED_CSS = BTN_CSS + f"QPushButton {{ background: {ACCENT_BG}; }}"
 
+MENU_CSS = (
+    "QMenu { background: rgb(40,40,50); color: white; border: 1px solid rgb(80,80,80); border-radius: 6px; padding: 4px; }"
+    "QMenu::item { padding: 4px 12px; border-radius: 4px; }"
+    "QMenu::item:selected { background: rgb(60,60,70); }"
+)
+
 CHIME_SHIFT = -12  # Shift all chimes (semitones, -12 = 1 octave lower)
 
 def quiet_sampler(f=None, T=None, samplerate=None):
@@ -470,9 +476,10 @@ class HelpDialog(DraggableDialog):
             "100% keyboard-driven - no mouse needed! (hover buttons to see shortcuts)\n\n"
             "Small mode (E or green button): Compact view with just status and timer - "
             "great for keeping visible while using keyboard shortcuts.\n\n"
-            "Anti-Ramble mode (R): Post-process transcriptions with an LLM to clean up rambling."
+            "Anti-Ramble mode (R): Post-process transcriptions with an LLM to clean up rambling. "
             f"Say \"{APP_NAME}, ...\" in your recording to give formatting instructions.\n\n"
-            "Pro tip: Right-click in Transcriptions tab to copy a single transcription.\n\n"
+            "Transcriptions tab: Click a row or its copy button to copy. "
+            "Use the pen button to de-ramble a transcription after the fact.\n\n"
             "By Clara Burgert"
         )
         about_text.setStyleSheet("color: rgba(255,255,255,0.7); font-size: 10px;")
@@ -637,7 +644,7 @@ class TextPanel(QTextEdit):
 
     STYLE = (
         "QTextEdit { color: #b0b0b0; font-size: 11px; font-family: Menlo, monospace;"
-        "background: rgba(20,20,30,200); border: none; border-radius: 8px; padding: 8px; }"
+        "background: rgba(20,20,30,200); border: 1px solid rgb(30,30,40); border-radius: 8px; padding: 8px; }"
         "QScrollBar:vertical { width: 6px; background: transparent; }"
         "QScrollBar::handle:vertical { background: rgba(255,255,255,0.2); border-radius: 3px; }"
         "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }"
@@ -677,11 +684,7 @@ class TextPanel(QTextEdit):
                 self.setTextCursor(cursor)
 
         menu = QMenu(self)
-        menu.setStyleSheet(
-            "QMenu { background: rgb(40,40,50); color: white; border: 1px solid rgb(80,80,80); border-radius: 6px; padding: 4px; }"
-            "QMenu::item { padding: 4px 12px; border-radius: 4px; }"
-            "QMenu::item:selected { background: rgb(60,60,70); }"
-        )
+        menu.setStyleSheet(MENU_CSS)
         if self.textCursor().hasSelection():
             copy_action = menu.addAction("Copy")
             copy_action.triggered.connect(self.copy)
@@ -747,13 +750,17 @@ class TranscriptionRow(QFrame):
         self.other_text = other_text  # The other version for diff comparison
         self.is_raw = is_raw  # True if this is the raw (pre-LLM) text
         self.dimmed = dimmed
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(8, 4, 8, 4)
         layout.setSpacing(4)
 
         self.label = QLabel()
+        self.label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.label.setCursor(Qt.CursorShape.IBeamCursor)
+        self.label.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.label.customContextMenuRequested.connect(self._show_context_menu)
+        self.label.installEventFilter(self)
         if dimmed:
             self.base_style = "font-size: 11px; color: rgba(130,150,170,0.7);"
         else:
@@ -827,6 +834,18 @@ class TranscriptionRow(QFrame):
         self.hover_changed.emit(False)
         super().leaveEvent(event)
 
+    def eventFilter(self, obj, event):
+        if obj == self.label:
+            if event.type() == event.Type.MouseButtonPress and event.button() == Qt.MouseButton.LeftButton:
+                self._press_global_pos = event.globalPosition().toPoint()
+            elif event.type() == event.Type.MouseButtonRelease and event.button() == Qt.MouseButton.LeftButton:
+                if hasattr(self, '_press_global_pos'):
+                    delta = event.globalPosition().toPoint() - self._press_global_pos
+                    if abs(delta.x()) + abs(delta.y()) < 5 and not self.label.hasSelectedText():
+                        self.clicked.emit(self.text)
+                    del self._press_global_pos
+        return super().eventFilter(obj, event)
+
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
             self._press_global_pos = event.globalPosition().toPoint()
@@ -839,6 +858,16 @@ class TranscriptionRow(QFrame):
                 self.clicked.emit(self.text)
             del self._press_global_pos
         super().mouseReleaseEvent(event)
+
+    def _show_context_menu(self, pos):
+        menu = QMenu(self)
+        menu.setStyleSheet(MENU_CSS)
+        if self.label.hasSelectedText():
+            copy_action = menu.addAction("Copy")
+            copy_action.triggered.connect(lambda: QApplication.clipboard().setText(self.label.selectedText()))
+        select_all = menu.addAction("Select All")
+        select_all.triggered.connect(lambda: self.label.setSelection(0, len(self.label.text())))
+        menu.exec(self.label.mapToGlobal(pos))
 
 
 class TranscriptionItem(QFrame):
@@ -895,7 +924,7 @@ class TranscriptionList(QScrollArea):
     deramble_requested = pyqtSignal(int, str)  # (index, raw_text)
 
     STYLE = (
-        "QScrollArea { background: rgba(20,20,30,200); border: none; border-radius: 8px; }"
+        "QScrollArea { background: rgba(20,20,30,200); border: 1px solid rgb(30,30,40); border-radius: 8px; }"
         "QScrollBar:vertical { width: 6px; background: transparent; }"
         "QScrollBar::handle:vertical { background: rgba(255,255,255,0.2); border-radius: 3px; }"
         "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }"
@@ -916,15 +945,6 @@ class TranscriptionList(QScrollArea):
         self.layout.addStretch()
         self.setWidget(self.container)
 
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        self._update_mask()
-
-    def _update_mask(self):
-        from PyQt6.QtGui import QPainterPath, QRegion
-        path = QPainterPath()
-        path.addRoundedRect(0, 0, self.width(), self.height(), 8, 8)
-        self.setMask(QRegion(path.toFillPolygon().toPolygon()))
 
     def add_transcription(self, raw_text, processed_text):
         index = self.item_count
@@ -949,6 +969,9 @@ class TranscriptionList(QScrollArea):
             new_item.copy_clicked.connect(self.copy_requested.emit)
             new_item.deramble_clicked.connect(self.deramble_requested.emit)
             self.layout.insertWidget(index, new_item)
+            # Scroll to bottom after update
+            QTimer.singleShot(10, lambda: self.verticalScrollBar().setValue(
+                self.verticalScrollBar().maximum()))
 
     def clear(self):
         while self.layout.count() > 1:  # Keep the stretch
