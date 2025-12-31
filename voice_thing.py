@@ -804,9 +804,18 @@ class TranscriptionRow(QFrame):
         """Called by parent to set diff highlight state (not row background)."""
         self._set_diff_highlight(highlight)
 
+    def set_border_radius(self, top=0, bottom=0):
+        """Set rounded corners for top-left/top-right and bottom-left/bottom-right."""
+        self._border_radius_top = top
+        self._border_radius_bottom = bottom
+        self._update_bg(False)
+
     def _update_bg(self, hovered):
         bg = "rgba(255,255,255,0.05)" if hovered else "transparent"
-        self.setStyleSheet(f"TranscriptionRow {{ background: {bg}; }}")
+        top = getattr(self, '_border_radius_top', 0)
+        bottom = getattr(self, '_border_radius_bottom', 0)
+        radius = f"border-top-left-radius: {top}px; border-top-right-radius: {top}px; border-bottom-left-radius: {bottom}px; border-bottom-right-radius: {bottom}px;"
+        self.setStyleSheet(f"TranscriptionRow {{ background: {bg}; {radius} }}")
 
     def enterEvent(self, event):
         self._update_bg(True)
@@ -841,6 +850,7 @@ class TranscriptionItem(QFrame):
         super().__init__(parent)
         self.index = index
         self.diff_rows = []  # Rows that need coordinated highlighting
+        self.first_row = None
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -858,13 +868,20 @@ class TranscriptionItem(QFrame):
             layout.addWidget(proc_row)
 
             self.diff_rows = [raw_row, proc_row]
+            self.first_row = raw_row
         else:
             row = TranscriptionRow(raw_text, dimmed=False, show_deramble=True)
             row.clicked.connect(self.copy_clicked.emit)
             row.deramble_clicked.connect(lambda t: self.deramble_clicked.emit(self.index, t))
             layout.addWidget(row)
+            self.first_row = row
 
         self.setStyleSheet("TranscriptionItem { border-bottom: 1px solid rgba(255,255,255,0.1); }")
+
+    def set_top_radius(self, radius):
+        """Set rounded top corners on the first row."""
+        if self.first_row:
+            self.first_row.set_border_radius(top=radius)
 
     def _on_hover_changed(self, hovered):
         """When any row is hovered, highlight diff text in all rows (not row background)."""
@@ -898,6 +915,16 @@ class TranscriptionList(QScrollArea):
         self.layout.setSpacing(0)
         self.layout.addStretch()
         self.setWidget(self.container)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._update_mask()
+
+    def _update_mask(self):
+        from PyQt6.QtGui import QPainterPath, QRegion
+        path = QPainterPath()
+        path.addRoundedRect(0, 0, self.width(), self.height(), 8, 8)
+        self.setMask(QRegion(path.toFillPolygon().toPolygon()))
 
     def add_transcription(self, raw_text, processed_text):
         index = self.item_count
