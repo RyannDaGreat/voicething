@@ -1,6 +1,7 @@
 #!/usr/bin/env /opt/homebrew/opt/python@3.10/bin/python3.10
 """Voice transcription: double-tap Option to record, transcribe, and type."""
 
+import difflib
 import io
 import os
 import signal
@@ -340,7 +341,17 @@ def draw_warning(p, s):
     p.drawEllipse(s // 2 - dot_r // 2, s * 13 // 20, dot_r, dot_r)
 
 
-def make_icon(draw_fn, size=64):
+def make_icon(draw_fn):
+    px = QPixmap(64, 64)
+    px.fill(Qt.GlobalColor.transparent)
+    p = QPainter(px)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    draw_fn(p, 64)
+    p.end()
+    return QIcon(px)
+
+
+def make_icon_sized(draw_fn, size):
     px = QPixmap(size, size)
     px.fill(Qt.GlobalColor.transparent)
     p = QPainter(px)
@@ -679,10 +690,50 @@ class TextPanel(QTextEdit):
         menu.exec(e.globalPos())
 
 
+def word_diff_html(old_text, new_text, is_old, highlight=False):
+    """Generate HTML with word-level diff highlighting.
+
+    is_old=True: show deletions (red) for words removed from old_text
+    is_old=False: show additions (green) for words added in new_text
+    highlight=False: return plain text wrapped in spans (no color)
+    highlight=True: return text with diff colors
+    """
+    old_words = old_text.split()
+    new_words = new_text.split()
+
+    matcher = difflib.SequenceMatcher(None, old_words, new_words)
+    result = []
+
+    # Use invisible highlight when not hovering to maintain consistent sizing
+    red_bg = "background:rgba(180,60,60,0.4);" if highlight else ""
+    green_bg = "background:rgba(60,140,60,0.4);" if highlight else ""
+
+    for op, i1, i2, j1, j2 in matcher.get_opcodes():
+        if op == 'equal':
+            words = old_words[i1:i2] if is_old else new_words[j1:j2]
+            result.extend(words)
+        elif op == 'replace':
+            if is_old:
+                for w in old_words[i1:i2]:
+                    result.append(f'<span style="{red_bg}">{w}</span>')
+            else:
+                for w in new_words[j1:j2]:
+                    result.append(f'<span style="{green_bg}">{w}</span>')
+        elif op == 'delete' and is_old:
+            for w in old_words[i1:i2]:
+                result.append(f'<span style="{red_bg}">{w}</span>')
+        elif op == 'insert' and not is_old:
+            for w in new_words[j1:j2]:
+                result.append(f'<span style="{green_bg}">{w}</span>')
+
+    return ' '.join(result)
+
+
 class TranscriptionRow(QFrame):
     """Clickable row for a single transcription text."""
     clicked = pyqtSignal(str)
     deramble_clicked = pyqtSignal(str)
+    hover_changed = pyqtSignal(bool)  # Emitted when hover state changes
 
     BTN_STYLE = (
         "QPushButton { background: transparent; border: none; border-radius: 4px; }"
@@ -690,28 +741,35 @@ class TranscriptionRow(QFrame):
         "QPushButton:pressed { background: rgba(100,200,255,0.4); }"
     )
 
-    def __init__(self, text, dimmed=False, show_deramble=False, parent=None):
+    def __init__(self, text, dimmed=False, show_deramble=False, other_text=None, is_raw=False, parent=None):
         super().__init__(parent)
         self.text = text
+        self.other_text = other_text  # The other version for diff comparison
+        self.is_raw = is_raw  # True if this is the raw (pre-LLM) text
+        self.dimmed = dimmed
         self.setCursor(Qt.CursorShape.PointingHandCursor)
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(8, 4, 8, 4)
         layout.setSpacing(4)
 
-        label = QLabel(text)
+        self.label = QLabel()
         if dimmed:
-            style = "font-size: 11px; color: rgba(130,150,170,0.7);"
+            self.base_style = "font-size: 11px; color: rgba(130,150,170,0.7);"
         else:
-            style = "font-size: 11px; color: #b0b0b0;"
-        label.setStyleSheet(style)
-        label.setWordWrap(True)
-        layout.addWidget(label, 1)
+            self.base_style = "font-size: 11px; color: #b0b0b0;"
+        self.label.setStyleSheet(self.base_style)
+        self.label.setWordWrap(True)
+        self.label.setTextFormat(Qt.TextFormat.RichText)
+        layout.addWidget(self.label, 1)
+
+        # Set initial HTML (unhighlighted)
+        self._set_diff_highlight(False)
 
         if show_deramble:
             deramble_btn = QPushButton()
             deramble_btn.setFixedSize(24, 24)
-            deramble_btn.setIcon(make_icon(draw_pen, 24))
+            deramble_btn.setIcon(make_icon(draw_pen))
             deramble_btn.setIconSize(QSize(16, 16))
             deramble_btn.setStyleSheet(self.BTN_STYLE)
             deramble_btn.setToolTip("De-ramble with LLM")
@@ -720,25 +778,44 @@ class TranscriptionRow(QFrame):
 
         copy_btn = QPushButton()
         copy_btn.setFixedSize(24, 24)
-        copy_btn.setIcon(make_icon(draw_copy, 24))
+        copy_btn.setIcon(make_icon(draw_copy))
         copy_btn.setIconSize(QSize(16, 16))
         copy_btn.setStyleSheet(self.BTN_STYLE)
         copy_btn.setToolTip("Copy to clipboard")
         copy_btn.clicked.connect(lambda: self.clicked.emit(self.text))
         layout.addWidget(copy_btn, 0, Qt.AlignmentFlag.AlignTop)
 
-        self._update_style(False)
+        self._update_bg(False)
 
-    def _update_style(self, hovered):
+    def _set_diff_highlight(self, highlight):
+        """Update the label with diff HTML, optionally highlighted."""
+        if self.other_text:
+            # For raw: old=self.text, new=other_text, show deletions
+            # For processed: old=other_text, new=self.text, show additions
+            if self.is_raw:
+                html = word_diff_html(self.text, self.other_text, is_old=True, highlight=highlight)
+            else:
+                html = word_diff_html(self.other_text, self.text, is_old=False, highlight=highlight)
+            self.label.setText(html)
+        else:
+            self.label.setText(self.text)
+
+    def set_diff_highlight(self, highlight):
+        """Called by parent to set diff highlight state (not row background)."""
+        self._set_diff_highlight(highlight)
+
+    def _update_bg(self, hovered):
         bg = "rgba(255,255,255,0.05)" if hovered else "transparent"
-        self.setStyleSheet(f"TranscriptionRow {{ background: {bg}; border-radius: 4px; }}")
+        self.setStyleSheet(f"TranscriptionRow {{ background: {bg}; }}")
 
     def enterEvent(self, event):
-        self._update_style(True)
+        self._update_bg(True)
+        self.hover_changed.emit(True)
         super().enterEvent(event)
 
     def leaveEvent(self, event):
-        self._update_style(False)
+        self._update_bg(False)
+        self.hover_changed.emit(False)
         super().leaveEvent(event)
 
     def mousePressEvent(self, event):
@@ -763,19 +840,24 @@ class TranscriptionItem(QFrame):
     def __init__(self, raw_text, processed_text, index, parent=None):
         super().__init__(parent)
         self.index = index
+        self.diff_rows = []  # Rows that need coordinated highlighting
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
         if processed_text:
-            raw_row = TranscriptionRow(raw_text, dimmed=True)
+            raw_row = TranscriptionRow(raw_text, dimmed=True, other_text=processed_text, is_raw=True)
             raw_row.clicked.connect(self.copy_clicked.emit)
+            raw_row.hover_changed.connect(self._on_hover_changed)
             layout.addWidget(raw_row)
 
-            proc_row = TranscriptionRow(processed_text, dimmed=False)
+            proc_row = TranscriptionRow(processed_text, dimmed=False, other_text=raw_text, is_raw=False)
             proc_row.clicked.connect(self.copy_clicked.emit)
+            proc_row.hover_changed.connect(self._on_hover_changed)
             layout.addWidget(proc_row)
+
+            self.diff_rows = [raw_row, proc_row]
         else:
             row = TranscriptionRow(raw_text, dimmed=False, show_deramble=True)
             row.clicked.connect(self.copy_clicked.emit)
@@ -783,6 +865,11 @@ class TranscriptionItem(QFrame):
             layout.addWidget(row)
 
         self.setStyleSheet("TranscriptionItem { border-bottom: 1px solid rgba(255,255,255,0.1); }")
+
+    def _on_hover_changed(self, hovered):
+        """When any row is hovered, highlight diff text in all rows (not row background)."""
+        for row in self.diff_rows:
+            row.set_diff_highlight(hovered)
 
 
 class TranscriptionList(QScrollArea):
@@ -969,7 +1056,7 @@ class VoiceThingWindow(QWidget):
         # Warning button for permission errors (hidden by default)
         self.warning_btn = QPushButton()
         self.warning_btn.setFixedSize(20, 20)
-        self.warning_btn.setIcon(make_icon(draw_warning, 32))
+        self.warning_btn.setIcon(make_icon(draw_warning))
         self.warning_btn.setIconSize(QSize(18, 18))
         self.warning_btn.setStyleSheet("QPushButton { background: transparent; border: none; }")
         self.warning_btn.setToolTip(PERMISSION_ERROR_TITLE)
@@ -1128,7 +1215,7 @@ class VoiceThingWindow(QWidget):
 
     def _setup_tray(self):
         self.tray = QSystemTrayIcon(self)
-        self.tray.setIcon(make_icon(draw_mic, TRAY_ICON_SIZE))
+        self.tray.setIcon(make_icon_sized(draw_mic, TRAY_ICON_SIZE))
         menu = QMenu()
         menu.addAction("Show", self.show)
         menu.addSeparator()
