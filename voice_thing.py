@@ -713,11 +713,12 @@ class WaveformWidget(QWidget):
         y_scaled = (y_vals / self.display_max) * h / 2 * 0.9
 
         # Build polygon: left-to-right along top edge, right-to-left along bottom edge
-        polygon = QPolygonF()
-        for x in range(w):
-            polygon.append(QPointF(x, cy - y_scaled[x]))
-        for x in range(w - 1, -1, -1):
-            polygon.append(QPointF(x, cy + y_scaled[x]))
+        x_coords = np.arange(w)
+        top_y = cy - y_scaled
+        bottom_y = cy + y_scaled[::-1]
+        points = [QPointF(x, y) for x, y in zip(x_coords, top_y)]
+        points += [QPointF(x, y) for x, y in zip(x_coords[::-1], bottom_y)]
+        polygon = QPolygonF(points)
 
         # Draw filled waveform
         p.setPen(Qt.PenStyle.NoPen)
