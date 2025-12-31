@@ -828,9 +828,9 @@ class TranscriptionList(QScrollArea):
         """Replace transcription at index with updated raw+processed version."""
         # Find the widget at this index (widgets are in order, stretch is last)
         if index < self.layout.count() - 1:
-            old_item = self.layout.itemAt(index).widget()
-            if old_item:
-                old_item.deleteLater()
+            old_item = self.layout.takeAt(index)
+            if old_item and old_item.widget():
+                old_item.widget().deleteLater()
             new_item = TranscriptionItem(raw_text, processed_text, index)
             new_item.copy_clicked.connect(self.copy_requested.emit)
             new_item.deramble_clicked.connect(self.deramble_requested.emit)
@@ -903,6 +903,7 @@ class VoiceThingWindow(QWidget):
     focus_signal = pyqtSignal()
     paste_signal = pyqtSignal(str)
     add_transcription_signal = pyqtSignal(str, str)  # (raw_text, processed_text or "")
+    update_transcription_signal = pyqtSignal(int, str, str)  # (index, raw_text, processed_text)
     permission_error_signal = pyqtSignal()
 
     def __init__(self):
@@ -1095,6 +1096,7 @@ class VoiceThingWindow(QWidget):
         self.focus_signal.connect(self._focus_window)
         self.paste_signal.connect(self._do_paste)
         self.add_transcription_signal.connect(self._add_transcription)
+        self.update_transcription_signal.connect(self._update_transcription)
         self.permission_error_signal.connect(self._on_permission_error)
 
         self.update_timer = QTimer()
@@ -1181,6 +1183,10 @@ class VoiceThingWindow(QWidget):
         self.transcriptions_panel.add_transcription(raw_text, processed_text)
         self._switch_tab(1)
 
+    def _update_transcription(self, index, raw_text, processed_text):
+        self.transcriptions[index] = (raw_text, processed_text)
+        self.transcriptions_panel.update_transcription(index, raw_text, processed_text)
+
     def _copy_to_clipboard(self, text):
         rp.string_to_clipboard(text)
         self._chime([16, 20], t=0.05)  # E key: copy
@@ -1188,16 +1194,8 @@ class VoiceThingWindow(QWidget):
     def _deramble_transcription(self, index, raw_text):
         """Process a transcription with LLM and update it in place."""
         def do_deramble():
-            self._chime([7, 11], t=0.06)  # LLM processing start
-            print(f"De-rambling transcription {index}...")
-            prompt = LLM_PREFIX + raw_text
-            processed = rp.run_llm_api(prompt, model=LLM_MODEL)
-            print(f"LLM result: {processed!r}")
-            # Update the transcriptions list
-            self.transcriptions[index] = (raw_text, processed)
-            # Update the UI on main thread
-            self.transcriptions_panel.update_transcription(index, raw_text, processed)
-            self._chime([11, 14, 18], t=0.08)  # LLM processing done
+            processed = self._run_llm(raw_text)
+            self.update_transcription_signal.emit(index, raw_text, processed)
         threading.Thread(target=do_deramble, daemon=True).start()
 
     def _do_paste(self, text):
@@ -1220,6 +1218,8 @@ class VoiceThingWindow(QWidget):
         new_text = rp.strip_ansi_escapes(self.tee.text)
         if new_text != self.output_panel.toPlainText():
             self.output_panel.setPlainText(new_text)
+            sb = self.output_panel.verticalScrollBar()
+            sb.setValue(sb.maximum())
 
     def _edge_at(self, pos):
         m, r = 8, self.rect()
@@ -1515,14 +1515,7 @@ class VoiceThingWindow(QWidget):
         result = rp.transcribe_audio_file_via_whisper(
             path, model=self.current_model, show_progress=True
         )
-        raw_text = "" if is_blacklisted(result.text) else result.text
-        print(f"Result: {raw_text!r}")
-        if raw_text:
-            raw_text, processed_text = self._process_with_llm(raw_text)
-            final_text = processed_text if processed_text else raw_text
-            self.last_transcription = final_text
-            self.paste_signal.emit(final_text)
-            self.add_transcription_signal.emit(raw_text, processed_text)
+        self._handle_transcription_result(result.text)
         self._chime([2], [6], [9], [14], t=0.08)  # D key: transcription done
         self._finish()
 
@@ -1562,17 +1555,51 @@ class VoiceThingWindow(QWidget):
         self.waveform.set_samples(audio)
         threading.Thread(target=self._transcribe, args=(audio,), daemon=True).start()
 
-    def _process_with_llm(self, text):
-        """Post-process transcription with LLM if enabled. Returns (raw, processed) or (raw, "")."""
-        if not self.llm_enabled or not text:
-            return text, ""
+    def _run_llm(self, text):
+        """Run LLM on text. Returns processed result."""
         self._chime([7, 11], t=0.06)  # LLM processing start
         print("Processing with LLM...")
         prompt = LLM_PREFIX + text
         result = rp.run_llm_api(prompt, model=LLM_MODEL)
         print(f"LLM result: {result!r}")
         self._chime([11, 14, 18], t=0.08)  # LLM processing done
-        return text, result
+        return result
+
+    def _process_with_llm(self, text):
+        """Post-process transcription with LLM if enabled. Returns (raw, processed) or (raw, "")."""
+        if not self.llm_enabled or not text:
+            return text, ""
+        return text, self._run_llm(text)
+
+    def _handle_transcription_result(self, text, txt_path=None):
+        """Process transcription result: LLM, save, paste, add to list."""
+        raw_text = "" if is_blacklisted(text) else text
+        print(f"Result: {raw_text!r}")
+        if not raw_text:
+            return
+
+        if self.llm_enabled:
+            # Show raw immediately, then update when LLM finishes
+            index = len(self.transcriptions)
+            self.add_transcription_signal.emit(raw_text, "")
+            self.last_transcription = raw_text
+            self.paste_signal.emit(raw_text)
+
+            def run_llm_and_update():
+                processed = self._run_llm(raw_text)
+                if txt_path:
+                    with open(txt_path, "w") as f:
+                        f.write(processed)
+                self.last_transcription = processed
+                self.update_transcription_signal.emit(index, raw_text, processed)
+            threading.Thread(target=run_llm_and_update, daemon=True).start()
+        else:
+            if txt_path:
+                with open(txt_path, "w") as f:
+                    f.write(raw_text)
+            self.last_transcription = raw_text
+            self.paste_signal.emit(raw_text)
+            self.add_transcription_signal.emit(raw_text, "")
 
     def _transcribe(self, audio):
         if len(audio) == 0:
@@ -1591,18 +1618,7 @@ class VoiceThingWindow(QWidget):
         result = rp.transcribe_audio_file_via_whisper(
             wav_path, model=self.current_model, show_progress=True
         )
-
-        raw_text = "" if is_blacklisted(result.text) else result.text
-        print(f"Result: {raw_text!r}")
-        if raw_text:
-            raw_text, processed_text = self._process_with_llm(raw_text)
-            final_text = processed_text if processed_text else raw_text
-            with open(txt_path, "w") as f:
-                f.write(final_text)
-            self.last_transcription = final_text
-            self.paste_signal.emit(final_text)
-            self.add_transcription_signal.emit(raw_text, processed_text)
-
+        self._handle_transcription_result(result.text, txt_path)
         self._chime([2], [6], [9], [14], t=0.08)  # D key: transcription done
         self._finish()
 
