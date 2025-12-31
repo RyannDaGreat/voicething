@@ -1775,8 +1775,8 @@ def main():
         info = bundle.localizedInfoDictionary() or bundle.infoDictionary()
         if info:
             info['CFBundleName'] = APP_NAME
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"Could not set macOS bundle name: {e}")
 
     app = QApplication([APP_NAME])
     app.setApplicationName(APP_NAME)

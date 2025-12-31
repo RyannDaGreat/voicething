@@ -11,6 +11,7 @@ A fast, keyboard-driven voice transcription app for macOS, powered by Whisper wi
 - **Auto-paste** - transcription is automatically copied and pasted via ⌘V
 - **100% keyboard-driven** - no mouse needed
 - **LLM post-processing** (Anti-Ramble mode) - clean up filler words and self-corrections with a local Ollama model
+- **De-ramble after the fact** - click the pen button on any transcription to apply LLM processing
 - **Menu bar access** - always available from macOS menu bar
 - **Drag & drop** audio files to transcribe
 
