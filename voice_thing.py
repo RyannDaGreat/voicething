@@ -147,22 +147,28 @@ def is_blacklisted(text):
 RECORDINGS_DIR = os.path.join(tempfile.gettempdir(), APP_NAME)
 ASSETS_DIR = os.path.join(os.path.dirname(__file__), "assets")
 
-# Shared styling for buttons and tabs
-BTN_CSS = (
-    "QPushButton { color: rgba(255,255,255,0.6); background: rgba(255,255,255,0.1); "
-    "border: 1px solid rgb(100,100,100); border-radius: 3px; padding: 1px 2px; font-size: 10px; }"
-    "QPushButton:hover { background: rgba(255,255,255,0.2); }"
-    "QPushButton:pressed { background: rgba(100,200,255,0.4); }"
-    "QPushButton:disabled { color: rgba(255,255,255,0.2); background: transparent; }"
-    f"QPushButton:checked {{ background: {ACCENT_BG}; }}"
-)
-BTN_CHECKED_CSS = BTN_CSS + f"QPushButton {{ background: {ACCENT_BG}; }}"
+# UI Font - will be set after QApplication is created
+UI_FONT = "Futura"  # Fallback, actual font loaded in main()
+UI_FONT_PATH = rp.download_font("R:Futura")
 
-MENU_CSS = (
-    "QMenu { background: rgb(40,40,50); color: white; border: 1px solid rgb(80,80,80); border-radius: 6px; padding: 4px; }"
-    "QMenu::item { padding: 4px 12px; border-radius: 4px; }"
-    "QMenu::item:selected { background: rgb(60,60,70); }"
-)
+
+def get_btn_css():
+    return (
+        f"QPushButton {{ color: rgba(255,255,255,0.6); background: rgba(255,255,255,0.1); "
+        f"border: 1px solid rgb(100,100,100); border-radius: 3px; padding: 1px 2px; font-size: 10px; font-family: {UI_FONT}; }}"
+        "QPushButton:hover { background: rgba(255,255,255,0.2); }"
+        "QPushButton:pressed { background: rgba(100,200,255,0.4); }"
+        "QPushButton:disabled { color: rgba(255,255,255,0.2); background: transparent; }"
+        f"QPushButton:checked {{ background: {ACCENT_BG}; }}"
+    )
+
+
+def get_menu_css():
+    return (
+        f"QMenu {{ background: rgb(40,40,50); color: white; border: 1px solid rgb(80,80,80); border-radius: 6px; padding: 4px; font-family: {UI_FONT}; }}"
+        "QMenu::item { padding: 4px 12px; border-radius: 4px; }"
+        "QMenu::item:selected { background: rgb(60,60,70); }"
+    )
 
 CHIME_SHIFT = -12  # Shift all chimes (semitones, -12 = 1 octave lower)
 
@@ -263,7 +269,7 @@ class HelpDialog(DraggableDialog):
 
         # Title
         title = QLabel(APP_NAME)
-        title.setStyleSheet("color: white; font-size: 18px; font-weight: bold;")
+        title.setStyleSheet(f"color: white; font-size: 18px; font-weight: bold; font-family: {UI_FONT};")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title)
 
@@ -274,7 +280,7 @@ class HelpDialog(DraggableDialog):
         # Left side: About
         about_box = QVBoxLayout()
         about_label = QLabel("About")
-        about_label.setStyleSheet("color: rgb(100,200,255); font-size: 12px; font-weight: bold;")
+        about_label.setStyleSheet(f"color: rgb(100,200,255); font-size: 12px; font-weight: bold; font-family: {UI_FONT};")
         about_box.addWidget(about_label)
 
         about_text = QLabel(
@@ -302,7 +308,7 @@ class HelpDialog(DraggableDialog):
 
         # GitHub button
         github_btn = QPushButton("GitHub")
-        github_btn.setStyleSheet(BTN_CSS)
+        github_btn.setStyleSheet(get_btn_css())
         github_btn.clicked.connect(lambda: subprocess.run(["open", GITHUB_URL]))
         about_box.addWidget(github_btn)
 
@@ -317,7 +323,7 @@ class HelpDialog(DraggableDialog):
         # Right side: Keymap
         keymap_box = QVBoxLayout()
         keymap_label = QLabel("Keymap")
-        keymap_label.setStyleSheet("color: rgb(100,200,255); font-size: 12px; font-weight: bold;")
+        keymap_label.setStyleSheet(f"color: rgb(100,200,255); font-size: 12px; font-weight: bold; font-family: {UI_FONT};")
         keymap_box.addWidget(keymap_label)
 
         for action_id, key, icon_name, desc, menu_text in ACTIONS:
@@ -327,7 +333,7 @@ class HelpDialog(DraggableDialog):
             if icon_name:
                 btn.setIcon(load_icon(icon_name))
                 btn.setIconSize(QSize(14, 14))
-            btn.setStyleSheet(BTN_CSS)
+            btn.setStyleSheet(get_btn_css())
             btn.setFixedWidth(60)
             btn.setEnabled(False)
             row.addWidget(btn)
@@ -340,7 +346,7 @@ class HelpDialog(DraggableDialog):
             row = QHBoxLayout()
             row.setSpacing(4)
             btn = QPushButton(f"{key}")
-            btn.setStyleSheet(BTN_CSS)
+            btn.setStyleSheet(get_btn_css())
             btn.setFixedWidth(60)
             btn.setEnabled(False)
             row.addWidget(btn)
@@ -356,7 +362,7 @@ class HelpDialog(DraggableDialog):
 
         # Close button
         close_btn = QPushButton("Esc  Close")
-        close_btn.setStyleSheet(BTN_CSS)
+        close_btn.setStyleSheet(get_btn_css())
         close_btn.clicked.connect(self.accept)
         layout.addWidget(close_btn)
 
@@ -381,21 +387,21 @@ class ModelDialog(DraggableDialog):
         layout.setSpacing(8)
 
         title = QLabel("Select Whisper Model")
-        title.setStyleSheet("color: white; font-size: 14px; font-weight: bold;")
+        title.setStyleSheet(f"color: white; font-size: 14px; font-weight: bold; font-family: {UI_FONT};")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title)
 
         for key, model, desc in WHISPER_MODELS:
             btn = QPushButton(f"{key}  {model}")
-            btn.setStyleSheet(BTN_CSS)
+            btn.setStyleSheet(get_btn_css())
             btn.setToolTip(desc)
             if model == current_model:
-                btn.setStyleSheet(BTN_CSS + "QPushButton { border: 2px solid rgb(100,200,255); }")
+                btn.setStyleSheet(get_btn_css() + "QPushButton { border: 2px solid rgb(100,200,255); }")
             btn.clicked.connect(lambda checked, m=model: self._select(m))
             layout.addWidget(btn)
 
         cancel_btn = QPushButton("Esc  Cancel")
-        cancel_btn.setStyleSheet(BTN_CSS)
+        cancel_btn.setStyleSheet(get_btn_css())
         cancel_btn.clicked.connect(self.reject)
         layout.addWidget(cancel_btn)
 
@@ -427,7 +433,7 @@ class PermissionDialog(DraggableDialog):
         layout.setSpacing(12)
 
         title = QLabel(PERMISSION_ERROR_TITLE)
-        title.setStyleSheet("color: rgb(255,80,80); font-size: 16px; font-weight: bold;")
+        title.setStyleSheet(f"color: rgb(255,80,80); font-size: 16px; font-weight: bold; font-family: {UI_FONT};")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title)
 
@@ -437,7 +443,7 @@ class PermissionDialog(DraggableDialog):
         layout.addWidget(msg)
 
         close_btn = QPushButton("Esc  Close")
-        close_btn.setStyleSheet(BTN_CSS)
+        close_btn.setStyleSheet(get_btn_css())
         close_btn.clicked.connect(self.accept)
         layout.addWidget(close_btn)
 
@@ -496,7 +502,7 @@ class TextPanel(QTextEdit):
                 self.setTextCursor(cursor)
 
         menu = QMenu(self)
-        menu.setStyleSheet(MENU_CSS)
+        menu.setStyleSheet(get_menu_css())
         if self.textCursor().hasSelection():
             copy_action = menu.addAction("Copy")
             copy_action.triggered.connect(self.copy)
@@ -588,7 +594,7 @@ class TranscriptionRow(QFrame):
         if show_deramble:
             deramble_btn = QPushButton()
             deramble_btn.setFixedSize(24, 24)
-            deramble_btn.setIcon(load_icon("pen"))
+            deramble_btn.setIcon(load_icon(ACTIONS_BY_ID["llm"][2]))
             deramble_btn.setIconSize(QSize(16, 16))
             deramble_btn.setStyleSheet(self.BTN_STYLE)
             deramble_btn.setToolTip("De-ramble with LLM")
@@ -597,7 +603,7 @@ class TranscriptionRow(QFrame):
 
         copy_btn = QPushButton()
         copy_btn.setFixedSize(24, 24)
-        copy_btn.setIcon(load_icon("copy"))
+        copy_btn.setIcon(load_icon(ACTIONS_BY_ID["copy"][2]))
         copy_btn.setIconSize(QSize(16, 16))
         copy_btn.setStyleSheet(self.BTN_STYLE)
         copy_btn.setToolTip("Copy to clipboard")
@@ -673,7 +679,7 @@ class TranscriptionRow(QFrame):
 
     def _show_context_menu(self, pos):
         menu = QMenu(self)
-        menu.setStyleSheet(MENU_CSS)
+        menu.setStyleSheet(get_menu_css())
         if self.label.hasSelectedText():
             copy_action = menu.addAction("Copy")
             copy_action.triggered.connect(lambda: QApplication.clipboard().setText(self.label.selectedText()))
@@ -927,7 +933,7 @@ class VoiceThingWindow(QWidget):
         status_row.addWidget(self.warning_btn)
         self.status_label = QLabel("Double-tap ⌥")
         self.status_label.setStyleSheet(
-            "color: rgba(255,255,255,0.7); font-size: 14px;"
+            f"color: rgba(255,255,255,0.7); font-size: 14px; font-family: {UI_FONT};"
         )
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         status_row.addWidget(self.status_label, 1)
@@ -954,7 +960,7 @@ class VoiceThingWindow(QWidget):
             btn = QPushButton(text)
             btn.setIcon(load_icon(icon_name))
             btn.setIconSize(QSize(16, 16))
-            btn.setStyleSheet(BTN_CSS)
+            btn.setStyleSheet(get_btn_css())
             btn.clicked.connect(handler)
             btn.setEnabled(False)
             btn_row.addWidget(btn)
@@ -1015,7 +1021,7 @@ class VoiceThingWindow(QWidget):
         self.output_tab.setIconSize(QSize(14, 14))
         self.output_tab.setCheckable(True)
         self.output_tab.setChecked(True)
-        self.output_tab.setStyleSheet(BTN_CSS)
+        self.output_tab.setStyleSheet(get_btn_css())
         self.output_tab.setToolTip("Show console output")
         self.output_tab.clicked.connect(lambda: self._switch_tab(0))
         tab_row.addWidget(self.output_tab, 1)
@@ -1024,7 +1030,7 @@ class VoiceThingWindow(QWidget):
         self.transcriptions_tab.setIcon(load_icon("scroll"))
         self.transcriptions_tab.setIconSize(QSize(14, 14))
         self.transcriptions_tab.setCheckable(True)
-        self.transcriptions_tab.setStyleSheet(BTN_CSS)
+        self.transcriptions_tab.setStyleSheet(get_btn_css())
         self.transcriptions_tab.setToolTip("Show transcription history")
         self.transcriptions_tab.clicked.connect(lambda: self._switch_tab(1))
         tab_row.addWidget(self.transcriptions_tab, 1)
@@ -1347,7 +1353,7 @@ class VoiceThingWindow(QWidget):
         self.status_spacer.setVisible(not self.small_mode)
         # Adjust status label font size for small mode
         font_size = 10 if self.small_mode else 14
-        self.status_label.setStyleSheet(f"color: rgba(255,255,255,0.7); font-size: {font_size}px;")
+        self.status_label.setStyleSheet(f"color: rgba(255,255,255,0.7); font-size: {font_size}px; font-family: {UI_FONT};")
         if self.small_mode:
             self._normal_size = self.size()
             self.setMinimumSize(0, 0)
@@ -1603,7 +1609,14 @@ def main():
     app = QApplication([APP_NAME])
     app.setApplicationName(APP_NAME)
     app.setApplicationDisplayName(APP_NAME)
-    app.setStyleSheet("QToolTip { background: #333; color: white; border: 1px solid #555; border-radius: 4px; }")
+
+    # Load Futura font
+    global UI_FONT
+    font_id = QFontDatabase.addApplicationFont(UI_FONT_PATH)
+    if font_id >= 0:
+        UI_FONT = QFontDatabase.applicationFontFamilies(font_id)[0]
+
+    app.setStyleSheet(f"QToolTip {{ background: #333; color: white; border: 1px solid #555; border-radius: 4px; font-family: {UI_FONT}; }}")
     window = VoiceThingWindow()
 
     tap_state = [0.0, 0]  # [last_tap_time, tap_count]
