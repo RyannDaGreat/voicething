@@ -229,15 +229,21 @@ class TrafficLightButton(QPushButton):
     def __init__(self, color, hover_color, icon_name, parent=None):
         super().__init__(parent)
         self.setFixedSize(12, 12)
+        self.setAttribute(Qt.WidgetAttribute.WA_Hover, True)  # Hover even when unfocused
         self.color = color
         self.hover_color = hover_color
         self.icon_name = icon_name
         self._hovered = False
         self._update_style()
 
+    def set_icon_name(self, name):
+        self.icon_name = name
+        self._update_style()
+
     def _update_style(self):
         bg = self.hover_color if self._hovered else self.color
-        self.setStyleSheet(f"QPushButton {{ background: {bg}; border: none; border-radius: 6px; }}")
+        # padding: 0px ensures icon is centered; icon size 8x8 fits well in 12x12 button
+        self.setStyleSheet(f"QPushButton {{ background: {bg}; border: none; border-radius: 6px; padding: 0px; }}")
         if self._hovered:
             self.setIcon(load_icon(self.icon_name))
             self.setIconSize(QSize(8, 8))
@@ -935,11 +941,11 @@ class VoiceThingWindow(QWidget):
         status_row.setContentsMargins(0, 0, 0, 0)
         status_row.setSpacing(8)
         self.small_mode = False  # Track small mode state
-        self.minimize_btn = TrafficLightButton("rgb(255, 189, 68)", "rgb(255, 210, 100)", "macos-minimize")
-        self.minimize_btn.setToolTip("Minimize window (Esc)")
-        self.minimize_btn.clicked.connect(self.hide)
-        status_row.addWidget(self.minimize_btn)
-        self.small_btn = TrafficLightButton("rgb(52, 199, 89)", "rgb(80, 220, 110)", "macos-fullscreen")
+        self.close_btn = TrafficLightButton("rgb(255, 95, 87)", "rgb(255, 120, 110)", "macos-close")
+        self.close_btn.setToolTip("Close window")
+        self.close_btn.clicked.connect(self.hide)
+        status_row.addWidget(self.close_btn)
+        self.small_btn = TrafficLightButton("rgb(255, 189, 46)", "rgb(255, 210, 80)", "macos-fullscreen")
         self.small_btn.setToolTip("Toggle small mode (E)")
         self.small_btn.clicked.connect(self.toggle_small_mode)
         status_row.addWidget(self.small_btn)
@@ -1368,6 +1374,8 @@ class VoiceThingWindow(QWidget):
 
     def toggle_small_mode(self):
         self.small_mode = not self.small_mode
+        # Update yellow button icon: collapse in big mode, expand/fullscreen in small mode
+        self.small_btn.set_icon_name("macos-fullscreen" if self.small_mode else "macos-collapse")
         self.btn_row_widget.setVisible(not self.small_mode)
         self.waveform.setVisible(not self.small_mode)
         self.tab_row_widget.setVisible(not self.small_mode)
