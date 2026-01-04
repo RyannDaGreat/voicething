@@ -223,6 +223,38 @@ ACTIONS_BY_ID = {a[0]: a for a in ACTIONS}
 GITHUB_URL = "https://github.com/RyannDaGreat/VoiceThing"
 
 
+class TrafficLightButton(QPushButton):
+    """macOS-style traffic light button with icon on hover."""
+
+    def __init__(self, color, hover_color, icon_name, parent=None):
+        super().__init__(parent)
+        self.setFixedSize(12, 12)
+        self.color = color
+        self.hover_color = hover_color
+        self.icon_name = icon_name
+        self._hovered = False
+        self._update_style()
+
+    def _update_style(self):
+        bg = self.hover_color if self._hovered else self.color
+        self.setStyleSheet(f"QPushButton {{ background: {bg}; border: none; border-radius: 6px; }}")
+        if self._hovered:
+            self.setIcon(load_icon(self.icon_name))
+            self.setIconSize(QSize(8, 8))
+        else:
+            self.setIcon(QIcon())
+
+    def enterEvent(self, event):
+        self._hovered = True
+        self._update_style()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self._hovered = False
+        self._update_style()
+        super().leaveEvent(event)
+
+
 class DraggableDialog(QDialog):
     """Base class for frameless, draggable dialogs."""
 
@@ -903,21 +935,11 @@ class VoiceThingWindow(QWidget):
         status_row.setContentsMargins(0, 0, 0, 0)
         status_row.setSpacing(8)
         self.small_mode = False  # Track small mode state
-        self.minimize_btn = QPushButton()
-        self.minimize_btn.setFixedSize(12, 12)
-        self.minimize_btn.setStyleSheet(
-            "QPushButton { background: rgb(255, 189, 68); border: none; border-radius: 6px; }"
-            "QPushButton:hover { background: rgb(255, 210, 100); }"
-        )
+        self.minimize_btn = TrafficLightButton("rgb(255, 189, 68)", "rgb(255, 210, 100)", "minus")
         self.minimize_btn.setToolTip("Minimize window (Esc)")
         self.minimize_btn.clicked.connect(self.hide)
         status_row.addWidget(self.minimize_btn)
-        self.small_btn = QPushButton()
-        self.small_btn.setFixedSize(12, 12)
-        self.small_btn.setStyleSheet(
-            "QPushButton { background: rgb(52, 199, 89); border: none; border-radius: 6px; }"
-            "QPushButton:hover { background: rgb(80, 220, 110); }"
-        )
+        self.small_btn = TrafficLightButton("rgb(52, 199, 89)", "rgb(80, 220, 110)", "expand")
         self.small_btn.setToolTip("Toggle small mode (E)")
         self.small_btn.clicked.connect(self.toggle_small_mode)
         status_row.addWidget(self.small_btn)
