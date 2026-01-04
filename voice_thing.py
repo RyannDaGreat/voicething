@@ -974,9 +974,12 @@ class VoiceThingWindow(QWidget):
         self.folder_btn.setToolTip("Open recordings folder")
         self.sound_btn = make_btn("S", "volume", self.toggle_sound)
         self.sound_btn.setToolTip("Toggle sound effects")
+        self.sound_btn.setCheckable(True)
+        self.sound_btn.setChecked(True)  # Sound on by default
         self.sound_btn.setEnabled(True)
         self.eye_btn = make_btn("V", "eye", self.toggle_auto_hide)
         self.eye_btn.setToolTip("Toggle auto-minimize after transcription")
+        self.eye_btn.setCheckable(True)
         self.eye_btn.setEnabled(True)
         self.llm_btn = make_btn("R", "robot", self.toggle_llm)
         self.llm_btn.setToolTip("Toggle LLM post-processing")
@@ -1329,6 +1332,7 @@ class VoiceThingWindow(QWidget):
         self.auto_hide = not self.auto_hide
         # Eye open = stays visible (no auto-hide), eye slashed = auto-hide enabled
         self.eye_btn.setIcon(load_icon("eye-off" if self.auto_hide else "eye"))
+        self.eye_btn.setChecked(self.auto_hide)
 
     def toggle_small_mode(self):
         self.small_mode = not self.small_mode
@@ -1358,6 +1362,7 @@ class VoiceThingWindow(QWidget):
     def toggle_sound(self):
         self.sound_enabled = not self.sound_enabled
         self.sound_btn.setIcon(load_icon("volume" if self.sound_enabled else "volume-off"))
+        self.sound_btn.setChecked(self.sound_enabled)
 
     def toggle_llm(self):
         self.llm_enabled = not self.llm_enabled
@@ -1389,6 +1394,7 @@ class VoiceThingWindow(QWidget):
         self.permission_error = True
         self.auto_hide = False  # Disable auto-hide since global shortcuts won't work
         self.eye_btn.setIcon(load_icon("eye"))
+        self.eye_btn.setChecked(False)
         self.warning_btn.show()
 
     def show_model_dialog(self):
