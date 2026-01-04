@@ -2,14 +2,14 @@ numpy
 scipy>=1
 sounddevice>=0
 pynput>=1
-PyQt6>=6
-pyobjc-framework-Cocoa>=12
+PyQt6
+pyobjc-framework-Cocoa
 rp
 pywhispercpp
 easydict
 requests
 cachetools
-lazy_loader
+lazy-loader
 tqdm
 platformdirs
 ollama

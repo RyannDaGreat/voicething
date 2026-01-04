@@ -199,8 +199,8 @@ ACTIONS = [
     ("folder", "F", "folder", "Open recordings folder", "Open Recordings Folder"),
     ("sound", "S", "volume", "Toggle sound effects", None),
     ("auto_hide", "V", "eye", "Toggle auto-minimize", None),
-    ("llm", "R", "pen", "Toggle LLM post-processing", None),
-    ("model", "M", "robot", "Change Whisper model", None),
+    ("llm", "R", "robot", "Toggle LLM post-processing", None),
+    ("model", "M", "mic", "Change Whisper model", None),
     ("help", "?", "book", "Show help", "Help"),
 ]
 
@@ -978,11 +978,11 @@ class VoiceThingWindow(QWidget):
         self.eye_btn = make_btn("V", "eye", self.toggle_auto_hide)
         self.eye_btn.setToolTip("Toggle auto-minimize after transcription")
         self.eye_btn.setEnabled(True)
-        self.llm_btn = make_btn("R", "pen", self.toggle_llm)
+        self.llm_btn = make_btn("R", "robot", self.toggle_llm)
         self.llm_btn.setToolTip("Toggle LLM post-processing")
         self.llm_btn.setCheckable(True)
         self.llm_btn.setEnabled(True)
-        self.model_btn = make_btn("M", "robot", self.show_model_dialog)
+        self.model_btn = make_btn("M", "mic", self.show_model_dialog)
         self.model_btn.setToolTip("Change Whisper model")
         self.model_btn.setEnabled(True)
         self.help_btn = make_btn("?", "book", self.show_help)
