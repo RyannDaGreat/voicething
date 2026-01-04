@@ -523,18 +523,15 @@ class TextPanel(QTextEdit):
             super().keyPressEvent(e)
 
     def contextMenuEvent(self, e):
-        if self.paragraphs is None:
-            super().contextMenuEvent(e)
-            return
-        # Auto-select paragraph under cursor if nothing selected
-        if not self.textCursor().hasSelection():
+        # Auto-select paragraph under cursor if nothing selected (only when paragraphs mode)
+        if self.paragraphs is not None and not self.textCursor().hasSelection():
             self.setFocus()
             cursor = self.cursorForPosition(e.pos())
             block_num = cursor.blockNumber()
             # Each transcription is a <p> tag, map block to paragraph index
             # Blocks: p0, hr, p1, hr, p2... so paragraph i is at block 2*i
             para_idx = block_num // 2
-            if self.paragraphs and 0 <= para_idx < len(self.paragraphs):
+            if 0 <= para_idx < len(self.paragraphs):
                 cursor.movePosition(cursor.MoveOperation.StartOfBlock)
                 cursor.movePosition(cursor.MoveOperation.EndOfBlock, cursor.MoveMode.KeepAnchor)
                 self.setTextCursor(cursor)
