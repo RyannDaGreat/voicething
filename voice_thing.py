@@ -48,7 +48,7 @@ from AppKit import NSWorkspace, NSApplicationActivateIgnoringOtherApps
 from pynput import keyboard
 from pynput.keyboard import Controller as KeyboardController, Key
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QSize, QPoint, QPointF
-from PyQt6.QtGui import QPainter, QColor, QPen, QIcon, QPixmap, QFontDatabase, QPolygonF
+from PyQt6.QtGui import QPainter, QColor, QPen, QIcon, QFontDatabase, QPolygonF
 from PyQt6.QtWidgets import (
     QApplication,
     QWidget,
@@ -73,7 +73,6 @@ WHISPER_MODEL = "large-v3"
 TRAY_ICON_SIZE = 44  # Menu bar icon size (2x for retina)
 
 # UI Colors
-ICON_COLOR = QColor(255, 255, 255, 255)
 ACCENT = QColor(100, 200, 255)
 ACCENT_BG = "rgba(100,200,255,0.3)"  # For selected/checked states
 
@@ -146,6 +145,7 @@ def is_blacklisted(text):
     return normalized in BLACKLISTED_TRANSCRIPTIONS
 
 RECORDINGS_DIR = os.path.join(tempfile.gettempdir(), APP_NAME)
+ASSETS_DIR = os.path.join(os.path.dirname(__file__), "assets")
 
 # Shared styling for buttons and tabs
 BTN_CSS = (
@@ -174,197 +174,9 @@ def chime(*chords, **kwargs):
     rp.play_chords(*shifted, gap=0, sampler=quiet_sampler, block=True, **kwargs)
 
 
-def draw_mic(p, s):
-    p.setBrush(ICON_COLOR)
-    p.setPen(Qt.PenStyle.NoPen)
-    p.drawEllipse(s // 3, s // 6, s // 3, s // 2)
-    p.drawRect(s * 5 // 12, s // 2, s // 6, s // 6)
-    p.setBrush(Qt.BrushStyle.NoBrush)
-    p.setPen(QPen(ICON_COLOR, 2))
-    p.drawArc(s // 4, s // 3, s // 2, s // 2, 0, -180 * 16)
-
-
-def draw_stop(p, s):
-    p.setBrush(ICON_COLOR)
-    p.setPen(Qt.PenStyle.NoPen)
-    m = s // 4
-    p.drawRect(m, m, s - 2 * m, s - 2 * m)
-
-
-def draw_x(p, s):
-    """Circle with slash (cancel/prohibit icon)."""
-    p.setPen(QPen(ICON_COLOR, 2))
-    m = s // 5
-    p.drawEllipse(m, m, s - 2 * m, s - 2 * m)
-    p.drawLine(m + 2, s - m - 2, s - m - 2, m + 2)
-
-
-def draw_help(p, s):
-    """Open book icon - viewed from above with curved pages."""
-    from PyQt6.QtGui import QPainterPath
-    p.setPen(QPen(ICON_COLOR, 1.5))
-    p.setBrush(Qt.BrushStyle.NoBrush)
-    cx, cy = s // 2, s * 2 // 3
-    # Left page (curved)
-    left = QPainterPath()
-    left.moveTo(cx, cy)
-    left.quadTo(s // 4, s // 3, s // 6, s // 4)
-    left.lineTo(s // 8, s * 3 // 5)
-    left.quadTo(s // 3, s // 2, cx, cy)
-    p.drawPath(left)
-    # Right page (curved)
-    right = QPainterPath()
-    right.moveTo(cx, cy)
-    right.quadTo(s * 3 // 4, s // 3, s * 5 // 6, s // 4)
-    right.lineTo(s * 7 // 8, s * 3 // 5)
-    right.quadTo(s * 2 // 3, s // 2, cx, cy)
-    p.drawPath(right)
-
-
-def draw_folder(p, s):
-    p.setBrush(ICON_COLOR)
-    p.setPen(Qt.PenStyle.NoPen)
-    m = s // 6
-    p.drawRoundedRect(m, s // 3, s - 2 * m, s // 2, 2, 2)
-    p.drawRoundedRect(m, s // 4, s // 3, s // 6, 2, 2)
-
-
-def draw_load(p, s):
-    """Draw a CD icon."""
-    cx, cy = s // 2, s // 2
-    r = s // 3
-    # Outer circle
-    p.setBrush(Qt.BrushStyle.NoBrush)
-    p.setPen(QPen(ICON_COLOR, 2))
-    p.drawEllipse(cx - r, cy - r, r * 2, r * 2)
-    # Inner hole
-    hole_r = s // 10
-    p.drawEllipse(cx - hole_r, cy - hole_r, hole_r * 2, hole_r * 2)
-
-
-def draw_copy(p, s):
-    p.setBrush(Qt.BrushStyle.NoBrush)
-    p.setPen(QPen(ICON_COLOR, 2))
-    m = s // 5
-    p.drawRoundedRect(m, m, s // 2, s // 2, 2, 2)
-    p.drawRoundedRect(s // 3, s // 3, s // 2, s // 2, 2, 2)
-
-
-def draw_eye(p, s, open=True):
-    """Draw an eye icon - open when visible, closed/slashed when auto-hide."""
-    cx, cy = s // 2, s // 2
-    # Eye outline (almond shape)
-    p.setBrush(Qt.BrushStyle.NoBrush)
-    p.setPen(QPen(ICON_COLOR, 2))
-    # Draw eye shape using arcs
-    p.drawEllipse(s // 6, s // 3, s * 2 // 3, s // 3)
-    if open:
-        # Pupil
-        p.setBrush(ICON_COLOR)
-        p.setPen(Qt.PenStyle.NoPen)
-        p.drawEllipse(cx - s // 8, cy - s // 8, s // 4, s // 4)
-    else:
-        # Slash through eye
-        p.setPen(QPen(ICON_COLOR, 2))
-        p.drawLine(s // 4, s * 3 // 4, s * 3 // 4, s // 4)
-
-
-def draw_sound(p, s, enabled=True):
-    """Draw a speaker icon, with slash when muted."""
-    p.setBrush(ICON_COLOR)
-    p.setPen(Qt.PenStyle.NoPen)
-    # Speaker body
-    m = s // 4
-    p.drawRect(m, s * 3 // 8, s // 6, s // 4)
-    # Speaker cone
-    pts = QPolygonF([
-        QPointF(m + s / 6, s * 3 / 8),
-        QPointF(m + s / 3, s / 4),
-        QPointF(m + s / 3, s * 3 / 4),
-        QPointF(m + s / 6, s * 5 / 8),
-    ])
-    p.drawPolygon(pts)
-    # Sound waves
-    if enabled:
-        p.setBrush(Qt.BrushStyle.NoBrush)
-        p.setPen(QPen(ICON_COLOR, 2))
-        p.drawArc(s // 2, s // 3, s // 5, s // 3, 45 * 16, -90 * 16)
-        p.drawArc(s // 2 + s // 8, s // 4, s // 4, s // 2, 45 * 16, -90 * 16)
-    else:
-        # Mute slash
-        p.setPen(QPen(ICON_COLOR, 2))
-        p.drawLine(s * 3 // 4, s // 4, s // 4, s * 3 // 4)
-
-
-def draw_pen(p, s):
-    """Draw a fountain pen nib icon for LLM editing."""
-    p.setBrush(ICON_COLOR)
-    p.setPen(Qt.PenStyle.NoPen)
-    # Nib shape - pointed at top (writing position), wider at bottom
-    pts = QPolygonF([
-        QPointF(s / 2, s / 6),           # Top point (tip)
-        QPointF(s / 4, s * 3 / 4),       # Bottom left
-        QPointF(s / 2, s * 5 / 6),       # Bottom center notch
-        QPointF(s * 3 / 4, s * 3 / 4),   # Bottom right
-    ])
-    p.drawPolygon(pts)
-    # Center slit
-    p.setPen(QPen(QColor(30, 30, 40), 2))
-    p.drawLine(s // 2, s // 3, s // 2, s * 2 // 3)
-
-
-def draw_model(p, s):
-    """Draw a robot head icon."""
-    p.setBrush(Qt.BrushStyle.NoBrush)
-    p.setPen(QPen(ICON_COLOR, 2))
-    m = s // 6
-    # Head (rounded rectangle)
-    p.drawRoundedRect(m, m + s // 8, s - 2 * m, s - 2 * m - s // 8, 3, 3)
-    # Antenna
-    p.drawLine(s // 2, m + s // 8, s // 2, m)
-    p.setBrush(ICON_COLOR)
-    p.drawEllipse(s // 2 - 2, m - 2, 4, 4)
-    # Eyes
-    p.drawEllipse(s // 3 - 2, s // 2 - 2, 5, 5)
-    p.drawEllipse(s * 2 // 3 - 3, s // 2 - 2, 5, 5)
-
-
-def draw_warning(p, s):
-    """Draw a filled warning triangle with exclamation mark."""
-    bg = QColor(255, 80, 80)  # Red background
-    fg = QColor(30, 30, 40)  # Dark foreground for contrast
-    # Filled triangle
-    p.setBrush(bg)
-    p.setPen(Qt.PenStyle.NoPen)
-    pts = QPolygonF([QPointF(s / 2, s / 8), QPointF(s / 8, s * 7 / 8), QPointF(s * 7 / 8, s * 7 / 8)])
-    p.drawPolygon(pts)
-    # Exclamation mark (dark on red)
-    p.setPen(QPen(fg, max(2, s // 8)))
-    p.drawLine(s // 2, s * 3 // 10, s // 2, s * 11 // 20)
-    p.setBrush(fg)
-    p.setPen(Qt.PenStyle.NoPen)
-    dot_r = max(2, s // 10)
-    p.drawEllipse(s // 2 - dot_r // 2, s * 13 // 20, dot_r, dot_r)
-
-
-def make_icon(draw_fn):
-    px = QPixmap(64, 64)
-    px.fill(Qt.GlobalColor.transparent)
-    p = QPainter(px)
-    p.setRenderHint(QPainter.RenderHint.Antialiasing)
-    draw_fn(p, 64)
-    p.end()
-    return QIcon(px)
-
-
-def make_icon_sized(draw_fn, size):
-    px = QPixmap(size, size)
-    px.fill(Qt.GlobalColor.transparent)
-    p = QPainter(px)
-    p.setRenderHint(QPainter.RenderHint.Antialiasing)
-    draw_fn(p, size)
-    p.end()
-    return QIcon(px)
+def load_icon(name):
+    """Load an SVG icon from the assets folder."""
+    return QIcon(os.path.join(ASSETS_DIR, f"{name}.svg"))
 
 
 WHISPER_MODELS = [
@@ -375,21 +187,21 @@ WHISPER_MODELS = [
     ("L", "large-v3", "Best accuracy, slowest (~10GB VRAM)"),
 ]
 
-# Action definitions: (id, key, icon_fn, description, menu_text or None)
+# Action definitions: (id, key, icon_name, description, menu_text or None)
 # Single source of truth for buttons, keyboard shortcuts, help dialog, and menu items
 ACTIONS = [
-    ("record", "Space", draw_mic, "Start/finish recording", "Start/Stop Recording"),
-    ("cancel", "X", draw_x, "Cancel recording", None),
+    ("record", "Space", "mic", "Start/finish recording", "Start/Stop Recording"),
+    ("cancel", "X", "cancel", "Cancel recording", None),
     ("minimize", "Esc", None, "Minimize window", None),
     ("small_mode", "E", None, "Toggle small mode", None),
-    ("copy", "C", draw_copy, "Copy last transcription", "Copy Last Transcription"),
-    ("load", "L", draw_load, "Load audio file", "Load Audio File..."),
-    ("folder", "F", draw_folder, "Open recordings folder", "Open Recordings Folder"),
-    ("sound", "S", draw_sound, "Toggle sound effects", None),
-    ("auto_hide", "V", draw_eye, "Toggle auto-minimize", None),
-    ("llm", "R", draw_pen, "Toggle LLM post-processing", None),
-    ("model", "M", draw_model, "Change Whisper model", None),
-    ("help", "?", draw_help, "Show help", "Help"),
+    ("copy", "C", "copy", "Copy last transcription", "Copy Last Transcription"),
+    ("load", "L", "disc", "Load audio file", "Load Audio File..."),
+    ("folder", "F", "folder", "Open recordings folder", "Open Recordings Folder"),
+    ("sound", "S", "volume", "Toggle sound effects", None),
+    ("auto_hide", "V", "eye", "Toggle auto-minimize", None),
+    ("llm", "R", "pen", "Toggle LLM post-processing", None),
+    ("model", "M", "robot", "Change Whisper model", None),
+    ("help", "?", "book", "Show help", "Help"),
 ]
 
 # Tab definitions
@@ -508,12 +320,12 @@ class HelpDialog(DraggableDialog):
         keymap_label.setStyleSheet("color: rgb(100,200,255); font-size: 12px; font-weight: bold;")
         keymap_box.addWidget(keymap_label)
 
-        for action_id, key, icon_fn, desc, menu_text in ACTIONS:
+        for action_id, key, icon_name, desc, menu_text in ACTIONS:
             row = QHBoxLayout()
             row.setSpacing(4)
             btn = QPushButton(key)
-            if icon_fn:
-                btn.setIcon(make_icon(icon_fn))
+            if icon_name:
+                btn.setIcon(load_icon(icon_name))
                 btn.setIconSize(QSize(14, 14))
             btn.setStyleSheet(BTN_CSS)
             btn.setFixedWidth(60)
@@ -776,7 +588,7 @@ class TranscriptionRow(QFrame):
         if show_deramble:
             deramble_btn = QPushButton()
             deramble_btn.setFixedSize(24, 24)
-            deramble_btn.setIcon(make_icon(draw_pen))
+            deramble_btn.setIcon(load_icon("pen"))
             deramble_btn.setIconSize(QSize(16, 16))
             deramble_btn.setStyleSheet(self.BTN_STYLE)
             deramble_btn.setToolTip("De-ramble with LLM")
@@ -785,7 +597,7 @@ class TranscriptionRow(QFrame):
 
         copy_btn = QPushButton()
         copy_btn.setFixedSize(24, 24)
-        copy_btn.setIcon(make_icon(draw_copy))
+        copy_btn.setIcon(load_icon("copy"))
         copy_btn.setIconSize(QSize(16, 16))
         copy_btn.setStyleSheet(self.BTN_STYLE)
         copy_btn.setToolTip("Copy to clipboard")
@@ -1106,7 +918,7 @@ class VoiceThingWindow(QWidget):
         # Warning button for permission errors (hidden by default)
         self.warning_btn = QPushButton()
         self.warning_btn.setFixedSize(20, 20)
-        self.warning_btn.setIcon(make_icon(draw_warning))
+        self.warning_btn.setIcon(load_icon("warning"))
         self.warning_btn.setIconSize(QSize(18, 18))
         self.warning_btn.setStyleSheet("QPushButton { background: transparent; border: none; }")
         self.warning_btn.setToolTip(PERMISSION_ERROR_TITLE)
@@ -1138,9 +950,9 @@ class VoiceThingWindow(QWidget):
         btn_row.setContentsMargins(0, 0, 0, 0)
         btn_row.setSpacing(8)
 
-        def make_btn(text, icon_fn, handler):
+        def make_btn(text, icon_name, handler):
             btn = QPushButton(text)
-            btn.setIcon(make_icon(icon_fn))
+            btn.setIcon(load_icon(icon_name))
             btn.setIconSize(QSize(16, 16))
             btn.setStyleSheet(BTN_CSS)
             btn.clicked.connect(handler)
@@ -1148,32 +960,32 @@ class VoiceThingWindow(QWidget):
             btn_row.addWidget(btn)
             return btn
 
-        self.record_btn = make_btn("Space", draw_mic, self.toggle_recording)
+        self.record_btn = make_btn("Space", "mic", self.toggle_recording)
         self.record_btn.setToolTip("Start/stop recording")
         self.record_btn.setEnabled(True)
-        self.cancel_btn = make_btn("X", draw_x, self.cancel_recording)
+        self.cancel_btn = make_btn("X", "cancel", self.cancel_recording)
         self.cancel_btn.setToolTip("Cancel recording")
-        self.copy_btn = make_btn("C", draw_copy, self.copy_transcription)
+        self.copy_btn = make_btn("C", "copy", self.copy_transcription)
         self.copy_btn.setToolTip("Copy last transcription to clipboard")
-        self.load_btn = make_btn("L", draw_load, self.load_audio_file)
+        self.load_btn = make_btn("L", "disc", self.load_audio_file)
         self.load_btn.setToolTip("Load audio file to transcribe")
         self.load_btn.setEnabled(True)
-        self.folder_btn = make_btn("F", draw_folder, self.open_folder)
+        self.folder_btn = make_btn("F", "folder", self.open_folder)
         self.folder_btn.setToolTip("Open recordings folder")
-        self.sound_btn = make_btn("S", draw_sound, self.toggle_sound)
+        self.sound_btn = make_btn("S", "volume", self.toggle_sound)
         self.sound_btn.setToolTip("Toggle sound effects")
         self.sound_btn.setEnabled(True)
-        self.eye_btn = make_btn("V", lambda p, s: draw_eye(p, s, open=True), self.toggle_auto_hide)
+        self.eye_btn = make_btn("V", "eye", self.toggle_auto_hide)
         self.eye_btn.setToolTip("Toggle auto-minimize after transcription")
         self.eye_btn.setEnabled(True)
-        self.llm_btn = make_btn("R", draw_pen, self.toggle_llm)
+        self.llm_btn = make_btn("R", "pen", self.toggle_llm)
         self.llm_btn.setToolTip("Toggle LLM post-processing")
         self.llm_btn.setCheckable(True)
         self.llm_btn.setEnabled(True)
-        self.model_btn = make_btn("M", draw_model, self.show_model_dialog)
+        self.model_btn = make_btn("M", "robot", self.show_model_dialog)
         self.model_btn.setToolTip("Change Whisper model")
         self.model_btn.setEnabled(True)
-        self.help_btn = make_btn("?", draw_help, self.show_help)
+        self.help_btn = make_btn("?", "book", self.show_help)
         self.help_btn.setToolTip("Show help")
         self.help_btn.setEnabled(True)
         layout.addWidget(self.btn_row_widget)
@@ -1265,12 +1077,12 @@ class VoiceThingWindow(QWidget):
 
     def _setup_tray(self):
         self.tray = QSystemTrayIcon(self)
-        self.tray.setIcon(make_icon_sized(draw_mic, TRAY_ICON_SIZE))
+        self.tray.setIcon(load_icon("mic"))
         menu = QMenu()
         menu.addAction("Show", self.show)
         menu.addSeparator()
         # Add menu items from ACTIONS
-        for action_id, key, icon_fn, desc, menu_text in ACTIONS:
+        for action_id, key, icon_name, desc, menu_text in ACTIONS:
             if menu_text:
                 handler = self._get_action_handler(action_id)
                 if handler:
@@ -1478,7 +1290,7 @@ class VoiceThingWindow(QWidget):
     def _update_buttons(self):
         recording = self.state == "recording"
         idle = self.state == "idle"
-        self.record_btn.setIcon(make_icon(draw_stop if recording else draw_mic))
+        self.record_btn.setIcon(load_icon("stop" if recording else "mic"))
         self.record_btn.setEnabled(self.state != "transcribing")
         self.cancel_btn.setEnabled(recording)
         self.copy_btn.setEnabled(self.last_transcription is not None)
@@ -1516,7 +1328,7 @@ class VoiceThingWindow(QWidget):
     def toggle_auto_hide(self):
         self.auto_hide = not self.auto_hide
         # Eye open = stays visible (no auto-hide), eye slashed = auto-hide enabled
-        self.eye_btn.setIcon(make_icon(lambda p, s: draw_eye(p, s, not self.auto_hide)))
+        self.eye_btn.setIcon(load_icon("eye-off" if self.auto_hide else "eye"))
 
     def toggle_small_mode(self):
         self.small_mode = not self.small_mode
@@ -1545,7 +1357,7 @@ class VoiceThingWindow(QWidget):
 
     def toggle_sound(self):
         self.sound_enabled = not self.sound_enabled
-        self.sound_btn.setIcon(make_icon(lambda p, s: draw_sound(p, s, self.sound_enabled)))
+        self.sound_btn.setIcon(load_icon("volume" if self.sound_enabled else "volume-off"))
 
     def toggle_llm(self):
         self.llm_enabled = not self.llm_enabled
@@ -1576,7 +1388,7 @@ class VoiceThingWindow(QWidget):
         """Handle accessibility permission error."""
         self.permission_error = True
         self.auto_hide = False  # Disable auto-hide since global shortcuts won't work
-        self.eye_btn.setIcon(make_icon(lambda p, s: draw_eye(p, s, True)))
+        self.eye_btn.setIcon(load_icon("eye"))
         self.warning_btn.show()
 
     def show_model_dialog(self):
