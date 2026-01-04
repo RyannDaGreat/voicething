@@ -935,11 +935,11 @@ class VoiceThingWindow(QWidget):
         status_row.setContentsMargins(0, 0, 0, 0)
         status_row.setSpacing(8)
         self.small_mode = False  # Track small mode state
-        self.minimize_btn = TrafficLightButton("rgb(255, 189, 68)", "rgb(255, 210, 100)", "minus")
+        self.minimize_btn = TrafficLightButton("rgb(255, 189, 68)", "rgb(255, 210, 100)", "macos-minimize")
         self.minimize_btn.setToolTip("Minimize window (Esc)")
         self.minimize_btn.clicked.connect(self.hide)
         status_row.addWidget(self.minimize_btn)
-        self.small_btn = TrafficLightButton("rgb(52, 199, 89)", "rgb(80, 220, 110)", "expand")
+        self.small_btn = TrafficLightButton("rgb(52, 199, 89)", "rgb(80, 220, 110)", "macos-fullscreen")
         self.small_btn.setToolTip("Toggle small mode (E)")
         self.small_btn.clicked.connect(self.toggle_small_mode)
         status_row.addWidget(self.small_btn)
