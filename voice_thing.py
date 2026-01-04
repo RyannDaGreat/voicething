@@ -2,8 +2,8 @@
 """Voice transcription: double-tap Option to record, transcribe, and type."""
 
 import difflib
-import io
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -11,7 +11,6 @@ import tempfile
 import threading
 import time
 from datetime import datetime
-from functools import partial
 
 import numpy as np
 import rp
@@ -47,8 +46,8 @@ import sounddevice as sd
 from AppKit import NSWorkspace, NSApplicationActivateIgnoringOtherApps
 from pynput import keyboard
 from pynput.keyboard import Controller as KeyboardController, Key
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QSize, QPoint, QPointF
-from PyQt6.QtGui import QPainter, QColor, QPen, QIcon, QFontDatabase, QPolygonF, QLinearGradient, QRadialGradient, QBrush
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QSize, QPointF
+from PyQt6.QtGui import QPainter, QColor, QPen, QIcon, QFont, QFontDatabase, QPolygonF, QLinearGradient, QBrush
 from PyQt6.QtWidgets import (
     QApplication,
     QWidget,
@@ -75,12 +74,6 @@ TRAY_ICON_SIZE = 44  # Menu bar icon size (2x for retina)
 
 # UI Colors
 ACCENT = QColor(100, 200, 255)
-ACCENT_BG = "rgba(100,200,255,0.3)"  # For selected/checked states
-
-# Skeuomorphic gradient colors
-BG_TOP = QColor(48, 48, 62)      # Lighter top
-BG_BOTTOM = QColor(22, 22, 32)   # Darker bottom
-BG_MID = QColor(30, 30, 40)      # Original color for reference
 
 # LLM post-processing settings
 LLM_MODEL = "OLLAMA:qwen2.5:7b"
@@ -146,7 +139,6 @@ def is_blacklisted(text):
     """Check if transcription is a known Whisper hallucination."""
     if not text:
         return False
-    import re
     normalized = re.sub(r'[^\w\s]', '', text.lower()).strip()
     return normalized in BLACKLISTED_TRANSCRIPTIONS
 
@@ -212,6 +204,29 @@ def get_menu_css():
 def get_tab_css():
     # Tab buttons use same style as regular buttons
     return get_btn_css()
+
+
+# Shared scrollbar CSS for panels
+SCROLLBAR_CSS = (
+    "QScrollBar:vertical { width: 8px; background: transparent; margin: 2px; }"
+    "QScrollBar::handle:vertical { "
+    "background: qlineargradient(x1:0, y1:0, x2:1, y2:0, "
+    "stop:0 rgb(70,80,95), stop:0.5 rgb(85,95,110), stop:1 rgb(70,80,95)); "
+    "border-radius: 4px; min-height: 20px; }"
+    "QScrollBar::handle:vertical:hover { "
+    "background: qlineargradient(x1:0, y1:0, x2:1, y2:0, "
+    "stop:0 rgb(80,140,180), stop:0.5 rgb(100,180,220), stop:1 rgb(80,140,180)); }"
+    "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }"
+    "QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: transparent; }"
+)
+
+# Shared panel background CSS
+PANEL_BG_CSS = (
+    "background: qlineargradient(x1:0, y1:0, x2:0, y2:1, "
+    "stop:0 rgb(22,25,32), stop:0.1 rgb(20,23,30), "
+    "stop:0.9 rgb(18,21,28), stop:1 rgb(22,26,35)); "
+    "border: 1px solid rgb(50,55,65); border-radius: 8px;"
+)
 
 CHIME_SHIFT = -12  # Shift all chimes (semitones, -12 = 1 octave lower)
 
@@ -555,22 +570,8 @@ class TextPanel(QTextEdit):
     """Read-only text panel."""
 
     STYLE = (
-        "QTextEdit { color: #b8b8b8; font-size: 11px; font-family: Menlo, monospace; "
-        "background: qlineargradient(x1:0, y1:0, x2:0, y2:1, "
-        "stop:0 rgb(22,25,32), stop:0.1 rgb(20,23,30), "
-        "stop:0.9 rgb(18,21,28), stop:1 rgb(22,26,35)); "
-        "border: 1px solid rgb(50,55,65); "
-        "border-radius: 8px; padding: 8px; }"
-        "QScrollBar:vertical { width: 8px; background: transparent; margin: 2px; }"
-        "QScrollBar::handle:vertical { "
-        "background: qlineargradient(x1:0, y1:0, x2:1, y2:0, "
-        "stop:0 rgb(70,80,95), stop:0.5 rgb(85,95,110), stop:1 rgb(70,80,95)); "
-        "border-radius: 4px; min-height: 20px; }"
-        "QScrollBar::handle:vertical:hover { "
-        "background: qlineargradient(x1:0, y1:0, x2:1, y2:0, "
-        "stop:0 rgb(80,140,180), stop:0.5 rgb(100,180,220), stop:1 rgb(80,140,180)); }"
-        "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }"
-        "QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: transparent; }"
+        f"QTextEdit {{ color: #b8b8b8; font-size: 11px; font-family: Menlo, monospace; "
+        f"{PANEL_BG_CSS} padding: 8px; }}" + SCROLLBAR_CSS
     )
 
     def __init__(self, selectable=True, parent=None):
@@ -850,24 +851,7 @@ class TranscriptionList(QScrollArea):
     copy_requested = pyqtSignal(str)
     deramble_requested = pyqtSignal(int, str)  # (index, raw_text)
 
-    STYLE = (
-        "QScrollArea { "
-        "background: qlineargradient(x1:0, y1:0, x2:0, y2:1, "
-        "stop:0 rgb(22,25,32), stop:0.1 rgb(20,23,30), "
-        "stop:0.9 rgb(18,21,28), stop:1 rgb(22,26,35)); "
-        "border: 1px solid rgb(50,55,65); "
-        "border-radius: 8px; }"
-        "QScrollBar:vertical { width: 8px; background: transparent; margin: 2px; }"
-        "QScrollBar::handle:vertical { "
-        "background: qlineargradient(x1:0, y1:0, x2:1, y2:0, "
-        "stop:0 rgb(70,80,95), stop:0.5 rgb(85,95,110), stop:1 rgb(70,80,95)); "
-        "border-radius: 4px; min-height: 20px; }"
-        "QScrollBar::handle:vertical:hover { "
-        "background: qlineargradient(x1:0, y1:0, x2:1, y2:0, "
-        "stop:0 rgb(80,140,180), stop:0.5 rgb(100,180,220), stop:1 rgb(80,140,180)); }"
-        "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }"
-        "QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: transparent; }"
-    )
+    STYLE = f"QScrollArea {{ {PANEL_BG_CSS} }}" + SCROLLBAR_CSS
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -978,7 +962,6 @@ class LCDTimerWidget(QWidget):
         p.drawRoundedRect(panel_rect, 6, 6)
 
         # Ghost segments (8:88.8) - very dim
-        from PyQt6.QtGui import QFont
         font = QFont(self.seg_font, 28)
         p.setFont(font)
         p.setPen(QColor(100, 200, 255, 15))
