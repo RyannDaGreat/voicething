@@ -1011,6 +1011,8 @@ class VoiceThingWindow(QWidget):
         tab_row.setSpacing(4)
         tab_row.setContentsMargins(0, 4, 0, 0)
         self.output_tab = QPushButton("O  Output")
+        self.output_tab.setIcon(load_icon("terminal"))
+        self.output_tab.setIconSize(QSize(14, 14))
         self.output_tab.setCheckable(True)
         self.output_tab.setChecked(True)
         self.output_tab.setStyleSheet(BTN_CSS)
@@ -1019,6 +1021,8 @@ class VoiceThingWindow(QWidget):
         tab_row.addWidget(self.output_tab, 1)
 
         self.transcriptions_tab = QPushButton("T  Transcriptions")
+        self.transcriptions_tab.setIcon(load_icon("scroll"))
+        self.transcriptions_tab.setIconSize(QSize(14, 14))
         self.transcriptions_tab.setCheckable(True)
         self.transcriptions_tab.setStyleSheet(BTN_CSS)
         self.transcriptions_tab.setToolTip("Show transcription history")
