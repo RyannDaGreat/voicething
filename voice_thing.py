@@ -2,6 +2,7 @@
 """Voice transcription: double-tap Option to record, transcribe, and type."""
 
 import difflib
+import json
 import math
 import os
 import re
@@ -47,7 +48,7 @@ import sounddevice as sd
 from AppKit import NSWorkspace, NSApplicationActivateIgnoringOtherApps
 from pynput import keyboard
 from pynput.keyboard import Controller as KeyboardController, Key
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QSize, QPointF, QRectF
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QSize, QPointF, QRectF, QPropertyAnimation, QEasingCurve, pyqtProperty
 from PyQt6.QtGui import QPainter, QColor, QPen, QIcon, QFont, QFontDatabase, QPolygonF, QLinearGradient, QBrush, QPainterPath, QPixmap
 from PyQt6.QtSvg import QSvgRenderer
 from PyQt6.QtWidgets import (
@@ -65,13 +66,18 @@ from PyQt6.QtWidgets import (
     QFileDialog,
     QScrollArea,
     QFrame,
+    QCheckBox,
     QGraphicsDropShadowEffect,
     QSizePolicy,
     QMessageBox,
 )
 from Foundation import NSBundle
+import os.path as osp
+sys.path.insert(0, osp.dirname(osp.abspath(__file__)))
+from pet_companion import PetCompanionWidget, PetContainer, PetType, ALL_PET_TYPES, get_pet_icon
 
 APP_NAME = "VoiceThing"
+SETTINGS_FILE = os.path.join(os.path.dirname(__file__), "settings.json")
 SAMPLE_RATE = 16000
 BLOCKSIZE = 256
 WHISPER_MODEL = "large-v3"
@@ -266,6 +272,7 @@ ACTIONS = [
     ("cancel", "X", "cancel", "Cancel recording", None),
     ("minimize", "Esc", None, "Minimize window", None),
     ("small_mode", "E", None, "Toggle small mode", None),
+    ("simple_mode", "I", None, "Toggle simple mode (hide advanced)", None),
     ("copy", "C", "copy", "Copy last transcription", "Copy Last Transcription"),
     ("load", "L", "disc", "Load audio file", "Load Audio File..."),
     ("folder", "F", "folder", "Open recordings folder", "Open Recordings Folder"),
@@ -291,17 +298,40 @@ GITHUB_URL = "https://github.com/RyannDaGreat/VoiceThing"
 
 
 class TrafficLightButton(QPushButton):
-    """macOS-style traffic light button with icon on hover."""
+    """macOS-style traffic light button with icon on hover and animated resize."""
 
     def __init__(self, color, hover_color, icon_name, parent=None):
         super().__init__(parent)
+        self._btn_size = 12
         self.setFixedSize(12, 12)
         self.setAttribute(Qt.WidgetAttribute.WA_Hover, True)  # Hover even when unfocused
         self.color = color
         self.hover_color = hover_color
         self.icon_name = icon_name
         self._hovered = False
+        self._size_animation = None
         self._update_style()
+
+    def get_btn_size(self):
+        return self._btn_size
+
+    def set_btn_size(self, size):
+        self._btn_size = size
+        self.setFixedSize(size, size)
+        self._update_style()
+
+    btn_size = pyqtProperty(int, get_btn_size, set_btn_size)
+
+    def animate_to_size(self, target_size, duration=200):
+        """Animate the button size with smooth easing."""
+        if self._size_animation:
+            self._size_animation.stop()
+        self._size_animation = QPropertyAnimation(self, b"btn_size")
+        self._size_animation.setDuration(duration)
+        self._size_animation.setStartValue(self._btn_size)
+        self._size_animation.setEndValue(target_size)
+        self._size_animation.setEasingCurve(QEasingCurve.Type.InOutCubic)
+        self._size_animation.start()
 
     def set_icon_name(self, name):
         self.icon_name = name
@@ -309,11 +339,12 @@ class TrafficLightButton(QPushButton):
 
     def _update_style(self):
         bg = self.hover_color if self._hovered else self.color
-        # padding: 0px ensures icon is centered; icon size 8x8 fits well in 12x12 button
-        self.setStyleSheet(f"QPushButton {{ background: {bg}; border: none; border-radius: 6px; padding: 0px; }}")
+        radius = self._btn_size // 2
+        icon_size = max(6, int(self._btn_size * 0.67))
+        self.setStyleSheet(f"QPushButton {{ background: {bg}; border: none; border-radius: {radius}px; padding: 0px; }}")
         if self._hovered:
             self.setIcon(load_icon(self.icon_name))
-            self.setIconSize(QSize(8, 8))
+            self.setIconSize(QSize(icon_size, icon_size))
         else:
             self.setIcon(QIcon())
 
@@ -509,21 +540,42 @@ class ModelDialog(DraggableDialog):
 
 
 class PrefsDialog(DraggableDialog):
-    """Preferences dialog with theme selection."""
+    """Preferences dialog with theme, simple mode, and pet selection."""
 
     style_changed = pyqtSignal(str)  # Emits style name when changed
+    pets_changed = pyqtSignal(list)  # Emits list of PetType when changed
+    simple_mode_changed = pyqtSignal(bool)  # Emits when simple mode toggled
 
-    def __init__(self, current_style, parent=None):
+    def __init__(self, current_style, current_pet_types, simple_mode=False, parent=None):
         super().__init__(parent)
         self.selected_style = None
+        self.selected_pets = list(current_pet_types) if current_pet_types else []
+        self.pet_checkboxes = {}
+        self.simple_mode = simple_mode
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(15, 15, 15, 15)
         layout.setSpacing(8)
 
         layout.addWidget(make_title("Preferences"))
-        layout.addWidget(make_section("Theme"))
 
+        # Simple Mode section
+        layout.addWidget(make_section("Display"))
+        simple_mode_row = QHBoxLayout()
+        simple_mode_label = QLabel("Simple Mode (I)")
+        simple_mode_label.setStyleSheet("QLabel { color: white; font-size: 13px; }")
+        self.simple_mode_checkbox = QCheckBox()
+        self.simple_mode_checkbox.setChecked(simple_mode)
+        self.simple_mode_checkbox.setToolTip("Hide advanced buttons and show only transcriptions")
+        self.simple_mode_checkbox.stateChanged.connect(self._toggle_simple_mode)
+        self.simple_mode_checkbox.setStyleSheet("QCheckBox { color: white; }")
+        simple_mode_row.addWidget(simple_mode_label)
+        simple_mode_row.addStretch()
+        simple_mode_row.addWidget(self.simple_mode_checkbox)
+        layout.addLayout(simple_mode_row)
+
+        # Theme section
+        layout.addWidget(make_section("Theme"))
         style_keys = list(STYLES.keys())
         for i, style_name in enumerate(style_keys):
             key = str(i + 1)
@@ -532,15 +584,59 @@ class PrefsDialog(DraggableDialog):
             btn.setStyleSheet(get_btn_css())
             if style_name == current_style:
                 btn.setStyleSheet(get_btn_css() + "QPushButton { border: 2px solid rgb(100,200,255); }")
-            btn.clicked.connect(lambda checked, s=style_name: self._select(s))
+            btn.clicked.connect(lambda checked, s=style_name: self._select_style(s))
             layout.addWidget(btn)
 
-        layout.addWidget(make_close_btn("Esc  Cancel", self.reject))
-        self.setFixedWidth(250)
+        # Pet section - checkboxes for multi-select
+        layout.addWidget(make_section("Pet Companions"))
+        pet_grid = QHBoxLayout()
+        pet_grid.setSpacing(4)
+        for pet_type in ALL_PET_TYPES:
+            pet_widget = QWidget()
+            pet_layout = QVBoxLayout(pet_widget)
+            pet_layout.setContentsMargins(2, 2, 2, 2)
+            pet_layout.setSpacing(2)
 
-    def _select(self, style_name):
+            # Pet icon label
+            icon_label = QLabel()
+            icon = get_pet_icon(pet_type, 32)
+            if icon and not icon.isNull():
+                icon_label.setPixmap(icon)
+            icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            icon_label.setFixedSize(36, 36)
+            icon_label.setStyleSheet("QLabel { background: rgba(60,60,60,0.8); border-radius: 4px; }")
+            pet_layout.addWidget(icon_label)
+
+            # Checkbox
+            checkbox = QCheckBox()
+            checkbox.setChecked(pet_type in self.selected_pets)
+            checkbox.setToolTip(pet_type.value.replace("_", " ").title())
+            checkbox.stateChanged.connect(lambda state, p=pet_type: self._toggle_pet(p, state))
+            checkbox.setStyleSheet("QCheckBox { color: white; }")
+            pet_layout.addWidget(checkbox, alignment=Qt.AlignmentFlag.AlignCenter)
+
+            self.pet_checkboxes[pet_type] = checkbox
+            pet_grid.addWidget(pet_widget)
+        layout.addLayout(pet_grid)
+
+        layout.addWidget(make_close_btn("Esc  Close", self.accept))
+        self.setFixedWidth(max(250, 48 * len(ALL_PET_TYPES)))
+
+    def _select_style(self, style_name):
         self.selected_style = style_name
         self.accept()
+
+    def _toggle_simple_mode(self, state):
+        self.simple_mode = state == Qt.CheckState.Checked.value
+        self.simple_mode_changed.emit(self.simple_mode)
+
+    def _toggle_pet(self, pet_type, state):
+        if state == Qt.CheckState.Checked.value:
+            if pet_type not in self.selected_pets:
+                self.selected_pets.append(pet_type)
+        else:
+            if pet_type in self.selected_pets:
+                self.selected_pets.remove(pet_type)
 
     def keyPressEvent(self, e):
         key = e.key()
@@ -549,9 +645,9 @@ class PrefsDialog(DraggableDialog):
         if Qt.Key.Key_1 <= key <= Qt.Key.Key_9:
             idx = key - Qt.Key.Key_1
             if idx < len(style_keys):
-                self._select(style_keys[idx])
+                self._select_style(style_keys[idx])
         elif key == Qt.Key.Key_Escape:
-            self.reject()
+            self.accept()
         else:
             super().keyPressEvent(e)
 
@@ -965,7 +1061,7 @@ class TimerWidget(QWidget):
         self.seg_font = seg_font
         self.text = "0:00.0"
         self.opacity = 0.3  # 0.3 for idle, 0.9 for recording
-        self.setFixedHeight(50)
+        self.setMinimumSize(STYLE.timer_panel_size[0] + 20, 50)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
     def set_text(self, text):
@@ -1464,6 +1560,7 @@ class VoiceThingWindow(QWidget):
         status_row.setContentsMargins(0, 0, 0, 0)
         status_row.setSpacing(8)
         self.small_mode = False  # Track small mode state
+        self.simple_mode = False  # Hide advanced buttons (VRM, F, L, C) and output panel
         self.close_btn = TrafficLightButton("rgb(255, 95, 87)", "rgb(255, 120, 110)", "macos-close")
         self.close_btn.setToolTip("Close window")
         self.close_btn.clicked.connect(self.hide)
@@ -1493,8 +1590,20 @@ class VoiceThingWindow(QWidget):
         layout.addLayout(status_row)
 
         self.seg_font = seg_font
+        # Timer row - timer is centered, pets float on top-left without affecting centering
+        self.timer_row_widget = QWidget()
+        timer_row = QHBoxLayout(self.timer_row_widget)
+        timer_row.setContentsMargins(0, 0, 0, 0)
+        timer_row.setSpacing(0)
         self.timer_label = TimerWidget(seg_font)
-        layout.addWidget(self.timer_label)
+        timer_row.addWidget(self.timer_label, 1, Qt.AlignmentFlag.AlignCenter)
+        # Pet container is parented to timer_row_widget but positioned absolutely (doesn't affect layout)
+        self.current_pet_types = [PetType.LPC_DOG_GOLDEN]  # List of pet types
+        self.pet_container = PetContainer(self.timer_row_widget)
+        self.pet_container.set_pets(self.current_pet_types)
+        self.pet_container.move(0, 0)  # Top-left corner
+        self.pet_container.raise_()  # Ensure pets are on top
+        layout.addWidget(self.timer_row_widget)
 
         self.btn_row_widget = QWidget()
         btn_row = QHBoxLayout(self.btn_row_widget)
@@ -1607,7 +1716,7 @@ class VoiceThingWindow(QWidget):
 
         layout.addWidget(self.tab_stack)
 
-        self.setMinimumSize(360, 250)
+        self.setMinimumSize(150, 95)  # Allow shrinking to timer-only mode
         self.resize(460, 350)
         self.hide_signal.connect(self._maybe_hide)
         self.toggle_signal.connect(self.toggle_recording)
@@ -1625,6 +1734,7 @@ class VoiceThingWindow(QWidget):
         self.log_timer.start(100)  # Update log output 10x/sec
 
         self._setup_tray()
+        self._load_settings()
 
     def _get_action_handler(self, action_id):
         """Get the handler method for an action ID."""
@@ -1633,6 +1743,7 @@ class VoiceThingWindow(QWidget):
             "cancel": self.cancel_recording,
             "minimize": self.hide,
             "small_mode": self.toggle_small_mode,
+            "simple_mode": self.toggle_simple_mode,
             "copy": self.copy_transcription,
             "load": self.load_audio_file,
             "folder": self.open_folder,
@@ -1720,6 +1831,7 @@ class VoiceThingWindow(QWidget):
 
     def _copy_to_clipboard(self, text):
         rp.string_to_clipboard(text)
+        self.pet_container.trigger_copy()
         self._chime([16, 20], t=0.05)  # E key: copy
 
     def _deramble_transcription(self, index, raw_text):
@@ -1860,6 +1972,23 @@ class VoiceThingWindow(QWidget):
         rect = self.rect().adjusted(2, 2, -2, -2)
         STYLE.paint_window(p, rect, self.width(), self.height(), self.isActiveWindow())
 
+    def resizeEvent(self, e):
+        """Progressively hide elements as window shrinks: output->buttons->waveform->timer only."""
+        super().resizeEvent(e)
+        if self.small_mode:
+            return  # Don't interfere with small mode
+        h = self.height()
+        # Thresholds for progressive hiding (adjust based on element sizes)
+        # Full layout: ~350px, buttons+waveform+timer: ~200px, waveform+timer: ~150px, timer only: ~80px
+        show_output = h >= 250
+        show_buttons = h >= 180
+        show_waveform = h >= 120
+        # Update visibility based on height
+        self.tab_stack.setVisible(show_output and not self.simple_mode)
+        self.tab_row_widget.setVisible(show_output and not self.simple_mode)
+        self.btn_row_widget.setVisible(show_buttons)
+        self.waveform.setVisible(show_waveform)
+
     def _cleanup(self):
         if self.stream:
             self.stream.stop()
@@ -1876,7 +2005,7 @@ class VoiceThingWindow(QWidget):
         self.copy_btn.setEnabled(self.last_transcription is not None)
         self.folder_btn.setEnabled(True)
         self.load_btn.setEnabled(not recording and not transcribing)
-        self.model_btn.setEnabled(not transcribing)  # Can change during recording, not while model running
+        self.model_btn.setEnabled(not recording and not transcribing)  # Disable during recording and transcription
 
     def toggle_recording(self):
         if self.state == "idle":
@@ -1909,11 +2038,15 @@ class VoiceThingWindow(QWidget):
         self.eye_btn.setChecked(self.auto_hide)
         icon_name = "eye-off" if self.auto_hide else "eye"
         self._update_checkable_btn_icon(self.eye_btn, icon_name)
+        self._save_settings()
 
     def toggle_small_mode(self):
         self.small_mode = not self.small_mode
         # Update yellow button icon: collapse in big mode, expand/fullscreen in small mode
         self.small_btn.set_icon_name("macos-fullscreen" if self.small_mode else "macos-collapse")
+        # Animate yellow button size: larger in small mode for prominence
+        target_size = 18 if self.small_mode else 12
+        self.small_btn.animate_to_size(target_size, duration=200)
         self.btn_row_widget.setVisible(not self.small_mode)
         self.waveform.setVisible(not self.small_mode)
         self.tab_row_widget.setVisible(not self.small_mode)
@@ -1937,16 +2070,36 @@ class VoiceThingWindow(QWidget):
             if hasattr(self, '_normal_size'):
                 self.resize(self._normal_size)
 
+    def toggle_simple_mode(self):
+        """Toggle simple mode - hides advanced buttons and shows only transcriptions."""
+        self.simple_mode = not self.simple_mode
+        # Hide advanced buttons: V (eye), R (llm), M (model), F (folder), L (load), C (copy), S (sound)
+        self.eye_btn.setVisible(not self.simple_mode)
+        self.llm_btn.setVisible(not self.simple_mode)
+        self.model_btn.setVisible(not self.simple_mode)
+        self.folder_btn.setVisible(not self.simple_mode)
+        self.load_btn.setVisible(not self.simple_mode)
+        self.copy_btn.setVisible(not self.simple_mode)
+        self.sound_btn.setVisible(not self.simple_mode)
+        # Hide tabs but keep transcriptions panel visible
+        self.tab_row_widget.setVisible(not self.simple_mode)
+        # In simple mode: show only transcriptions panel (no output tab)
+        if self.simple_mode:
+            self.tab_stack.setCurrentIndex(1)  # Transcriptions panel
+        self._save_settings()
+
     def toggle_sound(self):
         self.sound_enabled = not self.sound_enabled
         self.sound_btn.setChecked(self.sound_enabled)
         icon_name = "volume" if self.sound_enabled else "volume-off"
         self._update_checkable_btn_icon(self.sound_btn, icon_name)
+        self._save_settings()
 
     def toggle_llm(self):
         self.llm_enabled = not self.llm_enabled
         self.llm_btn.setChecked(self.llm_enabled)
         self._update_checkable_btn_icon(self.llm_btn)
+        self._save_settings()
 
     def _chime(self, *args, **kwargs):
         """Play chime only if sound is enabled."""
@@ -1986,10 +2139,79 @@ class VoiceThingWindow(QWidget):
 
     def show_prefs(self):
         """Show preferences dialog."""
-        dialog = PrefsDialog(STYLE.name, self)
+        dialog = PrefsDialog(STYLE.name, self.current_pet_types, self.simple_mode, self)
+        dialog.simple_mode_changed.connect(self._set_simple_mode)
         dialog.center_on_parent()
-        if dialog.exec() and dialog.selected_style and dialog.selected_style != STYLE.name:
-            self._change_style(dialog.selected_style)
+        if dialog.exec():
+            if dialog.selected_style and dialog.selected_style != STYLE.name:
+                self._change_style(dialog.selected_style)
+            if dialog.selected_pets != self.current_pet_types:
+                self._change_pets(dialog.selected_pets)
+
+    def _set_simple_mode(self, enabled):
+        """Set simple mode on/off (called from prefs dialog)."""
+        if self.simple_mode != enabled:
+            self.toggle_simple_mode()
+
+    def _change_pets(self, pet_types):
+        """Change the pet companion types."""
+        self.current_pet_types = list(pet_types)
+        self.pet_container.set_pets(pet_types)
+        self._save_settings()
+
+    def _load_settings(self):
+        """Load settings from JSON file."""
+        if not os.path.exists(SETTINGS_FILE):
+            return
+        with open(SETTINGS_FILE, 'r') as f:
+            settings = json.load(f)
+        if 'auto_hide' in settings:
+            self.auto_hide = settings['auto_hide']
+            self.eye_btn.setChecked(self.auto_hide)
+            icon_name = "eye-off" if self.auto_hide else "eye"
+            self._update_checkable_btn_icon(self.eye_btn, icon_name)
+        if 'sound_enabled' in settings:
+            self.sound_enabled = settings['sound_enabled']
+            self.sound_btn.setChecked(self.sound_enabled)
+            icon_name = "volume" if self.sound_enabled else "volume-off"
+            self._update_checkable_btn_icon(self.sound_btn, icon_name)
+        if 'llm_enabled' in settings:
+            self.llm_enabled = settings['llm_enabled']
+            self.llm_btn.setChecked(self.llm_enabled)
+            self._update_checkable_btn_icon(self.llm_btn)
+        if 'simple_mode' in settings and settings['simple_mode']:
+            self.simple_mode = False  # Start as False so toggle works
+            self.toggle_simple_mode()  # Toggle to True and apply visibility
+        if 'pet_types' in settings:
+            pet_values = settings['pet_types']
+            loaded_pets = []
+            for pet_value in pet_values:
+                for pet_type in ALL_PET_TYPES:
+                    if pet_type.value == pet_value:
+                        loaded_pets.append(pet_type)
+                        break
+            self.current_pet_types = loaded_pets
+            self.pet_container.set_pets(loaded_pets)
+        elif 'pet_type' in settings:
+            # Legacy single pet support
+            pet_value = settings['pet_type']
+            for pet_type in ALL_PET_TYPES:
+                if pet_type.value == pet_value:
+                    self.current_pet_types = [pet_type]
+                    self.pet_container.set_pets([pet_type])
+                    break
+
+    def _save_settings(self):
+        """Save settings to JSON file."""
+        settings = {
+            'auto_hide': self.auto_hide,
+            'sound_enabled': self.sound_enabled,
+            'llm_enabled': self.llm_enabled,
+            'simple_mode': self.simple_mode,
+            'pet_types': [pt.value for pt in self.current_pet_types],
+        }
+        with open(SETTINGS_FILE, 'w') as f:
+            json.dump(settings, f, indent=2)
 
     def _change_style(self, style_name):
         """Change the UI style immediately."""
@@ -2117,6 +2339,7 @@ class VoiceThingWindow(QWidget):
             self.first_show = False
         self.timer_label.set_text("0:00.0")
         self._set_state("recording", "Recording")
+        self.pet_container.set_listening(True)
         self._chime([2, 6], [9, 14], t=0.08)  # D key
 
         def callback(indata, frames, time_info, status):
@@ -2138,6 +2361,7 @@ class VoiceThingWindow(QWidget):
             self.stream.close()
             self.stream = None
         self._set_state("transcribing", "Transcribing...")
+        self.pet_container.set_listening(False)
         self._switch_tab(0)  # Switch to Output tab during transcription
         self._chime([14, 9], [6, 2], t=0.08)  # D key: stop recording
         audio = np.concatenate(self.audio_chunks) if self.audio_chunks else np.array([])
