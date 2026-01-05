@@ -74,25 +74,35 @@ WHISPER_MODEL = "large-v3"
 TRAY_ICON_SIZE = 44  # Menu bar icon size (2x for retina)
 WAVEFORM_DURATION_SECONDS = 10  # Duration of audio shown in waveform display
 
-# UI Colors
-ACCENT = QColor(100, 200, 255)
-TEXT_PRIMARY = "rgb(40,40,45)"      # Main text color
-TEXT_SECONDARY = "rgb(60,60,65)"    # Secondary/body text
-TEXT_ERROR = "rgb(255,80,80)"       # Error text (red)
+# Import style system - all UI styling comes from here
+from styles import get_style
+STYLE = get_style("macos_2005")  # Can swap to "windows_95" etc later
 
-# Icon colors (for SVG recoloring)
-ICON_COLOR_DARK = '#505055'    # Dark icons on light buttons
-ICON_COLOR_LIGHT = '#ffffff'   # Light icons on dark/checked buttons
-ICON_COLOR_MUTED = '#606068'   # Slightly muted icons (transcription rows)
+# Expose style properties as module-level for backward compatibility
+ACCENT = STYLE.accent
+TEXT_PRIMARY = STYLE.text_primary
+TEXT_SECONDARY = STYLE.text_secondary
+TEXT_MUTED = STYLE.text_muted
+TEXT_ERROR = STYLE.text_error
+TEXT_LINK = STYLE.text_link
+BORDER_COLOR = STYLE.border_color
+BORDER_DARK = STYLE.border_dark
+ICON_COLOR_DARK = STYLE.icon_color_dark
+ICON_COLOR_LIGHT = STYLE.icon_color_light
+ICON_COLOR_MUTED = STYLE.icon_color_muted
 
-# Common text styles
+# Style functions delegate to STYLE
 def title_style(size=18):
-    """Style for dialog/window titles."""
-    return f"color: {TEXT_PRIMARY}; font-size: {size}px; font-family: {UI_FONT};"
+    return STYLE.title_style(size)
 
 def body_style(size=10):
-    """Style for body text."""
-    return f"color: {TEXT_SECONDARY}; font-size: {size}px;"
+    return STYLE.body_style(size)
+
+def section_style():
+    return STYLE.section_style()
+
+def draw_vignette(painter, rect, width, height, radius=12):
+    return STYLE.draw_vignette(painter, rect, width, height, radius)
 
 # LLM post-processing settings
 LLM_MODEL = "OLLAMA:qwen2.5:7b"
@@ -164,126 +174,24 @@ def is_blacklisted(text):
 RECORDINGS_DIR = os.path.join(tempfile.gettempdir(), APP_NAME)
 ASSETS_DIR = os.path.join(os.path.dirname(__file__), "assets")
 
-# UI Font - will be set after QApplication is created
-UI_FONT = "Futura"  # Fallback, actual font loaded in main()
+# UI Font - from style (will be loaded in main())
+UI_FONT = STYLE.font
 UI_FONT_PATH = rp.download_font("R:Futura")
 
-
+# CSS functions delegate to style
 def get_btn_css():
-    # Aqua "jelly" button - curved gradient with horizon line for 3D bulge effect
-    # Key: abrupt transition at ~48% creates the "horizon" that makes it look curved
-    return (
-        f"QPushButton {{ "
-        f"color: rgb(40,40,45); "
-        f"background: qlineargradient(x1:0, y1:0, x2:0, y2:1, "
-        f"stop:0 rgb(255,255,255), stop:0.08 rgb(250,250,252), "
-        f"stop:0.4 rgb(225,225,230), stop:0.48 rgb(210,210,218), "
-        f"stop:0.52 rgb(180,180,192), stop:0.6 rgb(175,175,188), "
-        f"stop:1 rgb(195,195,205)); "
-        f"border: 1px solid rgb(140,140,152); "
-        f"border-top-color: rgb(190,190,200); "
-        f"border-bottom-color: rgb(110,110,125); "
-        f"border-radius: 5px; padding: 3px 8px; font-size: 11px; font-family: {UI_FONT}; "
-        f"text-align: left; }}"
-        "QPushButton:hover { "
-        "background: qlineargradient(x1:0, y1:0, x2:0, y2:1, "
-        "stop:0 rgb(255,255,255), stop:0.08 rgb(252,252,255), "
-        "stop:0.4 rgb(230,238,250), stop:0.48 rgb(215,225,242), "
-        "stop:0.52 rgb(175,195,230), stop:0.6 rgb(170,192,228), "
-        "stop:1 rgb(190,210,240)); "
-        "border: 1px solid rgb(100,130,175); }"
-        "QPushButton:pressed { "
-        "background: qlineargradient(x1:0, y1:0, x2:0, y2:1, "
-        "stop:0 rgb(190,190,200), stop:0.48 rgb(170,170,185), "
-        "stop:0.52 rgb(160,160,175), stop:1 rgb(185,185,198)); "
-        "border: 1px solid rgb(100,100,115); "
-        "border-top-color: rgb(100,100,115); "
-        "border-bottom-color: rgb(160,160,175); }"
-        "QPushButton:disabled { color: rgb(140,140,148); "
-        "background: qlineargradient(x1:0, y1:0, x2:0, y2:1, "
-        "stop:0 rgb(235,235,238), stop:0.48 rgb(215,215,220), "
-        "stop:0.52 rgb(200,200,208), stop:1 rgb(215,215,222)); "
-        "border: 1px solid rgb(165,165,175); }"
-        "QPushButton:checked { "
-        "color: rgb(255,255,255); "
-        "background: qlineargradient(x1:0, y1:0, x2:0, y2:1, "
-        "stop:0 rgb(180,215,255), stop:0.08 rgb(160,200,250), "
-        "stop:0.4 rgb(110,170,240), stop:0.48 rgb(90,150,230), "
-        "stop:0.52 rgb(50,120,210), stop:0.6 rgb(45,115,205), "
-        "stop:1 rgb(70,140,220)); "
-        "border: 1px solid rgb(35,85,155); "
-        "border-top-color: rgb(100,160,220); "
-        "border-bottom-color: rgb(25,70,135); }"
-        "QPushButton:checked:hover { "
-        "background: qlineargradient(x1:0, y1:0, x2:0, y2:1, "
-        "stop:0 rgb(195,225,255), stop:0.08 rgb(175,212,252), "
-        "stop:0.4 rgb(125,185,248), stop:0.48 rgb(105,165,240), "
-        "stop:0.52 rgb(65,135,220), stop:0.6 rgb(60,130,215), "
-        "stop:1 rgb(85,155,230)); }"
-        "QPushButton:checked:pressed { "
-        "background: qlineargradient(x1:0, y1:0, x2:0, y2:1, "
-        "stop:0 rgb(50,110,190), stop:0.48 rgb(40,100,180), "
-        "stop:0.52 rgb(35,95,175), stop:1 rgb(60,120,195)); "
-        "border: 1px solid rgb(25,65,125); }"
-    )
-
+    return STYLE.button_css()
 
 def get_menu_css():
-    # Aqua-style menu
-    return (
-        f"QMenu {{ "
-        f"background: qlineargradient(x1:0, y1:0, x2:0, y2:1, "
-        f"stop:0 rgb(250,250,252), stop:1 rgb(230,230,235)); "
-        f"color: rgb(30,30,35); border: 1px solid rgb(160,160,170); "
-        f"border-radius: 6px; padding: 4px; font-family: {UI_FONT}; font-size: 12px; }}"
-        "QMenu::item { padding: 4px 16px; border-radius: 4px; }"
-        "QMenu::item:selected { "
-        "color: white; "
-        "background: qlineargradient(x1:0, y1:0, x2:0, y2:1, "
-        "stop:0 rgb(100,160,230), stop:0.5 rgb(60,130,210), stop:1 rgb(40,110,190)); }"
-        "QMenu::separator { height: 1px; background: rgb(200,200,205); margin: 4px 8px; }"
-    )
-
+    return STYLE.menu_css()
 
 def get_tab_css():
-    # Tab buttons use same style as regular buttons
-    return get_btn_css()
+    return STYLE.button_css()  # Tab buttons use same style
 
-
-# Shared scrollbar CSS for panels (Aqua style)
-SCROLLBAR_CSS = (
-    "QScrollBar:vertical { width: 12px; background: rgb(220,220,225); margin: 2px; border-radius: 6px; }"
-    "QScrollBar::handle:vertical { "
-    "background: qlineargradient(x1:0, y1:0, x2:1, y2:0, "
-    "stop:0 rgb(180,180,185), stop:0.3 rgb(200,200,205), stop:0.7 rgb(200,200,205), stop:1 rgb(180,180,185)); "
-    "border: 1px solid rgb(140,140,150); "
-    "border-radius: 5px; min-height: 20px; }"
-    "QScrollBar::handle:vertical:hover { "
-    "background: qlineargradient(x1:0, y1:0, x2:1, y2:0, "
-    "stop:0 rgb(130,170,210), stop:0.5 rgb(160,200,240), stop:1 rgb(130,170,210)); "
-    "border: 1px solid rgb(80,120,170); }"
-    "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }"
-    "QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: transparent; }"
-)
-
-# Shared panel background CSS (Aqua recessed style)
-PANEL_BG_CSS = (
-    "background: qlineargradient(x1:0, y1:0, x2:0, y2:1, "
-    "stop:0 rgb(240,240,245), stop:0.02 rgb(250,250,252), "
-    "stop:0.98 rgb(250,250,252), stop:1 rgb(235,235,240)); "
-    "border: 1px solid rgb(160,160,170); "
-    "border-top-color: rgb(120,120,130); "
-    "border-bottom-color: rgb(200,200,205); "
-    "border-radius: 6px;"
-)
-
-# Flat panel background for text areas (recessed white)
-PANEL_BG_FLAT_CSS = (
-    "background: rgb(255,255,255); "
-    "border: 1px solid rgb(160,160,170); "
-    "border-top-color: rgb(120,120,130); "
-    "border-radius: 6px;"
-)
+# CSS from style
+SCROLLBAR_CSS = STYLE.scrollbar_css()
+PANEL_BG_CSS = STYLE.panel_bg_css()
+PANEL_BG_FLAT_CSS = STYLE.panel_bg_flat_css()
 
 CHIME_SHIFT = -12  # Shift all chimes (semitones, -12 = 1 octave lower)
 
@@ -320,53 +228,10 @@ def load_icon(name, color=None):
     return QIcon(pixmap)
 
 
-# Brushed metal texture cache
-_BRUSHED_METAL_PIXMAP = None
-
+# Background texture from style
 def get_brushed_metal_pixmap(height=512):
-    """Generate brushed metal texture using noise + motion blur technique.
-
-    This is how Apple (and Photoshop tutorials) create brushed metal:
-    1. Start with 2D random noise
-    2. Apply horizontal motion blur to streak it into brush marks
-    3. The result has natural variation, not perfect horizontal lines
-    """
-    global _BRUSHED_METAL_PIXMAP
-    if _BRUSHED_METAL_PIXMAP is not None:
-        return _BRUSHED_METAL_PIXMAP
-
-    from PyQt6.QtGui import QImage, QPixmap
-    from scipy.ndimage import uniform_filter1d
-
-    # Generate 2D noise field
-    width = 256  # Need wider texture for horizontal variation
-    np.random.seed(42)
-
-    # Start with random noise (like Photoshop's Add Noise filter)
-    noise = np.random.randint(0, 60, size=(height, width)).astype(np.float32)
-
-    # Apply horizontal motion blur (like Photoshop's Motion Blur at 0 degrees)
-    # This stretches the noise into horizontal streaks
-    blur_radius = 40  # Higher = longer streaks
-    blurred = uniform_filter1d(noise, size=blur_radius, axis=1, mode='wrap')
-
-    # Add base gray and scale
-    base = 168
-    values = base + blurred - 30  # Center around base gray
-    values = np.clip(values, 145, 195).astype(np.uint8)
-
-    # Create RGBA image
-    img_data = np.zeros((height, width, 4), dtype=np.uint8)
-    img_data[:, :, 0] = values  # R
-    img_data[:, :, 1] = values  # G
-    img_data[:, :, 2] = values  # B
-    img_data[:, :, 3] = 255     # A
-
-    qimg = QImage(img_data.data, width, height, width * 4, QImage.Format.Format_RGBA8888)
-    qimg = qimg.copy()
-
-    _BRUSHED_METAL_PIXMAP = QPixmap.fromImage(qimg)
-    return _BRUSHED_METAL_PIXMAP
+    """Get background texture from current style."""
+    return STYLE.get_background_pixmap(height)
 
 
 WHISPER_MODELS = [
@@ -485,29 +350,8 @@ class DraggableDialog(QDialog):
         p.drawTiledPixmap(rect, metal)
         p.setClipping(False)
 
-        # Vignette - both horizontal and vertical gradients
-        # Horizontal (left/right) at 50% opacity
-        h_grad = QLinearGradient(0, 0, self.width(), 0)
-        h_grad.setColorAt(0, QColor(0, 0, 0, 35))      # Dark at left (50% of 70)
-        h_grad.setColorAt(0.08, QColor(0, 0, 0, 12))   # Fade out
-        h_grad.setColorAt(0.15, QColor(0, 0, 0, 0))    # Clear in middle
-        h_grad.setColorAt(0.85, QColor(0, 0, 0, 0))    # Clear in middle
-        h_grad.setColorAt(0.92, QColor(0, 0, 0, 15))   # Fade in
-        h_grad.setColorAt(1, QColor(0, 0, 0, 30))      # Dark at right (50% of 60)
-        p.setBrush(QBrush(h_grad))
-        p.setPen(Qt.PenStyle.NoPen)
-        p.drawRoundedRect(rect, 10, 10)
-
-        # Vertical (top/bottom) at full opacity
-        v_grad = QLinearGradient(0, 0, 0, self.height())
-        v_grad.setColorAt(0, QColor(0, 0, 0, 70))      # Dark at top
-        v_grad.setColorAt(0.08, QColor(0, 0, 0, 25))   # Fade out
-        v_grad.setColorAt(0.15, QColor(0, 0, 0, 0))    # Clear in middle
-        v_grad.setColorAt(0.85, QColor(0, 0, 0, 0))    # Clear in middle
-        v_grad.setColorAt(0.92, QColor(0, 0, 0, 30))   # Fade in
-        v_grad.setColorAt(1, QColor(0, 0, 0, 60))      # Dark at bottom
-        p.setBrush(QBrush(v_grad))
-        p.drawRoundedRect(rect, 10, 10)
+        # Vignette overlay
+        draw_vignette(p, rect, self.width(), self.height(), radius=10)
 
         # Border
         p.setBrush(Qt.BrushStyle.NoBrush)
@@ -537,7 +381,7 @@ class HelpDialog(DraggableDialog):
         # Left side: About
         about_box = QVBoxLayout()
         about_label = QLabel("About")
-        about_label.setStyleSheet(f"color: rgb(40,100,180); font-size: 12px; font-family: {UI_FONT};")
+        about_label.setStyleSheet(section_style())
         about_box.addWidget(about_label)
 
         about_text = QLabel(
@@ -580,7 +424,7 @@ class HelpDialog(DraggableDialog):
         # Right side: Keymap
         keymap_box = QVBoxLayout()
         keymap_label = QLabel("Keymap")
-        keymap_label.setStyleSheet(f"color: rgb(40,100,180); font-size: 12px; font-family: {UI_FONT};")
+        keymap_label.setStyleSheet(section_style())
         keymap_box.addWidget(keymap_label)
 
         for action_id, key, icon_name, desc, menu_text in ACTIONS:
@@ -1763,30 +1607,8 @@ class VoiceThingWindow(QWidget):
         p.drawTiledPixmap(rect, metal)
         p.setClipping(False)
 
-        # Vignette - both horizontal and vertical gradients
-        # Horizontal (left/right) at 50% opacity
-        h_grad = QLinearGradient(0, 0, self.width(), 0)
-        h_grad.setColorAt(0, QColor(0, 0, 0, 35))      # Dark at left (50% of 70)
-        h_grad.setColorAt(0.08, QColor(0, 0, 0, 12))   # Fade out
-        h_grad.setColorAt(0.15, QColor(0, 0, 0, 0))    # Clear in middle
-        h_grad.setColorAt(0.85, QColor(0, 0, 0, 0))    # Clear in middle
-        h_grad.setColorAt(0.92, QColor(0, 0, 0, 15))   # Fade in
-        h_grad.setColorAt(1, QColor(0, 0, 0, 30))      # Dark at right (50% of 60)
-        p.setBrush(QBrush(h_grad))
-        p.setPen(Qt.PenStyle.NoPen)
-        p.drawRoundedRect(rect, 12, 12)
-
-        # Vertical (top/bottom) at full opacity
-        v_grad = QLinearGradient(0, 0, 0, self.height())
-        v_grad.setColorAt(0, QColor(0, 0, 0, 70))      # Dark at top
-        v_grad.setColorAt(0.08, QColor(0, 0, 0, 25))   # Fade out
-        v_grad.setColorAt(0.15, QColor(0, 0, 0, 0))    # Clear in middle
-        v_grad.setColorAt(0.85, QColor(0, 0, 0, 0))    # Clear in middle
-        v_grad.setColorAt(0.92, QColor(0, 0, 0, 30))   # Fade in
-        v_grad.setColorAt(1, QColor(0, 0, 0, 60))      # Dark at bottom
-        p.setBrush(QBrush(v_grad))
-        p.drawRoundedRect(rect, 12, 12)
-
+        # Vignette overlay
+        draw_vignette(p, rect, self.width(), self.height(), radius=12)
 
     def _cleanup(self):
         if self.stream:
@@ -1803,8 +1625,8 @@ class VoiceThingWindow(QWidget):
         self.cancel_btn.setEnabled(recording)
         self.copy_btn.setEnabled(self.last_transcription is not None)
         self.folder_btn.setEnabled(True)
-        self.load_btn.setEnabled(not transcribing and not recording)
-        self.model_btn.setEnabled(not transcribing)  # Only disabled while model is running
+        self.load_btn.setEnabled(not recording and not transcribing)
+        self.model_btn.setEnabled(not transcribing)  # Can change during recording, not while model running
 
     def toggle_recording(self):
         if self.state == "idle":

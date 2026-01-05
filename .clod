@@ -1,0 +1,28 @@
+# VoiceThing Style System
+
+## Structure
+```
+styles/
+├── __init__.py      # get_style("macos_2005") returns style instance
+├── base.py          # BaseStyle with defaults - override what you need
+└── macos_2005.py    # Mid-2000s macOS Aqua brushed metal
+```
+
+## Adding a new style
+
+1. Create `styles/windows_95.py`:
+```python
+from .base import BaseStyle
+
+class Windows95Style(BaseStyle):
+    name = "windows_95"
+    font = "MS Sans Serif"
+    # Override colors, CSS methods, etc.
+```
+
+2. Register in `styles/__init__.py`:
+```python
+STYLES = {"macos_2005": MacOS2005Style, "windows_95": Windows95Style}
+```
+
+3. Use: `STYLE = get_style("windows_95")` in voice_thing.py
