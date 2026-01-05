@@ -566,7 +566,7 @@ class PermissionDialog(DraggableDialog):
         layout.setSpacing(12)
 
         title = QLabel(PERMISSION_ERROR_TITLE)
-        title.setStyleSheet(f"color: {TEXT_ERROR}; font-size: 16px; font-family: {UI_FONT};")
+        title.setStyleSheet(title_style(14))
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title)
 
@@ -1200,6 +1200,14 @@ class WaveformWidget(QWidget):
             self._paint_aqua_panel(p, rect, w, h, cy)
         elif STYLE.waveform_panel == "dark":
             self._paint_dark_panel(p, rect, w, h, cy)
+        elif STYLE.waveform_panel == "aero":
+            self._paint_aero_panel(p, rect, w, h, cy)
+        elif STYLE.waveform_panel == "winamp":
+            self._paint_winamp_panel(p, rect, w, h, cy)
+        elif STYLE.waveform_panel == "vaporwave":
+            self._paint_vaporwave_panel(p, rect, w, h, cy)
+        elif STYLE.waveform_panel == "win95":
+            self._paint_win95_panel(p, rect, w, h, cy)
 
     def _paint_aqua_panel(self, p, rect, w, h, cy):
         """Aqua-style blue panel background - classic macOS look."""
@@ -1276,6 +1284,141 @@ class WaveformWidget(QWidget):
         p.setPen(QPen(QColor(50, 55, 65, 150), 1))
         p.drawRoundedRect(rect, 8, 8)
 
+    def _paint_aero_panel(self, p, rect, w, h, cy):
+        """Frutiger Aero glassy panel with blue tint."""
+        # Glass gradient background
+        panel_grad = QLinearGradient(0, 0, 0, h)
+        panel_grad.setColorAt(0, QColor(200, 220, 240, 230))
+        panel_grad.setColorAt(0.3, QColor(180, 210, 235, 220))
+        panel_grad.setColorAt(0.7, QColor(160, 200, 230, 210))
+        panel_grad.setColorAt(1, QColor(140, 180, 220, 200))
+        p.setBrush(QBrush(panel_grad))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.drawRoundedRect(rect, 4, 4)
+
+        # Top glossy highlight
+        highlight = QLinearGradient(0, 0, 0, h * 0.4)
+        highlight.setColorAt(0, QColor(255, 255, 255, 150))
+        highlight.setColorAt(0.5, QColor(255, 255, 255, 50))
+        highlight.setColorAt(1, QColor(255, 255, 255, 0))
+        p.setBrush(QBrush(highlight))
+        p.drawRoundedRect(rect.adjusted(1, 1, -1, -int(h * 0.6)), 3, 3)
+
+        # Subtle grid
+        p.setPen(QPen(QColor(6, 137, 228, 20), 1))
+        for i in range(1, 4):
+            y = int(h * i / 4)
+            p.drawLine(0, y, w, y)
+
+        # Panel border
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.setPen(QPen(QColor(136, 136, 136), 1))
+        p.drawRoundedRect(rect, 4, 4)
+
+        # Center line
+        p.setPen(QPen(QColor(6, 137, 228, 60), 1))
+        p.drawLine(0, int(cy), w, int(cy))
+
+    def _paint_winamp_panel(self, p, rect, w, h, cy):
+        """Winamp-style dark panel with green accents."""
+        # Deep dark background
+        p.setBrush(QColor(26, 26, 26))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.drawRect(rect)
+
+        # Subtle scan lines effect
+        p.setPen(QPen(QColor(0, 0, 0, 30), 1))
+        for y in range(0, h, 2):
+            p.drawLine(0, y, w, y)
+
+        # Green grid lines
+        p.setPen(QPen(QColor(0, 255, 0, 25), 1))
+        for i in range(1, 4):
+            y = int(h * i / 4)
+            p.drawLine(0, y, w, y)
+        for i in range(1, 8):
+            x = int(w * i / 8)
+            p.drawLine(x, 0, x, h)
+
+        # Win95 beveled border (inset)
+        # Top/left shadow
+        p.setPen(QPen(QColor(0, 0, 0), 1))
+        p.drawLine(rect.left(), rect.top(), rect.right(), rect.top())
+        p.drawLine(rect.left(), rect.top(), rect.left(), rect.bottom())
+        # Bottom/right highlight
+        p.setPen(QPen(QColor(80, 80, 80), 1))
+        p.drawLine(rect.right(), rect.top(), rect.right(), rect.bottom())
+        p.drawLine(rect.left(), rect.bottom(), rect.right(), rect.bottom())
+
+        # Center line in green
+        p.setPen(QPen(QColor(0, 255, 0, 40), 1))
+        p.drawLine(0, int(cy), w, int(cy))
+
+    def _paint_vaporwave_panel(self, p, rect, w, h, cy):
+        """Vaporwave-style dark purple panel with pink/cyan gradient accents."""
+        # Dark purple background (#300350 - russian violet)
+        p.setBrush(QColor(48, 3, 80))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.drawRect(rect)
+
+        # Horizontal pink-to-cyan gradient at bottom third
+        grad_rect = rect.adjusted(0, int(h * 0.6), 0, 0)
+        vapor_grad = QLinearGradient(0, grad_rect.top(), w, grad_rect.bottom())
+        vapor_grad.setColorAt(0, QColor(255, 113, 206, 50))    # Hot pink
+        vapor_grad.setColorAt(0.5, QColor(185, 103, 255, 35))  # Purple
+        vapor_grad.setColorAt(1, QColor(1, 205, 254, 45))      # Cyan
+        p.setBrush(QBrush(vapor_grad))
+        p.drawRect(rect)
+
+        # Subtle scanlines for retro effect
+        p.setPen(QPen(QColor(255, 113, 206, 15), 1))
+        for y_line in range(0, h, 4):
+            p.drawLine(0, y_line, w, y_line)
+
+        # Pink border glow
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.setPen(QPen(QColor(255, 113, 206, 100), 2))
+        p.drawRect(rect.adjusted(1, 1, -1, -1))
+        p.setPen(QPen(QColor(255, 113, 206, 50), 1))
+        p.drawRect(rect)
+
+        # Center line in pink
+        p.setPen(QPen(QColor(255, 113, 206, 40), 1))
+        p.drawLine(0, int(cy), w, int(cy))
+
+    def _paint_win95_panel(self, p, rect, w, h, cy):
+        """Windows 95 style - black recessed panel with inset bevel."""
+        # Black background
+        p.setBrush(QColor(0, 0, 0))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.drawRect(rect)
+
+        # Inset bevel - dark on top/left, light on bottom/right
+        # Top edge - dark shadow
+        p.setPen(QPen(QColor(0, 0, 0), 1))
+        p.drawLine(rect.left(), rect.top(), rect.right(), rect.top())
+        # Left edge - dark shadow
+        p.drawLine(rect.left(), rect.top(), rect.left(), rect.bottom())
+
+        # Inner dark gray
+        p.setPen(QPen(QColor(128, 128, 128), 1))
+        p.drawLine(rect.left() + 1, rect.top() + 1, rect.right() - 1, rect.top() + 1)
+        p.drawLine(rect.left() + 1, rect.top() + 1, rect.left() + 1, rect.bottom() - 1)
+
+        # Bottom edge - white/light highlight
+        p.setPen(QPen(QColor(255, 255, 255), 1))
+        p.drawLine(rect.left(), rect.bottom(), rect.right(), rect.bottom())
+        p.drawLine(rect.right(), rect.top(), rect.right(), rect.bottom())
+
+        # Inner light gray
+        p.setPen(QPen(QColor(223, 223, 223), 1))
+        p.drawLine(rect.left() + 1, rect.bottom() - 1, rect.right() - 1, rect.bottom() - 1)
+        p.drawLine(rect.right() - 1, rect.top() + 1, rect.right() - 1, rect.bottom() - 1)
+
+        # Center line in dim green (optional subtle guide)
+        p.setPen(QPen(QColor(0, 64, 0, 60), 1))
+        p.drawLine(0, int(cy), w, int(cy))
+
 
 class VoiceThingWindow(QWidget):
     hide_signal = pyqtSignal()
@@ -1347,7 +1490,7 @@ class VoiceThingWindow(QWidget):
         self.warning_btn.hide()
         status_row.addWidget(self.warning_btn)
         self.status_label = QLabel("Double-tap ⌥")
-        self.status_label.setStyleSheet(title_style(11))
+        self.status_label.setStyleSheet(title_style(14))
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         status_row.addWidget(self.status_label, 1)
         # Spacer to balance the window control buttons
@@ -1898,7 +2041,7 @@ class VoiceThingWindow(QWidget):
         self.output_panel.setStyleSheet(f"QTextEdit {{ {PANEL_BG_FLAT_CSS} color: {TEXT_SECONDARY}; font-size: 11px; }} {SCROLLBAR_CSS}")
         self.transcriptions_panel._apply_style()
         # Refresh status label
-        self.status_label.setStyleSheet(title_style(11))
+        self.status_label.setStyleSheet(title_style(14))
         # Refresh waveform glow
         self.waveform._update_glow()
         # Force repaint for background, timer, waveform
