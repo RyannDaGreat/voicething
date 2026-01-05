@@ -76,11 +76,23 @@ WAVEFORM_DURATION_SECONDS = 10  # Duration of audio shown in waveform display
 
 # UI Colors
 ACCENT = QColor(100, 200, 255)
+TEXT_PRIMARY = "rgb(40,40,45)"      # Main text color
+TEXT_SECONDARY = "rgb(60,60,65)"    # Secondary/body text
+TEXT_ERROR = "rgb(255,80,80)"       # Error text (red)
 
 # Icon colors (for SVG recoloring)
 ICON_COLOR_DARK = '#505055'    # Dark icons on light buttons
 ICON_COLOR_LIGHT = '#ffffff'   # Light icons on dark/checked buttons
 ICON_COLOR_MUTED = '#606068'   # Slightly muted icons (transcription rows)
+
+# Common text styles
+def title_style(size=18):
+    """Style for dialog/window titles."""
+    return f"color: {TEXT_PRIMARY}; font-size: {size}px; font-family: {UI_FONT};"
+
+def body_style(size=10):
+    """Style for body text."""
+    return f"color: {TEXT_SECONDARY}; font-size: {size}px;"
 
 # LLM post-processing settings
 LLM_MODEL = "OLLAMA:qwen2.5:7b"
@@ -520,7 +532,7 @@ class HelpDialog(DraggableDialog):
 
         # Title
         title = QLabel(APP_NAME)
-        title.setStyleSheet(f"color: rgb(40,40,45); font-size: 18px; font-family: {UI_FONT};")
+        title.setStyleSheet(title_style(18))
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title)
 
@@ -551,7 +563,7 @@ class HelpDialog(DraggableDialog):
             "Use the pen button to de-ramble a transcription after the fact.\n\n"
             "By Clara Burgert"
         )
-        about_text.setStyleSheet("color: rgb(60,60,65); font-size: 10px;")
+        about_text.setStyleSheet(body_style(10))
         about_text.setWordWrap(True)
         about_text.setFixedWidth(190)
         about_box.addWidget(about_text)
@@ -589,7 +601,7 @@ class HelpDialog(DraggableDialog):
             btn.setEnabled(False)
             row.addWidget(btn)
             lbl = QLabel(desc)
-            lbl.setStyleSheet("color: rgb(60,60,65); font-size: 9px;")
+            lbl.setStyleSheet(body_style(9))
             row.addWidget(lbl, 1)
             keymap_box.addLayout(row)
 
@@ -602,7 +614,7 @@ class HelpDialog(DraggableDialog):
             btn.setEnabled(False)
             row.addWidget(btn)
             lbl = QLabel(f"{name} tab")
-            lbl.setStyleSheet("color: rgb(60,60,65); font-size: 9px;")
+            lbl.setStyleSheet(body_style(9))
             row.addWidget(lbl, 1)
             keymap_box.addLayout(row)
 
@@ -638,7 +650,7 @@ class ModelDialog(DraggableDialog):
         layout.setSpacing(8)
 
         title = QLabel("Select Whisper Model")
-        title.setStyleSheet(f"color: white; font-size: 14px; font-family: {UI_FONT};")
+        title.setStyleSheet(title_style(14))
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title)
 
@@ -684,7 +696,7 @@ class PermissionDialog(DraggableDialog):
         layout.setSpacing(12)
 
         title = QLabel(PERMISSION_ERROR_TITLE)
-        title.setStyleSheet(f"color: rgb(255,80,80); font-size: 16px; font-family: {UI_FONT};")
+        title.setStyleSheet(f"color: {TEXT_ERROR}; font-size: 16px; font-family: {UI_FONT};")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title)
 
@@ -1379,9 +1391,7 @@ class VoiceThingWindow(QWidget):
         self.warning_btn.hide()
         status_row.addWidget(self.warning_btn)
         self.status_label = QLabel("Double-tap ⌥")
-        self.status_label.setStyleSheet(
-            f"color: rgb(50,50,55); font-size: 14px; font-family: {UI_FONT};"
-        )
+        self.status_label.setStyleSheet(title_style(14))
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         status_row.addWidget(self.status_label, 1)
         # Spacer to balance the window control buttons
@@ -1845,7 +1855,7 @@ class VoiceThingWindow(QWidget):
         self.status_spacer.setVisible(not self.small_mode)
         # Adjust status label font size for small mode
         font_size = 10 if self.small_mode else 14
-        self.status_label.setStyleSheet(f"color: rgba(255,255,255,0.7); font-size: {font_size}px; font-family: {UI_FONT};")
+        self.status_label.setStyleSheet(title_style(font_size))
         if self.small_mode:
             self._normal_size = self.size()
             self.setMinimumSize(0, 0)
