@@ -1907,8 +1907,6 @@ class VoiceThingWindow(QWidget):
 
     def show_model_dialog(self):
         """Show dialog to select Whisper model."""
-        if self.state == "transcribing":
-            return  # Only block while model is actually running
         dialog = ModelDialog(self.current_model, self)
         dialog.center_on_parent()
         if dialog.exec() and dialog.selected_model and dialog.selected_model != self.current_model:
@@ -1955,8 +1953,6 @@ class VoiceThingWindow(QWidget):
 
     def load_audio_file(self):
         """Open file dialog to load an audio file for transcription."""
-        if self.state != "idle":
-            return
         path, _ = QFileDialog.getOpenFileName(
             self, "Load Audio File", "",
             "Audio Files (*.wav *.mp3 *.m4a *.flac *.ogg *.aac);;All Files (*)"
