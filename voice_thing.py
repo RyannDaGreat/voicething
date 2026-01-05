@@ -380,7 +380,7 @@ WHISPER_MODELS = [
 # Action definitions: (id, key, icon_name, description, menu_text or None)
 # Single source of truth for buttons, keyboard shortcuts, help dialog, and menu items
 ACTIONS = [
-    ("record", "Space", "mic", "Start/finish recording", "Start/Stop Recording"),
+    ("record", "Space", "record", "Start/finish recording", "Start/Stop Recording"),
     ("cancel", "X", "cancel", "Cancel recording", None),
     ("minimize", "Esc", None, "Minimize window", None),
     ("small_mode", "E", None, "Toggle small mode", None),
@@ -446,19 +446,13 @@ class TrafficLightButton(QPushButton):
 
 
 class DraggableDialog(QDialog):
-    """Base class for frameless, draggable dialogs. Closes when clicking outside."""
+    """Base class for frameless, draggable dialogs."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.drag_pos = None
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-
-    def changeEvent(self, e):
-        # Close dialog when it loses focus (user clicked elsewhere)
-        if e.type() == e.Type.ActivationChange and not self.isActiveWindow():
-            self.close()
-        super().changeEvent(e)
 
     def center_on_parent(self):
         self.adjustSize()
@@ -1421,7 +1415,7 @@ class VoiceThingWindow(QWidget):
             btn_row.addWidget(btn)
             return btn
 
-        self.record_btn = make_btn("Space", "mic", self.toggle_recording)
+        self.record_btn = make_btn("Space", "record", self.toggle_recording)
         self.record_btn.setToolTip("Start/stop recording")
         self.record_btn.setEnabled(True)
         self.cancel_btn = make_btn("X", "cancel", self.cancel_recording)
@@ -1803,14 +1797,14 @@ class VoiceThingWindow(QWidget):
 
     def _update_buttons(self):
         recording = self.state == "recording"
-        idle = self.state == "idle"
-        self.record_btn.setIcon(load_icon("stop" if recording else "mic", color=ICON_COLOR_DARK))
-        self.record_btn.setEnabled(self.state != "transcribing")
+        transcribing = self.state == "transcribing"
+        self.record_btn.setIcon(load_icon("stop" if recording else "record", color=ICON_COLOR_DARK))
+        self.record_btn.setEnabled(not transcribing)
         self.cancel_btn.setEnabled(recording)
         self.copy_btn.setEnabled(self.last_transcription is not None)
         self.folder_btn.setEnabled(True)
-        self.load_btn.setEnabled(idle)
-        self.model_btn.setEnabled(idle)
+        self.load_btn.setEnabled(not transcribing and not recording)
+        self.model_btn.setEnabled(not transcribing)  # Only disabled while model is running
 
     def toggle_recording(self):
         if self.state == "idle":
@@ -1913,8 +1907,8 @@ class VoiceThingWindow(QWidget):
 
     def show_model_dialog(self):
         """Show dialog to select Whisper model."""
-        if self.state != "idle":
-            return
+        if self.state == "transcribing":
+            return  # Only block while model is actually running
         dialog = ModelDialog(self.current_model, self)
         dialog.center_on_parent()
         if dialog.exec() and dialog.selected_model and dialog.selected_model != self.current_model:
