@@ -2,6 +2,7 @@
 """Voice transcription: double-tap Option to record, transcribe, and type."""
 
 import difflib
+import math
 import os
 import re
 import signal
@@ -46,8 +47,8 @@ import sounddevice as sd
 from AppKit import NSWorkspace, NSApplicationActivateIgnoringOtherApps
 from pynput import keyboard
 from pynput.keyboard import Controller as KeyboardController, Key
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QSize, QPointF
-from PyQt6.QtGui import QPainter, QColor, QPen, QIcon, QFont, QFontDatabase, QPolygonF, QLinearGradient, QBrush
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QSize, QPointF, QRectF
+from PyQt6.QtGui import QPainter, QColor, QPen, QIcon, QFont, QFontDatabase, QPolygonF, QLinearGradient, QBrush, QPainterPath
 from PyQt6.QtWidgets import (
     QApplication,
     QWidget,
@@ -71,9 +72,15 @@ SAMPLE_RATE = 16000
 BLOCKSIZE = 256
 WHISPER_MODEL = "large-v3"
 TRAY_ICON_SIZE = 44  # Menu bar icon size (2x for retina)
+WAVEFORM_DURATION_SECONDS = 10  # Duration of audio shown in waveform display
 
 # UI Colors
 ACCENT = QColor(100, 200, 255)
+
+# Icon colors (for SVG recoloring)
+ICON_COLOR_DARK = '#505055'    # Dark icons on light buttons
+ICON_COLOR_LIGHT = '#ffffff'   # Light icons on dark/checked buttons
+ICON_COLOR_MUTED = '#606068'   # Slightly muted icons (transcription rows)
 
 # LLM post-processing settings
 LLM_MODEL = "OLLAMA:qwen2.5:7b"
@@ -151,53 +158,78 @@ UI_FONT_PATH = rp.download_font("R:Futura")
 
 
 def get_btn_css():
-    # Glass pill button with gradient - NO alpha on borders (causes crunchy rendering in Qt)
+    # Aqua "jelly" button - curved gradient with horizon line for 3D bulge effect
+    # Key: abrupt transition at ~48% creates the "horizon" that makes it look curved
     return (
         f"QPushButton {{ "
-        f"color: rgb(180,180,190); "
+        f"color: rgb(40,40,45); "
         f"background: qlineargradient(x1:0, y1:0, x2:0, y2:1, "
-        f"stop:0 rgb(70,70,85), stop:0.1 rgb(55,55,70), "
-        f"stop:0.9 rgb(35,35,48), stop:1 rgb(30,30,42)); "
-        f"border: 1px solid rgb(90,90,105); "
-        f"border-radius: 4px; padding: 2px 4px; font-size: 10px; font-family: {UI_FONT}; }}"
+        f"stop:0 rgb(255,255,255), stop:0.08 rgb(250,250,252), "
+        f"stop:0.4 rgb(225,225,230), stop:0.48 rgb(210,210,218), "
+        f"stop:0.52 rgb(180,180,192), stop:0.6 rgb(175,175,188), "
+        f"stop:1 rgb(195,195,205)); "
+        f"border: 1px solid rgb(140,140,152); "
+        f"border-top-color: rgb(190,190,200); "
+        f"border-bottom-color: rgb(110,110,125); "
+        f"border-radius: 5px; padding: 3px 8px; font-size: 11px; font-family: {UI_FONT}; "
+        f"text-align: left; }}"
         "QPushButton:hover { "
         "background: qlineargradient(x1:0, y1:0, x2:0, y2:1, "
-        "stop:0 rgb(85,85,105), stop:0.1 rgb(70,70,88), "
-        "stop:0.9 rgb(50,50,65), stop:1 rgb(42,42,55)); "
-        "border: 1px solid rgb(100,160,200); }"
+        "stop:0 rgb(255,255,255), stop:0.08 rgb(252,252,255), "
+        "stop:0.4 rgb(230,238,250), stop:0.48 rgb(215,225,242), "
+        "stop:0.52 rgb(175,195,230), stop:0.6 rgb(170,192,228), "
+        "stop:1 rgb(190,210,240)); "
+        "border: 1px solid rgb(100,130,175); }"
         "QPushButton:pressed { "
         "background: qlineargradient(x1:0, y1:0, x2:0, y2:1, "
-        "stop:0 rgb(25,25,35), stop:0.1 rgb(30,30,42), "
-        "stop:0.9 rgb(40,40,55), stop:1 rgb(50,50,65)); "
-        "border: 1px solid rgb(100,200,255); }"
-        "QPushButton:disabled { color: rgb(80,80,90); background: rgb(35,35,45); border: 1px solid rgb(50,50,60); }"
-        "QPushButton:checked { "
-        "color: rgb(220,230,240); "
+        "stop:0 rgb(190,190,200), stop:0.48 rgb(170,170,185), "
+        "stop:0.52 rgb(160,160,175), stop:1 rgb(185,185,198)); "
+        "border: 1px solid rgb(100,100,115); "
+        "border-top-color: rgb(100,100,115); "
+        "border-bottom-color: rgb(160,160,175); }"
+        "QPushButton:disabled { color: rgb(140,140,148); "
         "background: qlineargradient(x1:0, y1:0, x2:0, y2:1, "
-        "stop:0 rgb(50,100,140), stop:0.1 rgb(45,90,125), "
-        "stop:0.9 rgb(35,75,105), stop:1 rgb(30,65,95)); "
-        "border: 1px solid rgb(100,180,230); }"
+        "stop:0 rgb(235,235,238), stop:0.48 rgb(215,215,220), "
+        "stop:0.52 rgb(200,200,208), stop:1 rgb(215,215,222)); "
+        "border: 1px solid rgb(165,165,175); }"
+        "QPushButton:checked { "
+        "color: rgb(255,255,255); "
+        "background: qlineargradient(x1:0, y1:0, x2:0, y2:1, "
+        "stop:0 rgb(180,215,255), stop:0.08 rgb(160,200,250), "
+        "stop:0.4 rgb(110,170,240), stop:0.48 rgb(90,150,230), "
+        "stop:0.52 rgb(50,120,210), stop:0.6 rgb(45,115,205), "
+        "stop:1 rgb(70,140,220)); "
+        "border: 1px solid rgb(35,85,155); "
+        "border-top-color: rgb(100,160,220); "
+        "border-bottom-color: rgb(25,70,135); }"
+        "QPushButton:checked:hover { "
+        "background: qlineargradient(x1:0, y1:0, x2:0, y2:1, "
+        "stop:0 rgb(195,225,255), stop:0.08 rgb(175,212,252), "
+        "stop:0.4 rgb(125,185,248), stop:0.48 rgb(105,165,240), "
+        "stop:0.52 rgb(65,135,220), stop:0.6 rgb(60,130,215), "
+        "stop:1 rgb(85,155,230)); }"
         "QPushButton:checked:pressed { "
         "background: qlineargradient(x1:0, y1:0, x2:0, y2:1, "
-        "stop:0 rgb(30,65,95), stop:0.1 rgb(35,75,105), "
-        "stop:0.9 rgb(45,90,125), stop:1 rgb(50,100,140)); "
-        "border: 1px solid rgb(100,200,255); }"
+        "stop:0 rgb(50,110,190), stop:0.48 rgb(40,100,180), "
+        "stop:0.52 rgb(35,95,175), stop:1 rgb(60,120,195)); "
+        "border: 1px solid rgb(25,65,125); }"
     )
 
 
 def get_menu_css():
-    # Menu with gradient - no alpha on borders, smaller font
+    # Aqua-style menu
     return (
         f"QMenu {{ "
         f"background: qlineargradient(x1:0, y1:0, x2:0, y2:1, "
-        f"stop:0 rgb(55,55,68), stop:1 rgb(35,35,45)); "
-        f"color: white; border: 1px solid rgb(85,85,100); "
-        f"border-radius: 8px; padding: 6px; font-family: {UI_FONT}; font-size: 11px; }}"
-        "QMenu::item { padding: 5px 12px; border-radius: 4px; }"
+        f"stop:0 rgb(250,250,252), stop:1 rgb(230,230,235)); "
+        f"color: rgb(30,30,35); border: 1px solid rgb(160,160,170); "
+        f"border-radius: 6px; padding: 4px; font-family: {UI_FONT}; font-size: 12px; }}"
+        "QMenu::item { padding: 4px 16px; border-radius: 4px; }"
         "QMenu::item:selected { "
+        "color: white; "
         "background: qlineargradient(x1:0, y1:0, x2:0, y2:1, "
-        "stop:0 rgb(60,110,150), stop:1 rgb(50,95,130)); }"
-        "QMenu::separator { height: 1px; background: rgb(70,70,85); margin: 4px 8px; }"
+        "stop:0 rgb(100,160,230), stop:0.5 rgb(60,130,210), stop:1 rgb(40,110,190)); }"
+        "QMenu::separator { height: 1px; background: rgb(200,200,205); margin: 4px 8px; }"
     )
 
 
@@ -206,26 +238,39 @@ def get_tab_css():
     return get_btn_css()
 
 
-# Shared scrollbar CSS for panels
+# Shared scrollbar CSS for panels (Aqua style)
 SCROLLBAR_CSS = (
-    "QScrollBar:vertical { width: 8px; background: transparent; margin: 2px; }"
+    "QScrollBar:vertical { width: 12px; background: rgb(220,220,225); margin: 2px; border-radius: 6px; }"
     "QScrollBar::handle:vertical { "
     "background: qlineargradient(x1:0, y1:0, x2:1, y2:0, "
-    "stop:0 rgb(70,80,95), stop:0.5 rgb(85,95,110), stop:1 rgb(70,80,95)); "
-    "border-radius: 4px; min-height: 20px; }"
+    "stop:0 rgb(180,180,185), stop:0.3 rgb(200,200,205), stop:0.7 rgb(200,200,205), stop:1 rgb(180,180,185)); "
+    "border: 1px solid rgb(140,140,150); "
+    "border-radius: 5px; min-height: 20px; }"
     "QScrollBar::handle:vertical:hover { "
     "background: qlineargradient(x1:0, y1:0, x2:1, y2:0, "
-    "stop:0 rgb(80,140,180), stop:0.5 rgb(100,180,220), stop:1 rgb(80,140,180)); }"
+    "stop:0 rgb(130,170,210), stop:0.5 rgb(160,200,240), stop:1 rgb(130,170,210)); "
+    "border: 1px solid rgb(80,120,170); }"
     "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }"
     "QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: transparent; }"
 )
 
-# Shared panel background CSS
+# Shared panel background CSS (Aqua recessed style)
 PANEL_BG_CSS = (
     "background: qlineargradient(x1:0, y1:0, x2:0, y2:1, "
-    "stop:0 rgb(22,25,32), stop:0.1 rgb(20,23,30), "
-    "stop:0.9 rgb(18,21,28), stop:1 rgb(22,26,35)); "
-    "border: 1px solid rgb(50,55,65); border-radius: 8px;"
+    "stop:0 rgb(240,240,245), stop:0.02 rgb(250,250,252), "
+    "stop:0.98 rgb(250,250,252), stop:1 rgb(235,235,240)); "
+    "border: 1px solid rgb(160,160,170); "
+    "border-top-color: rgb(120,120,130); "
+    "border-bottom-color: rgb(200,200,205); "
+    "border-radius: 6px;"
+)
+
+# Flat panel background for text areas (recessed white)
+PANEL_BG_FLAT_CSS = (
+    "background: rgb(255,255,255); "
+    "border: 1px solid rgb(160,160,170); "
+    "border-top-color: rgb(120,120,130); "
+    "border-radius: 6px;"
 )
 
 CHIME_SHIFT = -12  # Shift all chimes (semitones, -12 = 1 octave lower)
@@ -238,9 +283,78 @@ def chime(*chords, **kwargs):
     rp.play_chords(*shifted, gap=0, sampler=quiet_sampler, block=True, **kwargs)
 
 
-def load_icon(name):
-    """Load an SVG icon from the assets folder."""
-    return QIcon(os.path.join(ASSETS_DIR, f"{name}.svg"))
+def load_icon(name, color=None):
+    """Load an SVG icon from the assets folder, optionally recoloring it.
+
+    If color is provided, replaces #ffffff with the given color.
+    Use ICON_COLOR_DARK for light backgrounds, ICON_COLOR_LIGHT for dark/checked.
+    """
+    path = os.path.join(ASSETS_DIR, f"{name}.svg")
+    if color is None:
+        return QIcon(path)
+    # Read and recolor SVG
+    with open(path, 'r') as f:
+        svg = f.read()
+    svg = svg.replace('#ffffff', color).replace('#FFFFFF', color)
+    # Create pixmap from recolored SVG
+    from PyQt6.QtSvg import QSvgRenderer
+    from PyQt6.QtGui import QPixmap, QPainter
+    renderer = QSvgRenderer(svg.encode())
+    pixmap = QPixmap(256, 256)
+    pixmap.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pixmap)
+    renderer.render(painter)
+    painter.end()
+    return QIcon(pixmap)
+
+
+# Brushed metal texture cache
+_BRUSHED_METAL_PIXMAP = None
+
+def get_brushed_metal_pixmap(height=512):
+    """Generate brushed metal texture using noise + motion blur technique.
+
+    This is how Apple (and Photoshop tutorials) create brushed metal:
+    1. Start with 2D random noise
+    2. Apply horizontal motion blur to streak it into brush marks
+    3. The result has natural variation, not perfect horizontal lines
+    """
+    global _BRUSHED_METAL_PIXMAP
+    if _BRUSHED_METAL_PIXMAP is not None:
+        return _BRUSHED_METAL_PIXMAP
+
+    from PyQt6.QtGui import QImage, QPixmap
+    from scipy.ndimage import uniform_filter1d
+
+    # Generate 2D noise field
+    width = 256  # Need wider texture for horizontal variation
+    np.random.seed(42)
+
+    # Start with random noise (like Photoshop's Add Noise filter)
+    noise = np.random.randint(0, 60, size=(height, width)).astype(np.float32)
+
+    # Apply horizontal motion blur (like Photoshop's Motion Blur at 0 degrees)
+    # This stretches the noise into horizontal streaks
+    blur_radius = 40  # Higher = longer streaks
+    blurred = uniform_filter1d(noise, size=blur_radius, axis=1, mode='wrap')
+
+    # Add base gray and scale
+    base = 168
+    values = base + blurred - 30  # Center around base gray
+    values = np.clip(values, 145, 195).astype(np.uint8)
+
+    # Create RGBA image
+    img_data = np.zeros((height, width, 4), dtype=np.uint8)
+    img_data[:, :, 0] = values  # R
+    img_data[:, :, 1] = values  # G
+    img_data[:, :, 2] = values  # B
+    img_data[:, :, 3] = 255     # A
+
+    qimg = QImage(img_data.data, width, height, width * 4, QImage.Format.Format_RGBA8888)
+    qimg = qimg.copy()
+
+    _BRUSHED_METAL_PIXMAP = QPixmap.fromImage(qimg)
+    return _BRUSHED_METAL_PIXMAP
 
 
 WHISPER_MODELS = [
@@ -320,13 +434,19 @@ class TrafficLightButton(QPushButton):
 
 
 class DraggableDialog(QDialog):
-    """Base class for frameless, draggable dialogs."""
+    """Base class for frameless, draggable dialogs. Closes when clicking outside."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.drag_pos = None
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+
+    def changeEvent(self, e):
+        # Close dialog when it loses focus (user clicked elsewhere)
+        if e.type() == e.Type.ActivationChange and not self.isActiveWindow():
+            self.close()
+        super().changeEvent(e)
 
     def center_on_parent(self):
         self.adjustSize()
@@ -351,19 +471,41 @@ class DraggableDialog(QDialog):
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         rect = self.rect().adjusted(2, 2, -2, -2)
 
-        # Main gradient background - no alpha
-        grad = QLinearGradient(0, rect.top(), 0, rect.bottom())
-        grad.setColorAt(0, QColor(50, 52, 65))
-        grad.setColorAt(0.15, QColor(40, 42, 54))
-        grad.setColorAt(0.85, QColor(30, 32, 42))
-        grad.setColorAt(1, QColor(25, 27, 36))
-        p.setBrush(QBrush(grad))
+        # Brushed metal texture - clipped to rounded rect
+        metal = get_brushed_metal_pixmap(max(512, self.height()))
+        path = QPainterPath()
+        path.addRoundedRect(QRectF(rect), 10, 10)
+        p.setClipPath(path)
+        p.drawTiledPixmap(rect, metal)
+        p.setClipping(False)
+
+        # Vignette - both horizontal and vertical gradients
+        # Horizontal (left/right) at 50% opacity
+        h_grad = QLinearGradient(0, 0, self.width(), 0)
+        h_grad.setColorAt(0, QColor(0, 0, 0, 35))      # Dark at left (50% of 70)
+        h_grad.setColorAt(0.08, QColor(0, 0, 0, 12))   # Fade out
+        h_grad.setColorAt(0.15, QColor(0, 0, 0, 0))    # Clear in middle
+        h_grad.setColorAt(0.85, QColor(0, 0, 0, 0))    # Clear in middle
+        h_grad.setColorAt(0.92, QColor(0, 0, 0, 15))   # Fade in
+        h_grad.setColorAt(1, QColor(0, 0, 0, 30))      # Dark at right (50% of 60)
+        p.setBrush(QBrush(h_grad))
         p.setPen(Qt.PenStyle.NoPen)
         p.drawRoundedRect(rect, 10, 10)
 
-        # Border - no alpha
+        # Vertical (top/bottom) at full opacity
+        v_grad = QLinearGradient(0, 0, 0, self.height())
+        v_grad.setColorAt(0, QColor(0, 0, 0, 70))      # Dark at top
+        v_grad.setColorAt(0.08, QColor(0, 0, 0, 25))   # Fade out
+        v_grad.setColorAt(0.15, QColor(0, 0, 0, 0))    # Clear in middle
+        v_grad.setColorAt(0.85, QColor(0, 0, 0, 0))    # Clear in middle
+        v_grad.setColorAt(0.92, QColor(0, 0, 0, 30))   # Fade in
+        v_grad.setColorAt(1, QColor(0, 0, 0, 60))      # Dark at bottom
+        p.setBrush(QBrush(v_grad))
+        p.drawRoundedRect(rect, 10, 10)
+
+        # Border
         p.setBrush(Qt.BrushStyle.NoBrush)
-        p.setPen(QPen(QColor(70, 75, 88), 1))
+        p.setPen(QPen(QColor(100, 100, 110), 1))
         p.drawRoundedRect(rect, 10, 10)
 
 
@@ -378,7 +520,7 @@ class HelpDialog(DraggableDialog):
 
         # Title
         title = QLabel(APP_NAME)
-        title.setStyleSheet(f"color: white; font-size: 18px; font-family: {UI_FONT};")
+        title.setStyleSheet(f"color: rgb(40,40,45); font-size: 18px; font-family: {UI_FONT};")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title)
 
@@ -389,7 +531,7 @@ class HelpDialog(DraggableDialog):
         # Left side: About
         about_box = QVBoxLayout()
         about_label = QLabel("About")
-        about_label.setStyleSheet(f"color: rgb(100,200,255); font-size: 12px; font-family: {UI_FONT};")
+        about_label.setStyleSheet(f"color: rgb(40,100,180); font-size: 12px; font-family: {UI_FONT};")
         about_box.addWidget(about_label)
 
         about_text = QLabel(
@@ -409,7 +551,7 @@ class HelpDialog(DraggableDialog):
             "Use the pen button to de-ramble a transcription after the fact.\n\n"
             "By Clara Burgert"
         )
-        about_text.setStyleSheet("color: rgba(255,255,255,0.7); font-size: 10px;")
+        about_text.setStyleSheet("color: rgb(60,60,65); font-size: 10px;")
         about_text.setWordWrap(True)
         about_text.setFixedWidth(190)
         about_box.addWidget(about_text)
@@ -426,13 +568,13 @@ class HelpDialog(DraggableDialog):
         # Separator
         sep = QLabel()
         sep.setFixedWidth(1)
-        sep.setStyleSheet("background: rgba(255,255,255,0.2);")
+        sep.setStyleSheet("background: rgb(140,140,150);")
         content.addWidget(sep)
 
         # Right side: Keymap
         keymap_box = QVBoxLayout()
         keymap_label = QLabel("Keymap")
-        keymap_label.setStyleSheet(f"color: rgb(100,200,255); font-size: 12px; font-family: {UI_FONT};")
+        keymap_label.setStyleSheet(f"color: rgb(40,100,180); font-size: 12px; font-family: {UI_FONT};")
         keymap_box.addWidget(keymap_label)
 
         for action_id, key, icon_name, desc, menu_text in ACTIONS:
@@ -440,14 +582,14 @@ class HelpDialog(DraggableDialog):
             row.setSpacing(4)
             btn = QPushButton(key)
             if icon_name:
-                btn.setIcon(load_icon(icon_name))
+                btn.setIcon(load_icon(icon_name, color=ICON_COLOR_DARK))
                 btn.setIconSize(QSize(14, 14))
             btn.setStyleSheet(get_btn_css())
             btn.setFixedWidth(60)
             btn.setEnabled(False)
             row.addWidget(btn)
             lbl = QLabel(desc)
-            lbl.setStyleSheet("color: rgba(255,255,255,0.7); font-size: 9px;")
+            lbl.setStyleSheet("color: rgb(60,60,65); font-size: 9px;")
             row.addWidget(lbl, 1)
             keymap_box.addLayout(row)
 
@@ -460,7 +602,7 @@ class HelpDialog(DraggableDialog):
             btn.setEnabled(False)
             row.addWidget(btn)
             lbl = QLabel(f"{name} tab")
-            lbl.setStyleSheet("color: rgba(255,255,255,0.7); font-size: 9px;")
+            lbl.setStyleSheet("color: rgb(60,60,65); font-size: 9px;")
             row.addWidget(lbl, 1)
             keymap_box.addLayout(row)
 
@@ -570,8 +712,8 @@ class TextPanel(QTextEdit):
     """Read-only text panel."""
 
     STYLE = (
-        f"QTextEdit {{ color: #b8b8b8; font-size: 11px; font-family: Menlo, monospace; "
-        f"{PANEL_BG_CSS} padding: 8px; }}" + SCROLLBAR_CSS
+        f"QTextEdit {{ color: #303035; font-size: 11px; font-family: Menlo, monospace; "
+        f"{PANEL_BG_FLAT_CSS} padding: 8px; }}" + SCROLLBAR_CSS
     )
 
     def __init__(self, selectable=True, parent=None):
@@ -687,9 +829,9 @@ class TranscriptionRow(QFrame):
         self.label.customContextMenuRequested.connect(self._show_context_menu)
         self.label.installEventFilter(self)
         if dimmed:
-            self.base_style = "font-size: 11px; color: rgba(130,150,170,0.7);"
+            self.base_style = "font-size: 11px; color: rgb(120,120,130);"
         else:
-            self.base_style = "font-size: 11px; color: #b0b0b0;"
+            self.base_style = "font-size: 11px; color: rgb(40,40,45);"
         self.label.setStyleSheet(self.base_style)
         self.label.setWordWrap(True)
         self.label.setTextFormat(Qt.TextFormat.RichText)
@@ -698,10 +840,12 @@ class TranscriptionRow(QFrame):
         # Set initial HTML (unhighlighted)
         self._set_diff_highlight(False)
 
+        # Dark icons for light background (embossed look)
+        icon_color = ICON_COLOR_MUTED
         if show_deramble:
             deramble_btn = QPushButton()
             deramble_btn.setFixedSize(24, 24)
-            deramble_btn.setIcon(load_icon(ACTIONS_BY_ID["llm"][2]))
+            deramble_btn.setIcon(load_icon(ACTIONS_BY_ID["llm"][2], color=icon_color))
             deramble_btn.setIconSize(QSize(16, 16))
             deramble_btn.setStyleSheet(self.BTN_STYLE)
             deramble_btn.setToolTip("De-ramble with LLM")
@@ -710,7 +854,7 @@ class TranscriptionRow(QFrame):
 
         copy_btn = QPushButton()
         copy_btn.setFixedSize(24, 24)
-        copy_btn.setIcon(load_icon(ACTIONS_BY_ID["copy"][2]))
+        copy_btn.setIcon(load_icon(ACTIONS_BY_ID["copy"][2], color=icon_color))
         copy_btn.setIconSize(QSize(16, 16))
         copy_btn.setStyleSheet(self.BTN_STYLE)
         copy_btn.setToolTip("Copy to clipboard")
@@ -744,7 +888,7 @@ class TranscriptionRow(QFrame):
 
     def _update_bg(self, hovered):
         if hovered:
-            bg = "qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 rgba(100,180,230,0.08), stop:0.5 rgba(100,200,255,0.06), stop:1 rgba(100,180,230,0.08))"
+            bg = "qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 rgb(230,240,250), stop:0.5 rgb(220,235,250), stop:1 rgb(230,240,250))"
         else:
             bg = "transparent"
         top = getattr(self, '_border_radius_top', 0)
@@ -851,7 +995,7 @@ class TranscriptionList(QScrollArea):
     copy_requested = pyqtSignal(str)
     deramble_requested = pyqtSignal(int, str)  # (index, raw_text)
 
-    STYLE = f"QScrollArea {{ {PANEL_BG_CSS} }}" + SCROLLBAR_CSS
+    STYLE = f"QScrollArea {{ {PANEL_BG_FLAT_CSS} }}" + SCROLLBAR_CSS
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -935,37 +1079,39 @@ class LCDTimerWidget(QWidget):
         panel_y = (h - panel_h) // 2
         panel_rect = self.rect().adjusted(panel_x, panel_y, panel_x - w + panel_w, panel_y - h + panel_h)
 
-        # Recessed LCD panel background
+        # Recessed LCD panel background (Aqua style - dark blue/black)
         panel_grad = QLinearGradient(0, panel_rect.top(), 0, panel_rect.bottom())
-        panel_grad.setColorAt(0, QColor(15, 18, 22, 200))
-        panel_grad.setColorAt(0.3, QColor(20, 24, 30, 200))
-        panel_grad.setColorAt(1, QColor(25, 30, 38, 200))
+        panel_grad.setColorAt(0, QColor(20, 35, 50))
+        panel_grad.setColorAt(0.3, QColor(15, 28, 42))
+        panel_grad.setColorAt(1, QColor(10, 22, 35))
         p.setBrush(QBrush(panel_grad))
         p.setPen(Qt.PenStyle.NoPen)
         p.drawRoundedRect(panel_rect, 6, 6)
 
-        # Inner shadow (top edge)
+        # Inner shadow (top edge - recessed look)
         shadow_grad = QLinearGradient(0, panel_rect.top(), 0, panel_rect.top() + 6)
-        shadow_grad.setColorAt(0, QColor(0, 0, 0, 80))
+        shadow_grad.setColorAt(0, QColor(0, 0, 0, 120))
         shadow_grad.setColorAt(1, QColor(0, 0, 0, 0))
         p.setBrush(QBrush(shadow_grad))
         p.drawRoundedRect(panel_rect.adjusted(0, 0, 0, -panel_rect.height() + 8), 6, 6)
 
-        # Bottom highlight (subtle)
-        p.setPen(QPen(QColor(60, 70, 85, 60), 1))
+        # Bottom highlight (subtle glassy reflection)
+        p.setPen(QPen(QColor(80, 120, 160, 80), 1))
         p.drawLine(panel_rect.left() + 6, panel_rect.bottom(),
                    panel_rect.right() - 6, panel_rect.bottom())
 
-        # Panel border
+        # Panel border (beveled)
         p.setBrush(Qt.BrushStyle.NoBrush)
-        p.setPen(QPen(QColor(40, 45, 55, 180), 1))
+        p.setPen(QPen(QColor(30, 50, 70), 1))
         p.drawRoundedRect(panel_rect, 6, 6)
 
-        # Ghost segments (8:88.8) - very dim
+        # Ghost segments - match format of current text (e.g., 8:88.8 or 88:88.8)
         font = QFont(self.seg_font, 28)
         p.setFont(font)
-        p.setPen(QColor(100, 200, 255, 15))
-        p.drawText(panel_rect, Qt.AlignmentFlag.AlignCenter, "8:88.8")
+        p.setPen(QColor(60, 180, 220, 25))
+        # Generate ghost by replacing digits with 8, keeping : and .
+        ghost = ''.join('8' if c.isdigit() else c for c in self.text)
+        p.drawText(panel_rect, Qt.AlignmentFlag.AlignCenter, ghost)
 
         # Active segments with glow
         accent_alpha = int(255 * self.opacity)
@@ -1017,11 +1163,11 @@ class _WaveformInner(QWidget):
         points += [QPointF(x, y) for x, y in zip(x_coords[::-1], bottom_y)]
         polygon = QPolygonF(points)
 
-        # Draw waveform with gradient
+        # Draw waveform with gradient - green oscilloscope style
         wave_grad = QLinearGradient(0, cy - h/2 * 0.85, 0, cy + h/2 * 0.85)
-        wave_grad.setColorAt(0, QColor(120, 200, 240))
-        wave_grad.setColorAt(0.5, QColor(100, 200, 255))
-        wave_grad.setColorAt(1, QColor(120, 200, 240))
+        wave_grad.setColorAt(0, QColor(180, 255, 180))
+        wave_grad.setColorAt(0.5, QColor(100, 255, 100))
+        wave_grad.setColorAt(1, QColor(180, 255, 180))
         p.setBrush(QBrush(wave_grad))
         p.setPen(Qt.PenStyle.NoPen)
         p.drawPolygon(polygon)
@@ -1034,22 +1180,28 @@ class WaveformWidget(QWidget):
         super().__init__()
         self.samples = np.array([])
         self.display_max = 0.01
-        self.setMinimumHeight(100)
+        self.setMinimumHeight(40)
+        self.setMaximumHeight(200)
+        from PyQt6.QtWidgets import QSizePolicy
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
-        # Create inner waveform widget with glow effect
+        # Create inner waveform widget with glow effect (green)
         self._inner = _WaveformInner(self)
         glow = QGraphicsDropShadowEffect(self)
         glow.setBlurRadius(18)
-        glow.setColor(QColor(100, 200, 255, 200))
+        glow.setColor(QColor(100, 255, 100, 200))
         glow.setOffset(0, 0)
         self._inner.setGraphicsEffect(glow)
+
+    def sizeHint(self):
+        return QSize(200, 100)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self._inner.setGeometry(self.rect())
 
     def set_samples(self, samples):
-        max_samples = 10 * SAMPLE_RATE
+        max_samples = WAVEFORM_DURATION_SECONDS * SAMPLE_RATE
         self.samples = samples[-max_samples:] if len(samples) > max_samples else samples
         if len(self.samples) > 0:
             self.display_max += (max(np.max(np.abs(self.samples)), 0.01) - self.display_max) * 0.04
@@ -1059,37 +1211,101 @@ class WaveformWidget(QWidget):
         self._inner.update()
         self.update()
 
+    def _draw_infinite_grid(self, p, w, h):
+        """Draw Blender-style infinite grid that fades based on zoom level."""
+        zoom = self.display_max
+        base_spacing = 0.00375  # Smaller = more lines (4x original density)
+        log_zoom = math.log2(zoom / base_spacing) if zoom > 0 else 0
+        grid_level = math.floor(log_zoom)
+        fade = log_zoom - grid_level
+
+        # Draw two grid levels with crossfade (aqua-themed colors)
+        for level_offset in range(2):
+            level = grid_level + level_offset
+            spacing = base_spacing * (2 ** level)
+            alpha = int(80 * (1 - fade)) if level_offset == 0 else int(80 * fade)
+            if alpha < 10:
+                continue
+
+            p.setPen(QPen(QColor(20, 50, 100, alpha), 1))
+            pixels_per_unit = (h / 2) / max(zoom, 0.001)
+            pixel_spacing = spacing * pixels_per_unit
+
+            if pixel_spacing > 5:
+                cy = h / 2
+                y = cy - pixel_spacing
+                while y > 0:
+                    p.drawLine(0, int(y), w, int(y))
+                    y -= pixel_spacing
+                y = cy + pixel_spacing
+                while y < h:
+                    p.drawLine(0, int(y), w, int(y))
+                    y += pixel_spacing
+
+        # Vertical grid - one section per second of audio duration
+        p.setPen(QPen(QColor(20, 50, 100, 50), 1))
+        num_sections = WAVEFORM_DURATION_SECONDS
+        for i in range(1, num_sections):  # num_sections-1 internal lines
+            p.drawLine(int(w * i / num_sections), 0, int(w * i / num_sections), h)
+
     def paintEvent(self, event):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         w, h = self.width(), self.height()
         cy = h / 2
+        rect = self.rect()
 
-        # Draw oscilloscope panel background
+        # Aqua-style blue panel background - classic macOS look
         panel_grad = QLinearGradient(0, 0, 0, h)
-        panel_grad.setColorAt(0, QColor(18, 22, 28))
-        panel_grad.setColorAt(0.5, QColor(22, 26, 34))
-        panel_grad.setColorAt(1, QColor(26, 30, 40))
+        panel_grad.setColorAt(0, QColor(140, 180, 220))
+        panel_grad.setColorAt(0.3, QColor(80, 140, 200))
+        panel_grad.setColorAt(0.7, QColor(50, 110, 180))
+        panel_grad.setColorAt(1, QColor(30, 80, 150))
         p.setBrush(QBrush(panel_grad))
         p.setPen(Qt.PenStyle.NoPen)
-        p.drawRoundedRect(self.rect(), 8, 8)
+        p.drawRoundedRect(rect, 8, 8)
 
-        # Subtle grid lines
-        p.setPen(QPen(QColor(45, 55, 70), 1))
-        for i in range(1, 4):
-            y = int(h * i / 4)
-            p.drawLine(0, y, w, y)
-        for i in range(1, 8):
-            x = int(w * i / 8)
-            p.drawLine(x, 0, x, h)
+        # Glassy top highlight (specular reflection)
+        highlight = QLinearGradient(0, 0, 0, h * 0.4)
+        highlight.setColorAt(0, QColor(255, 255, 255, 120))
+        highlight.setColorAt(0.5, QColor(255, 255, 255, 40))
+        highlight.setColorAt(1, QColor(255, 255, 255, 0))
+        p.setBrush(QBrush(highlight))
+        p.drawRoundedRect(rect.adjusted(2, 2, -2, -int(h * 0.6)), 6, 6)
 
-        # Panel border
+        # Draw infinite grid (with lighter colors for aqua theme)
+        self._draw_infinite_grid(p, w, h)
+
+        # Engraved effect - dark inner shadows on all edges
+        # Top shadow (strongest - light comes from above)
+        inner_top = QLinearGradient(0, 0, 0, 12)
+        inner_top.setColorAt(0, QColor(0, 0, 0, 100))
+        inner_top.setColorAt(1, QColor(0, 0, 0, 0))
+        p.setBrush(QBrush(inner_top))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.drawRoundedRect(rect.adjusted(1, 1, -1, -h + 14), 7, 7)
+
+        # Left shadow
+        inner_left = QLinearGradient(0, 0, 10, 0)
+        inner_left.setColorAt(0, QColor(0, 0, 0, 50))
+        inner_left.setColorAt(1, QColor(0, 0, 0, 0))
+        p.setBrush(QBrush(inner_left))
+        p.drawRoundedRect(rect.adjusted(1, 1, -w + 12, -1), 7, 7)
+
+        # Right shadow
+        inner_right = QLinearGradient(w, 0, w - 10, 0)
+        inner_right.setColorAt(0, QColor(0, 0, 0, 50))
+        inner_right.setColorAt(1, QColor(0, 0, 0, 0))
+        p.setBrush(QBrush(inner_right))
+        p.drawRoundedRect(rect.adjusted(w - 12, 1, -1, -1), 7, 7)
+
+        # Panel border (darker for engraved look)
         p.setBrush(Qt.BrushStyle.NoBrush)
-        p.setPen(QPen(QColor(50, 55, 65), 1))
-        p.drawRoundedRect(self.rect(), 8, 8)
+        p.setPen(QPen(QColor(20, 50, 100), 1.5))
+        p.drawRoundedRect(rect, 8, 8)
 
         # Center line
-        p.setPen(QPen(QColor(60, 100, 130), 1))
+        p.setPen(QPen(QColor(20, 60, 120, 150), 1))
         p.drawLine(0, int(cy), w, int(cy))
 
 
@@ -1155,7 +1371,7 @@ class VoiceThingWindow(QWidget):
         # Warning button for permission errors (hidden by default)
         self.warning_btn = QPushButton()
         self.warning_btn.setFixedSize(20, 20)
-        self.warning_btn.setIcon(load_icon("warning"))
+        self.warning_btn.setIcon(load_icon("warning", color=ICON_COLOR_DARK))
         self.warning_btn.setIconSize(QSize(18, 18))
         self.warning_btn.setStyleSheet("QPushButton { background: transparent; border: none; }")
         self.warning_btn.setToolTip(PERMISSION_ERROR_TITLE)
@@ -1164,7 +1380,7 @@ class VoiceThingWindow(QWidget):
         status_row.addWidget(self.warning_btn)
         self.status_label = QLabel("Double-tap ⌥")
         self.status_label.setStyleSheet(
-            f"color: rgba(255,255,255,0.7); font-size: 14px; font-family: {UI_FONT};"
+            f"color: rgb(50,50,55); font-size: 14px; font-family: {UI_FONT};"
         )
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         status_row.addWidget(self.status_label, 1)
@@ -1185,11 +1401,13 @@ class VoiceThingWindow(QWidget):
 
         def make_btn(text, icon_name, handler):
             btn = QPushButton(text)
-            btn.setIcon(load_icon(icon_name))
+            # Dark icons for light Aqua buttons (embossed look)
+            btn.setIcon(load_icon(icon_name, color=ICON_COLOR_DARK))
             btn.setIconSize(QSize(16, 16))
             btn.setStyleSheet(get_btn_css())
             btn.clicked.connect(handler)
             btn.setEnabled(False)
+            btn.icon_name = icon_name  # Store for later icon color updates
             btn_row.addWidget(btn)
             return btn
 
@@ -1209,6 +1427,7 @@ class VoiceThingWindow(QWidget):
         self.sound_btn.setToolTip("Toggle sound effects")
         self.sound_btn.setCheckable(True)
         self.sound_btn.setChecked(True)  # Sound on by default
+        self.sound_btn.setIcon(load_icon("volume", color=ICON_COLOR_LIGHT))  # Light icon when checked
         self.sound_btn.setEnabled(True)
         self.eye_btn = make_btn("V", "eye", self.toggle_auto_hide)
         self.eye_btn.setToolTip("Toggle auto-minimize after transcription")
@@ -1243,24 +1462,28 @@ class VoiceThingWindow(QWidget):
         tab_row = QHBoxLayout(self.tab_row_widget)
         tab_row.setSpacing(8)
         tab_row.setContentsMargins(0, 4, 0, 0)
+        # Tab buttons with dark icons (light when checked)
         self.output_tab = QPushButton("O  Output")
-        self.output_tab.setIcon(load_icon("terminal"))
         self.output_tab.setIconSize(QSize(14, 14))
         self.output_tab.setCheckable(True)
         self.output_tab.setChecked(True)
         self.output_tab.setStyleSheet(get_tab_css())
         self.output_tab.setToolTip("Show console output")
         self.output_tab.clicked.connect(lambda: self._switch_tab(0))
+        self.output_tab.icon_name = "terminal"
         tab_row.addWidget(self.output_tab, 1)
 
         self.transcriptions_tab = QPushButton("T  Transcriptions")
-        self.transcriptions_tab.setIcon(load_icon("scroll"))
         self.transcriptions_tab.setIconSize(QSize(14, 14))
         self.transcriptions_tab.setCheckable(True)
         self.transcriptions_tab.setStyleSheet(get_tab_css())
         self.transcriptions_tab.setToolTip("Show transcription history")
         self.transcriptions_tab.clicked.connect(lambda: self._switch_tab(1))
+        self.transcriptions_tab.icon_name = "scroll"
         tab_row.addWidget(self.transcriptions_tab, 1)
+
+        # Update tab icons based on checked state
+        self._update_tab_icons()
         layout.addWidget(self.tab_row_widget)
 
         # Add tab buttons to key mapping
@@ -1359,6 +1582,19 @@ class VoiceThingWindow(QWidget):
         self.tab_stack.setCurrentIndex(index)
         self.output_tab.setChecked(index == 0)
         self.transcriptions_tab.setChecked(index == 1)
+        self._update_tab_icons()
+
+    def _update_tab_icons(self):
+        """Update tab icons - dark when unchecked, light when checked (blue)."""
+        for tab in [self.output_tab, self.transcriptions_tab]:
+            color = ICON_COLOR_LIGHT if tab.isChecked() else ICON_COLOR_DARK
+            tab.setIcon(load_icon(tab.icon_name, color=color))
+
+    def _update_checkable_btn_icon(self, btn, icon_name=None):
+        """Update a checkable button's icon color based on checked state."""
+        name = icon_name or btn.icon_name
+        color = ICON_COLOR_LIGHT if btn.isChecked() else ICON_COLOR_DARK
+        btn.setIcon(load_icon(name, color=color))
 
     def _flash_button(self, key):
         """Visually flash the button for a key press."""
@@ -1456,7 +1692,9 @@ class VoiceThingWindow(QWidget):
     def changeEvent(self, e):
         if e.type() == e.Type.ActivationChange:
             self.is_focused = self.isActiveWindow()
-            self.update()  # Repaint for opacity change
+            # Fade window when unfocused
+            self.setWindowOpacity(1.0 if self.is_focused else 0.7)
+            self.update()  # Repaint for border change
         super().changeEvent(e)
 
     def dragEnterEvent(self, e):
@@ -1513,31 +1751,38 @@ class VoiceThingWindow(QWidget):
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         rect = self.rect().adjusted(2, 2, -2, -2)
 
-        # Main gradient background (top lighter, bottom darker)
-        # Use full opacity colors - no alpha to avoid crunchy rendering
-        if self.is_focused:
-            grad = QLinearGradient(0, 0, 0, self.height())
-            grad.setColorAt(0, QColor(52, 52, 66))
-            grad.setColorAt(0.15, QColor(42, 42, 54))
-            grad.setColorAt(0.85, QColor(28, 28, 38))
-            grad.setColorAt(1, QColor(22, 22, 30))
-        else:
-            grad = QLinearGradient(0, 0, 0, self.height())
-            grad.setColorAt(0, QColor(46, 46, 58, 225))
-            grad.setColorAt(0.15, QColor(37, 37, 48, 225))
-            grad.setColorAt(0.85, QColor(25, 25, 34, 225))
-            grad.setColorAt(1, QColor(20, 20, 27, 225))
-        p.setBrush(QBrush(grad))
+        # Brushed metal texture - clipped to rounded rect
+        metal = get_brushed_metal_pixmap(max(512, self.height()))
+        path = QPainterPath()
+        path.addRoundedRect(QRectF(rect), 12, 12)
+        p.setClipPath(path)
+        p.drawTiledPixmap(rect, metal)
+        p.setClipping(False)
+
+        # Vignette - both horizontal and vertical gradients
+        # Horizontal (left/right) at 50% opacity
+        h_grad = QLinearGradient(0, 0, self.width(), 0)
+        h_grad.setColorAt(0, QColor(0, 0, 0, 35))      # Dark at left (50% of 70)
+        h_grad.setColorAt(0.08, QColor(0, 0, 0, 12))   # Fade out
+        h_grad.setColorAt(0.15, QColor(0, 0, 0, 0))    # Clear in middle
+        h_grad.setColorAt(0.85, QColor(0, 0, 0, 0))    # Clear in middle
+        h_grad.setColorAt(0.92, QColor(0, 0, 0, 15))   # Fade in
+        h_grad.setColorAt(1, QColor(0, 0, 0, 30))      # Dark at right (50% of 60)
+        p.setBrush(QBrush(h_grad))
         p.setPen(Qt.PenStyle.NoPen)
         p.drawRoundedRect(rect, 12, 12)
 
-        # Border - no alpha, solid colors
-        p.setBrush(Qt.BrushStyle.NoBrush)
-        if self.is_focused:
-            p.setPen(QPen(ACCENT, 2))
-        else:
-            p.setPen(QPen(QColor(70, 70, 82), 1))
+        # Vertical (top/bottom) at full opacity
+        v_grad = QLinearGradient(0, 0, 0, self.height())
+        v_grad.setColorAt(0, QColor(0, 0, 0, 70))      # Dark at top
+        v_grad.setColorAt(0.08, QColor(0, 0, 0, 25))   # Fade out
+        v_grad.setColorAt(0.15, QColor(0, 0, 0, 0))    # Clear in middle
+        v_grad.setColorAt(0.85, QColor(0, 0, 0, 0))    # Clear in middle
+        v_grad.setColorAt(0.92, QColor(0, 0, 0, 30))   # Fade in
+        v_grad.setColorAt(1, QColor(0, 0, 0, 60))      # Dark at bottom
+        p.setBrush(QBrush(v_grad))
         p.drawRoundedRect(rect, 12, 12)
+
 
     def _cleanup(self):
         if self.stream:
@@ -1549,7 +1794,7 @@ class VoiceThingWindow(QWidget):
     def _update_buttons(self):
         recording = self.state == "recording"
         idle = self.state == "idle"
-        self.record_btn.setIcon(load_icon("stop" if recording else "mic"))
+        self.record_btn.setIcon(load_icon("stop" if recording else "mic", color=ICON_COLOR_DARK))
         self.record_btn.setEnabled(self.state != "transcribing")
         self.cancel_btn.setEnabled(recording)
         self.copy_btn.setEnabled(self.last_transcription is not None)
@@ -1585,8 +1830,9 @@ class VoiceThingWindow(QWidget):
     def toggle_auto_hide(self):
         self.auto_hide = not self.auto_hide
         # Eye open = stays visible (no auto-hide), eye slashed = auto-hide enabled
-        self.eye_btn.setIcon(load_icon("eye-off" if self.auto_hide else "eye"))
         self.eye_btn.setChecked(self.auto_hide)
+        icon_name = "eye-off" if self.auto_hide else "eye"
+        self._update_checkable_btn_icon(self.eye_btn, icon_name)
 
     def toggle_small_mode(self):
         self.small_mode = not self.small_mode
@@ -1617,12 +1863,14 @@ class VoiceThingWindow(QWidget):
 
     def toggle_sound(self):
         self.sound_enabled = not self.sound_enabled
-        self.sound_btn.setIcon(load_icon("volume" if self.sound_enabled else "volume-off"))
         self.sound_btn.setChecked(self.sound_enabled)
+        icon_name = "volume" if self.sound_enabled else "volume-off"
+        self._update_checkable_btn_icon(self.sound_btn, icon_name)
 
     def toggle_llm(self):
         self.llm_enabled = not self.llm_enabled
         self.llm_btn.setChecked(self.llm_enabled)
+        self._update_checkable_btn_icon(self.llm_btn)
 
     def _chime(self, *args, **kwargs):
         """Play chime only if sound is enabled."""
@@ -1649,8 +1897,8 @@ class VoiceThingWindow(QWidget):
         """Handle accessibility permission error."""
         self.permission_error = True
         self.auto_hide = False  # Disable auto-hide since global shortcuts won't work
-        self.eye_btn.setIcon(load_icon("eye"))
         self.eye_btn.setChecked(False)
+        self._update_checkable_btn_icon(self.eye_btn, "eye")
         self.warning_btn.show()
 
     def show_model_dialog(self):
