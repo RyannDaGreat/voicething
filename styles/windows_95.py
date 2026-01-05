@@ -61,7 +61,7 @@ class Windows95Style(BaseStyle):
     # Colors
     accent = LCD_GREEN
     text_primary = TEXT_BLACK
-    text_secondary = TEXT_BLACK
+    text_secondary = TEXT_WHITE  # White for output panel (dark bg)
     text_muted = "rgb(80,80,80)"
     text_error = "rgb(255,0,0)"
     text_link = "rgb(0,0,128)"
