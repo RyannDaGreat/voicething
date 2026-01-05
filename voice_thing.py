@@ -88,6 +88,7 @@ WAVEFORM_DURATION_SECONDS = 10  # Duration of audio shown in waveform display
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
 from styles import get_style, STYLES
+from styles.base import CYAN_CSS
 STYLE = get_style("macos_2005")  # Can swap to "windows_95" etc later
 
 # Expose style properties as module-level for backward compatibility
@@ -298,40 +299,17 @@ GITHUB_URL = "https://github.com/RyannDaGreat/VoiceThing"
 
 
 class TrafficLightButton(QPushButton):
-    """macOS-style traffic light button with icon on hover and animated resize."""
+    """macOS-style traffic light button with icon on hover."""
 
     def __init__(self, color, hover_color, icon_name, parent=None):
         super().__init__(parent)
-        self._btn_size = 12
         self.setFixedSize(12, 12)
         self.setAttribute(Qt.WidgetAttribute.WA_Hover, True)  # Hover even when unfocused
         self.color = color
         self.hover_color = hover_color
         self.icon_name = icon_name
         self._hovered = False
-        self._size_animation = None
         self._update_style()
-
-    def get_btn_size(self):
-        return self._btn_size
-
-    def set_btn_size(self, size):
-        self._btn_size = size
-        self.setFixedSize(size, size)
-        self._update_style()
-
-    btn_size = pyqtProperty(int, get_btn_size, set_btn_size)
-
-    def animate_to_size(self, target_size, duration=200):
-        """Animate the button size with smooth easing."""
-        if self._size_animation:
-            self._size_animation.stop()
-        self._size_animation = QPropertyAnimation(self, b"btn_size")
-        self._size_animation.setDuration(duration)
-        self._size_animation.setStartValue(self._btn_size)
-        self._size_animation.setEndValue(target_size)
-        self._size_animation.setEasingCurve(QEasingCurve.Type.InOutCubic)
-        self._size_animation.start()
 
     def set_icon_name(self, name):
         self.icon_name = name
@@ -339,12 +317,10 @@ class TrafficLightButton(QPushButton):
 
     def _update_style(self):
         bg = self.hover_color if self._hovered else self.color
-        radius = self._btn_size // 2
-        icon_size = max(6, int(self._btn_size * 0.67))
-        self.setStyleSheet(f"QPushButton {{ background: {bg}; border: none; border-radius: {radius}px; padding: 0px; }}")
+        self.setStyleSheet(f"QPushButton {{ background: {bg}; border: none; border-radius: 6px; padding: 0px; }}")
         if self._hovered:
             self.setIcon(load_icon(self.icon_name))
-            self.setIconSize(QSize(icon_size, icon_size))
+            self.setIconSize(QSize(8, 8))
         else:
             self.setIcon(QIcon())
 
@@ -446,7 +422,7 @@ class HelpDialog(DraggableDialog):
         # Separator
         sep = QLabel()
         sep.setFixedWidth(1)
-        sep.setStyleSheet("background: rgb(140,140,150);")
+        sep.setStyleSheet(f"background: {BORDER_COLOR};")
         content.addWidget(sep)
 
         # Right side: Keymap
@@ -516,7 +492,7 @@ class ModelDialog(DraggableDialog):
             btn.setStyleSheet(get_btn_css())
             btn.setToolTip(desc)
             if model == current_model:
-                btn.setStyleSheet(get_btn_css() + "QPushButton { border: 2px solid rgb(100,200,255); }")
+                btn.setStyleSheet(get_btn_css() + f"QPushButton {{ border: 2px solid {CYAN_CSS}; }}")
             btn.clicked.connect(lambda checked, m=model: self._select(m))
             layout.addWidget(btn)
 
@@ -563,7 +539,7 @@ class PrefsDialog(DraggableDialog):
         layout.addWidget(make_section("Display"))
         simple_mode_row = QHBoxLayout()
         simple_mode_label = QLabel("Simple Mode (I)")
-        simple_mode_label.setStyleSheet("QLabel { color: white; font-size: 13px; }")
+        simple_mode_label.setStyleSheet(f"QLabel {{ color: {TEXT_SECONDARY}; font-size: 13px; }}")
         self.simple_mode_checkbox = QCheckBox()
         self.simple_mode_checkbox.setChecked(simple_mode)
         self.simple_mode_checkbox.setToolTip("Hide advanced buttons and show only transcriptions")
@@ -583,7 +559,7 @@ class PrefsDialog(DraggableDialog):
             btn = QPushButton(f"{key}  {display_name}")
             btn.setStyleSheet(get_btn_css())
             if style_name == current_style:
-                btn.setStyleSheet(get_btn_css() + "QPushButton { border: 2px solid rgb(100,200,255); }")
+                btn.setStyleSheet(get_btn_css() + f"QPushButton {{ border: 2px solid {CYAN_CSS}; }}")
             btn.clicked.connect(lambda checked, s=style_name: self._select_style(s))
             layout.addWidget(btn)
 
@@ -597,7 +573,7 @@ class PrefsDialog(DraggableDialog):
             pet_layout.setContentsMargins(2, 2, 2, 2)
             pet_layout.setSpacing(2)
 
-            # Pet icon label
+            # Pet icon label - clickable to toggle checkbox
             icon_label = QLabel()
             icon = get_pet_icon(pet_type, 32)
             if icon and not icon.isNull():
@@ -605,6 +581,7 @@ class PrefsDialog(DraggableDialog):
             icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             icon_label.setFixedSize(36, 36)
             icon_label.setStyleSheet("QLabel { background: rgba(60,60,60,0.8); border-radius: 4px; }")
+            icon_label.setCursor(Qt.CursorShape.PointingHandCursor)
             pet_layout.addWidget(icon_label)
 
             # Checkbox
@@ -614,6 +591,9 @@ class PrefsDialog(DraggableDialog):
             checkbox.stateChanged.connect(lambda state, p=pet_type: self._toggle_pet(p, state))
             checkbox.setStyleSheet("QCheckBox { color: white; }")
             pet_layout.addWidget(checkbox, alignment=Qt.AlignmentFlag.AlignCenter)
+
+            # Make icon clickable - toggle checkbox when clicked
+            icon_label.mousePressEvent = lambda e, cb=checkbox: cb.toggle()
 
             self.pet_checkboxes[pet_type] = checkbox
             pet_grid.addWidget(pet_widget)
@@ -687,7 +667,7 @@ class TextPanel(QTextEdit):
     """Read-only text panel."""
 
     STYLE = (
-        f"QTextEdit {{ color: #303035; font-size: 11px; font-family: Menlo, monospace; "
+        f"QTextEdit {{ color: {TEXT_PRIMARY}; font-size: 11px; font-family: Menlo, monospace; "
         f"{PANEL_BG_FLAT_CSS} padding: 8px; }}" + SCROLLBAR_CSS
     )
 
@@ -1209,7 +1189,7 @@ class WaveformWidget(QWidget):
         self.samples = np.array([])
         self.display_max = 0.01
         self.setMinimumHeight(40)
-        self.setMaximumHeight(200)
+        self.setMaximumHeight(133)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self._inner = _WaveformInner(self)
         self._glow = None
@@ -1559,7 +1539,6 @@ class VoiceThingWindow(QWidget):
         status_row = QHBoxLayout()
         status_row.setContentsMargins(0, 0, 0, 0)
         status_row.setSpacing(8)
-        self.small_mode = False  # Track small mode state
         self.simple_mode = False  # Hide advanced buttons (VRM, F, L, C) and output panel
         self.close_btn = TrafficLightButton("rgb(255, 95, 87)", "rgb(255, 120, 110)", "macos-close")
         self.close_btn.setToolTip("Close window")
@@ -1598,7 +1577,7 @@ class VoiceThingWindow(QWidget):
         self.timer_label = TimerWidget(seg_font)
         timer_row.addWidget(self.timer_label, 1, Qt.AlignmentFlag.AlignCenter)
         # Pet container is parented to timer_row_widget but positioned absolutely (doesn't affect layout)
-        self.current_pet_types = [PetType.LPC_DOG_GOLDEN]  # List of pet types
+        self.current_pet_types = []  # No pets enabled by default
         self.pet_container = PetContainer(self.timer_row_widget)
         self.pet_container.set_pets(self.current_pet_types)
         self.pet_container.move(0, 0)  # Top-left corner
@@ -1716,7 +1695,10 @@ class VoiceThingWindow(QWidget):
 
         layout.addWidget(self.tab_stack)
 
-        self.setMinimumSize(150, 95)  # Allow shrinking to timer-only mode
+        # Minimum size based on timer panel - just enough to show the display
+        min_w = STYLE.timer_panel_size[0] + 40  # timer panel + padding for title bar buttons
+        min_h = STYLE.timer_panel_size[1] + 55  # timer panel + title bar height
+        self.setMinimumSize(min_w, min_h)
         self.resize(460, 350)
         self.hide_signal.connect(self._maybe_hide)
         self.toggle_signal.connect(self.toggle_recording)
@@ -1973,21 +1955,56 @@ class VoiceThingWindow(QWidget):
         STYLE.paint_window(p, rect, self.width(), self.height(), self.isActiveWindow())
 
     def resizeEvent(self, e):
-        """Progressively hide elements as window shrinks: output->buttons->waveform->timer only."""
+        """Handle resize - delegate to unified UI update."""
         super().resizeEvent(e)
-        if self.small_mode:
-            return  # Don't interfere with small mode
-        h = self.height()
-        # Thresholds for progressive hiding (adjust based on element sizes)
-        # Full layout: ~350px, buttons+waveform+timer: ~200px, waveform+timer: ~150px, timer only: ~80px
+        self._update_ui()
+
+    def _update_ui(self):
+        """Single source of truth for all UI visibility based on window size and mode flags.
+
+        React-like approach: all visibility decisions happen here based on current state.
+        Called by resizeEvent, toggle_simple_mode, and any other state changes.
+        """
+        h, w = self.height(), self.width()
+
+        # Height thresholds for progressive element hiding
         show_output = h >= 250
+        show_tabs = h >= 220
         show_buttons = h >= 180
         show_waveform = h >= 120
-        # Update visibility based on height
-        self.tab_stack.setVisible(show_output and not self.simple_mode)
-        self.tab_row_widget.setVisible(show_output and not self.simple_mode)
+        is_small = h < 120
+
+        # Width thresholds for button collapse
+        icon_only = w < 350
+        minimal_buttons = w < 250
+
+        # --- Panel visibility ---
+        # In simple mode: always show transcriptions (tab_stack), hide tab buttons
+        self.tab_stack.setVisible(show_output or self.simple_mode)
+        self.tab_row_widget.setVisible(show_tabs and not self.simple_mode)
         self.btn_row_widget.setVisible(show_buttons)
         self.waveform.setVisible(show_waveform)
+        self.status_spacer.setVisible(show_buttons)
+
+        # --- Button visibility (simple mode hides advanced buttons) ---
+        # Core buttons: record, cancel (always visible when button row visible)
+        # Advanced buttons: hidden in simple mode
+        advanced_btns = [self.eye_btn, self.llm_btn, self.model_btn,
+                        self.folder_btn, self.load_btn, self.copy_btn, self.sound_btn]
+        for btn in advanced_btns:
+            btn.setVisible(not self.simple_mode and show_buttons)
+
+        # --- Button text/icon mode based on width ---
+        self._update_button_mode(icon_only, minimal_buttons)
+
+        # --- Small mode appearance ---
+        font_size = 10 if is_small else 14
+        self.status_label.setStyleSheet(title_style(font_size))
+        self.small_btn.set_icon_name("macos-fullscreen" if is_small else "macos-collapse")
+
+        # In simple mode, ensure transcriptions tab is active
+        if self.simple_mode:
+            self.tab_stack.setCurrentIndex(1)
 
     def _cleanup(self):
         if self.stream:
@@ -2006,6 +2023,29 @@ class VoiceThingWindow(QWidget):
         self.folder_btn.setEnabled(True)
         self.load_btn.setEnabled(not recording and not transcribing)
         self.model_btn.setEnabled(not recording and not transcribing)  # Disable during recording and transcription
+
+    def _update_button_mode(self, icon_only, minimal_buttons):
+        """Update button display: text+icon, icon-only, or minimal set.
+
+        Note: This only handles TEXT and MINIMAL MODE visibility.
+        Simple mode visibility is handled by _update_ui before this is called.
+        """
+        # All buttons with their original text labels
+        all_btns = [
+            (self.record_btn, "Space"), (self.cancel_btn, "X"), (self.copy_btn, "C"),
+            (self.load_btn, "L"), (self.folder_btn, "F"), (self.sound_btn, "S"),
+            (self.eye_btn, "V"), (self.llm_btn, "R"), (self.model_btn, "M"),
+            (self.prefs_btn, "P"), (self.help_btn, "?"),
+        ]
+        # Essential buttons for minimal mode: record, cancel, copy, load
+        essential_btns = {self.record_btn, self.cancel_btn, self.copy_btn, self.load_btn}
+        for btn, label in all_btns:
+            # Set text: empty for icon-only, label for text+icon
+            btn.setText("" if icon_only else label)
+            # Minimal mode: hide non-essential buttons (overrides simple mode)
+            if minimal_buttons and btn not in essential_btns:
+                btn.setVisible(False)
+            # Otherwise: don't touch visibility - _update_ui already set it correctly
 
     def toggle_recording(self):
         if self.state == "idle":
@@ -2041,51 +2081,24 @@ class VoiceThingWindow(QWidget):
         self._save_settings()
 
     def toggle_small_mode(self):
-        self.small_mode = not self.small_mode
-        # Update yellow button icon: collapse in big mode, expand/fullscreen in small mode
-        self.small_btn.set_icon_name("macos-fullscreen" if self.small_mode else "macos-collapse")
-        # Animate yellow button size: larger in small mode for prominence
-        target_size = 18 if self.small_mode else 12
-        self.small_btn.animate_to_size(target_size, duration=200)
-        self.btn_row_widget.setVisible(not self.small_mode)
-        self.waveform.setVisible(not self.small_mode)
-        self.tab_row_widget.setVisible(not self.small_mode)
-        self.tab_stack.setVisible(not self.small_mode)
-        self.status_spacer.setVisible(not self.small_mode)
-        # Adjust status label font size for small mode
-        font_size = 10 if self.small_mode else 14
-        self.status_label.setStyleSheet(title_style(font_size))
-        if self.small_mode:
-            self._normal_size = self.size()
-            self.setMinimumSize(0, 0)
-            self.setMaximumSize(16777215, 16777215)
-            self.adjustSize()
-            # Use fixed small mode width
-            small_width = 143
-            small_height = self.sizeHint().height()
-            self.setFixedSize(small_width, small_height)
-        else:
-            self.setMinimumSize(300, 250)
-            self.setMaximumSize(16777215, 16777215)  # Reset to default max
+        """Toggle between small and normal window size. Progressive collapse handles the rest."""
+        # Check if currently small (height < 120)
+        is_small = self.height() < 120
+        if is_small:
+            # Expand to normal size
             if hasattr(self, '_normal_size'):
                 self.resize(self._normal_size)
+            else:
+                self.resize(400, 350)
+        else:
+            # Save current size and shrink to small
+            self._normal_size = self.size()
+            self.resize(200, 80)  # Small size - fits timer (160+20=180 min width)
 
     def toggle_simple_mode(self):
         """Toggle simple mode - hides advanced buttons and shows only transcriptions."""
         self.simple_mode = not self.simple_mode
-        # Hide advanced buttons: V (eye), R (llm), M (model), F (folder), L (load), C (copy), S (sound)
-        self.eye_btn.setVisible(not self.simple_mode)
-        self.llm_btn.setVisible(not self.simple_mode)
-        self.model_btn.setVisible(not self.simple_mode)
-        self.folder_btn.setVisible(not self.simple_mode)
-        self.load_btn.setVisible(not self.simple_mode)
-        self.copy_btn.setVisible(not self.simple_mode)
-        self.sound_btn.setVisible(not self.simple_mode)
-        # Hide tabs but keep transcriptions panel visible
-        self.tab_row_widget.setVisible(not self.simple_mode)
-        # In simple mode: show only transcriptions panel (no output tab)
-        if self.simple_mode:
-            self.tab_stack.setCurrentIndex(1)  # Transcriptions panel
+        self._update_ui()  # Single source of truth handles all visibility
         self._save_settings()
 
     def toggle_sound(self):

@@ -1,27 +1,49 @@
-#!/usr/bin/env /opt/homebrew/opt/python@3.10/bin/python3.10
-"""Download traffic light hover icons"""
-import urllib.request
+"""Test progressive button collapse at narrow widths."""
+import sys
 import os
 
-ASSETS_DIR = "/opt/homebrew/lib/python3.10/site-packages/rp/git/voicething/assets"
-BASE_URL = "https://api.iconify.design"
+from PyQt6.QtWidgets import QApplication
+from PyQt6.QtCore import QTimer
 
-# Traffic light icons - need dark color for visibility on colored buttons
-# Using a dark gray that works on red, yellow, and green backgrounds
-ICONS = {
-    "xmark": "heroicons:x-mark-20-solid.svg",
-    "minus": "tabler/minus.svg",
-    "expand": "bi/arrows-expand.svg",
-}
+sys.path.insert(0, "/opt/homebrew/lib/python3.10/site-packages/rp/git/voicething")
+from voice_thing import VoiceThingWindow
 
-# Dark color for visibility on bright backgrounds
-PARAMS = "?color=%23333333&height=256"
+app = QApplication(sys.argv)
 
-for name, path in ICONS.items():
-    url = f"{BASE_URL}/{path}{PARAMS}"
-    output_path = os.path.join(ASSETS_DIR, f"{name}.svg")
-    print(f"Downloading {name} from {url}")
-    urllib.request.urlretrieve(url, output_path)
-    print(f"  -> Saved to {output_path}")
+window = VoiceThingWindow()
+window.show()
 
-print("\nDone!")
+def test_widths():
+    """Test button modes at different widths."""
+    print("=== Testing Button Width Modes ===")
+
+    # Wide mode (400px) - should show text+icon
+    window.resize(400, 300)
+    print(f"\n1. Wide (400px): record_btn text = '{window.record_btn.text()}'")
+    print(f"   prefs_btn visible = {window.prefs_btn.isVisible()}")
+
+    # Icon-only mode (300px) - should show icon only
+    window.resize(300, 300)
+    QTimer.singleShot(100, test_icon_mode)
+
+def test_icon_mode():
+    print(f"\n2. Icon-only (300px): record_btn text = '{window.record_btn.text()}'")
+    print(f"   prefs_btn visible = {window.prefs_btn.isVisible()}")
+
+    # Minimal mode (200px) - should show only 4 buttons
+    window.resize(200, 300)
+    QTimer.singleShot(100, test_minimal_mode)
+
+def test_minimal_mode():
+    print(f"\n3. Minimal (200px): record_btn text = '{window.record_btn.text()}'")
+    print(f"   record_btn visible = {window.record_btn.isVisible()}")
+    print(f"   copy_btn visible = {window.copy_btn.isVisible()}")
+    print(f"   prefs_btn visible = {window.prefs_btn.isVisible()}")
+    print(f"   help_btn visible = {window.help_btn.isVisible()}")
+
+    print("\n=== Test Complete ===")
+    QTimer.singleShot(500, app.quit)
+
+QTimer.singleShot(500, test_widths)
+
+sys.exit(app.exec())

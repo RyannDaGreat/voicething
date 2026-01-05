@@ -1,0 +1,371 @@
+================================================================================
+BUBBLE GRADIENT VISUAL GUIDE
+Exact positioning and color stops for realistic water bubble effect
+================================================================================
+
+This guide shows exactly where colors go in your radial gradient to create
+a convincing bubble/water droplet appearance.
+
+
+================================================================================
+PART 1: BUBBLE SPHERE ANATOMY
+================================================================================
+
+A realistic bubble has these visual zones:
+
+        Highlight zone (bright white center)
+              ↓
+            ╭─────╮
+          ╱ ░░░░░░░░░░ ╲         ░ = highlight (white center)
+        ╱  ░░░░░░░░░░░░░  ╲      ▒ = mid-tone (cyan)
+       │  ░ BUBBLE ▒▒▒  │      ▓ = darker edge (blue)
+       │ ░░▒▒▒▒▒▒▒▒▒▒▓▓ │      ▓▓▓▓ = rim shadow
+       │ ░▒▒▒▒▒▒▒▒▒▒▓▓▓ │
+        ╲  ░▒▒▒▒▒▒▒▒▓▓▓  ╱
+          ╲ ░░░▒▒▒▒▓▓▓▓ ╱
+            ╰─────────╯
+
+
+The gradient radiates from the highlight point (30% offset) outward.
+
+
+================================================================================
+PART 2: EXACT GRADIENT COLOR STOPS
+================================================================================
+
+For a bubble with radius 30 pixels:
+
+    STOP %     COLOR                          ALPHA    PURPOSE
+    ═════════════════════════════════════════════════════════════════════════
+    0%         RGB(255, 255, 255)            255      White highlight
+               #FFFFFF                       100%     Bright center
+
+    40%        RGB(100, 200, 255)            220      Cyan mid-tone
+               #64C8FF                       86%      Aquatic color body
+
+    70%        RGB(50, 150, 200)             180      Darker blue
+               #3296C8                       71%      Edge definition
+
+    100%       RGB(30, 80, 150)              100      Rim shadow
+               #1E5096                       39%      Transparency edge
+
+
+WHAT THIS CREATES:
+
+    Center:    Pure white (opaque) - appears bright and light-filled
+    Mid:       Cyan (mostly opaque) - aquatic color shows through
+    Edge:      Dark blue (semi-transparent) - defines bubble boundary
+    Rim:       Navy shadow (mostly transparent) - fades to nothing
+
+
+================================================================================
+PART 3: VISUAL GRADIENT REPRESENTATION
+================================================================================
+
+Color progression from center (0%) to edge (100%):
+
+    0%              40%             70%            100%
+    ═══════════════════════════════════════════════════════════════════════
+    [WHITE]  →  [CYAN]  →  [DARKER BLUE]  →  [SHADOW/TRANSPARENT]
+    #FFFFFF      #64C8FF      #3296C8            #1E5096
+    α=255        α=220        α=180              α=100
+
+    Solid         Opaque       Translucent       Transparent
+
+
+OPACITY VISUALIZATION:
+
+    0%  ████████████ (255) - fully opaque
+    40% ███████████  (220) - mostly opaque
+    70% ██████████   (180) - semi-transparent
+    100% ███         (100) - mostly transparent
+
+
+================================================================================
+PART 4: HIGHLIGHT OFFSET POSITIONING
+================================================================================
+
+The highlight doesn't appear at the bubble's center. It's offset to create
+a 3D lighting effect.
+
+For a bubble at position (x, y) with radius r:
+
+    STANDARD LIGHTING (top-left light source):
+
+    ╭─────────────────────────────────────────────────────╮
+    │  Bubble Visual                                      │
+    │                                                     │
+    │   Highlight point:                                  │
+    │   x_highlight = x + r × 0.3                         │
+    │   y_highlight = y + r × 0.3                         │
+    │                                                     │
+    │   Result: Highlight is 30% from top-left corner     │
+    │                                                     │
+    │   This creates the appearance of light coming       │
+    │   from the top-left (natural, like window light)    │
+    ╰─────────────────────────────────────────────────────╯
+
+
+EXAMPLE WITH NUMBERS:
+
+Bubble: x=100, y=100, radius=30
+
+    Center point: (100, 100)
+    Highlight point: (100 + 30×0.3, 100 + 30×0.3) = (109, 109)
+
+    The gradient radiates from (109, 109) outward 30 pixels
+    This places the bright spot slightly down and to the right
+    Creating natural 3D sphere appearance
+
+
+VISUAL:
+
+    Without offset (center highlight):
+    ╭───────────╮
+    │ ░░░░░░░░░ │  Looks flat, like a circle (not a sphere)
+    │ ░░░░░░░░░ │
+    │ ░░░░░░░░░ │
+    ╰───────────╯
+
+    With 30% offset (top-left highlight):
+    ╭───────────╮
+    │░░░░░░░░░░│  Looks 3D! Bright spot shows sphere shape
+    │░░░░░░░░░░│  Natural lighting
+    │░░░░░░░░░░│
+    ╰───────────╯
+
+
+================================================================================
+PART 5: MULTIPLE BUBBLE SIZES
+================================================================================
+
+The gradient works at any size because it's proportional to radius:
+
+SIZE    RADIUS    HIGHLIGHT OFFSET        GRADIENT RADIUS
+═══════════════════════════════════════════════════════════════════════════
+Small   8px       x + 8×0.3 = x + 2.4     8px
+Medium  15px      x + 15×0.3 = x + 4.5    15px
+Large   30px      x + 30×0.3 = x + 9      30px
+Huge    50px      x + 50×0.3 = x + 15     50px
+
+The colors stay the same, the proportions scale with size.
+
+
+VISUAL SIZE VARIATIONS:
+
+Small bubble (8px):     Medium bubble (15px):    Large bubble (30px):
+    ╭─────╮                 ╭───────────╮            ╭─────────────╮
+    │░░░░░│                 │░░░░░░░░░░░│            │░░░░░░░░░░░░░│
+    │░░░░░│                 │░░░░░░░░░░░│            │░░░░░░░░░░░░░│
+    ╰─────╯                 ╰───────────╯            ╰─────────────╯
+
+All use the same colors, scale up the radius value.
+
+
+================================================================================
+PART 6: CODE IMPLEMENTATION REFERENCE
+================================================================================
+
+Python code for bubble gradient (from aquatic_effects_example.py):
+
+    from PyQt6.QtGui import QRadialGradient, QColor, QPointF
+
+    # Bubble parameters
+    x, y = 100, 100  # Center position
+    radius = 30      # Bubble size
+
+    # Create gradient with offset highlight
+    highlight_x = x + radius * 0.3
+    highlight_y = y + radius * 0.3
+    gradient = QRadialGradient(QPointF(highlight_x, highlight_y), radius)
+
+    # Add color stops
+    gradient.setColorAt(0.0, QColor(255, 255, 255, 255))      # 0% - white
+    gradient.setColorAt(0.4, QColor(100, 200, 255, 220))      # 40% - cyan
+    gradient.setColorAt(0.7, QColor(50, 150, 200, 180))       # 70% - blue
+    gradient.setColorAt(1.0, QColor(30, 80, 150, 100))        # 100% - shadow
+
+    # Use it
+    painter.setBrush(QBrush(gradient))
+    painter.drawEllipse(QPointF(x, y), radius, radius)
+
+
+================================================================================
+PART 7: WATER DROPLET VARIANT
+================================================================================
+
+A water droplet is similar but with stronger highlight (more opaque center):
+
+    STOP %     COLOR                          ALPHA    PURPOSE
+    ═════════════════════════════════════════════════════════════════════════
+    0%         RGB(220, 240, 255)            255      Very light cyan
+               #DCF0FF                       100%     Bright center
+
+    50%        RGB(80, 180, 240)             240      Brighter cyan
+               #50B4F0                       94%      Strong aquatic tone
+
+    100%       RGB(40, 120, 180)             150      Deeper blue
+               #2878B4                       59%      Edge fade
+
+
+WATER DROPLET VS BUBBLE:
+
+    DROPLET                          BUBBLE
+    ─────────────────────────────────────────────────────────────
+    Smaller (5-20px)                 Larger (15-50px)
+    More opaque                      More transparent
+    Stronger center highlight        Softer center
+    Sharper edges                    Soft fade edges
+    More saturated cyan              More white in center
+    Looks like condensation          Looks like soap bubble
+
+
+================================================================================
+PART 8: TESTING YOUR GRADIENT
+================================================================================
+
+Visual checklist for your bubble:
+
+    ✓ CENTER is bright white - no cyan yet
+    ✓ Transitions smoothly from white to cyan
+    ✓ Cyan color is visible in the middle area
+    ✓ Blue edge shows at ~70% point
+    ✓ Edge fades to nearly transparent
+    ✓ No hard color boundaries - smooth gradient
+    ✓ 3D sphere appearance visible - not a flat circle
+    ✓ Highlight appears top-left, not centered
+
+
+If something looks wrong:
+
+    Problem: Looks like a flat circle (no 3D)
+    Cause: Highlight offset missing (using center instead of 0.3 offset)
+    Fix: Change highlight calculation
+
+    Problem: Colors too washed out
+    Cause: Too much transparency at center
+    Fix: Increase alpha values for 0% and 40% stops
+
+    Problem: Colors too saturated / no fade
+    Cause: Alpha values not decreasing properly
+    Fix: Ensure alphas are: 255 → 220 → 180 → 100
+
+    Problem: Doesn't look aquatic
+    Cause: Colors not cyan enough
+    Fix: Increase green and blue values: RGB(100, 200, 255)
+
+
+================================================================================
+PART 9: ANIMATION PERFORMANCE NOTE
+================================================================================
+
+For animated bubbles, DON'T recreate gradients every frame.
+
+WRONG (slow):
+    for bubble in bubbles:
+        gradient = QRadialGradient(...)  # Creates new every frame!
+        gradient.setColorAt(...)
+        painter.setBrush(gradient)
+
+RIGHT (fast):
+    # Create once, reuse
+    bubbles_gradient = {}
+
+    def get_bubble_gradient(radius):
+        if radius not in bubbles_gradient:
+            gradient = QRadialGradient(...)
+            # Set all color stops
+            bubbles_gradient[radius] = gradient
+        return bubbles_gradient[radius]
+
+    # Then in paint loop:
+    for bubble in bubbles:
+        painter.setBrush(get_bubble_gradient(bubble.radius))
+
+
+================================================================================
+PART 10: TWEAKING THE GRADIENT
+================================================================================
+
+If you want to customize the appearance:
+
+MAKE IT MORE OPAQUE (denser, less transparent):
+    Original alpha:  255, 220, 180, 100
+    More opaque:     255, 235, 200, 150
+
+MAKE IT MORE TRANSPARENT (lighter, more glass-like):
+    Original alpha:  255, 220, 180, 100
+    More transparent: 255, 200, 150, 70
+
+MAKE IT MORE CYAN (more aquatic):
+    Original: RGB(100, 200, 255)
+    More cyan: RGB(80, 210, 255)  (more blue and green)
+
+MAKE IT MORE WHITE (more reflective):
+    Original: RGB(255, 255, 255)
+    Stay white for 0% and 40%:
+    Original:  0% = RGB(255,255,255)  40% = RGB(100,200,255)
+    More white: 0% = RGB(255,255,255)  40% = RGB(150,225,255)
+
+TIGHTER HIGHLIGHT (more concentrated):
+    Change highlight offset from 0.3 to 0.25
+    x_highlight = x + radius * 0.25
+
+BROADER HIGHLIGHT (softer):
+    Change highlight offset from 0.3 to 0.35
+    x_highlight = x + radius * 0.35
+
+
+================================================================================
+PART 11: SIDE-BY-SIDE COLOR COMPARISON
+================================================================================
+
+Standard Bubble vs Custom Variants:
+
+    STANDARD                OPAQUE              TRANSPARENT         CYAN
+    ───────────────────────────────────────────────────────────────────────
+    0%: #FFFFFF            #FFFFFF            #FFFFFF            #FFFFFF
+        α=255              α=255              α=255              α=255
+
+    40%: #64C8FF           #EBF0FF            #64C8FF            #50D0FF
+        α=220              α=235              α=200              α=220
+
+    70%: #3296C8           #5DAADB            #3296C8            #2880D8
+        α=180              α=200              α=150              α=180
+
+    100%: #1E5096          #4B7DAA            #1E5096            #0066B2
+        α=100              α=150              α=70               α=100
+
+    Visual:  Standard       More solid         More glass-like    More cyan
+
+
+Use these presets or mix and match to your taste.
+
+
+================================================================================
+SUMMARY: THE MAGIC RECIPE
+================================================================================
+
+For convincing aquatic bubble effect:
+
+1. CREATE radial gradient from highlight point (center + 0.3 offset)
+2. SET color stops at: 0%, 40%, 70%, 100%
+3. USE colors: white → cyan → blue → shadow
+4. USE alphas: 255 → 220 → 180 → 100
+5. DRAW ellipse with radius centered at bubble position
+
+That's it! The gradient handles all the lighting and dimension.
+
+Code pattern (from aquatic_effects_example.py):
+
+    gradient = QRadialGradient(QPointF(x + r*0.3, y + r*0.3), r)
+    gradient.setColorAt(0.0, QColor(255, 255, 255, 255))
+    gradient.setColorAt(0.4, QColor(100, 200, 255, 220))
+    gradient.setColorAt(0.7, QColor(50, 150, 200, 180))
+    gradient.setColorAt(1.0, QColor(30, 80, 150, 100))
+    painter.setBrush(QBrush(gradient))
+    painter.drawEllipse(QPointF(x, y), r, r)
+
+Copy this pattern for every bubble you draw.
+
+================================================================================
