@@ -1196,18 +1196,11 @@ class WaveformWidget(QWidget):
         cy = h / 2
         rect = self.rect()
 
-        if STYLE.waveform_panel == "aqua":
-            self._paint_aqua_panel(p, rect, w, h, cy)
-        elif STYLE.waveform_panel == "dark":
-            self._paint_dark_panel(p, rect, w, h, cy)
-        elif STYLE.waveform_panel == "aero":
-            self._paint_aero_panel(p, rect, w, h, cy)
-        elif STYLE.waveform_panel == "winamp":
+        # Delegate to style's paint method (or fallback for winamp which isn't a style yet)
+        if STYLE.waveform_panel == "winamp":
             self._paint_winamp_panel(p, rect, w, h, cy)
-        elif STYLE.waveform_panel == "vaporwave":
-            self._paint_vaporwave_panel(p, rect, w, h, cy)
-        elif STYLE.waveform_panel == "win95":
-            self._paint_win95_panel(p, rect, w, h, cy)
+        else:
+            STYLE.paint_waveform_panel(p, rect, w, h, cy)
 
     def _paint_aqua_panel(self, p, rect, w, h, cy):
         """Aqua-style blue panel background - classic macOS look."""

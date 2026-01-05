@@ -74,8 +74,8 @@ class DarkMinimalStyle(BaseStyle):
 
     def scrollbar_css(self):
         return (
-            f"QScrollBar:vertical {{ width: 10px; background: {WHITE_5}; margin: 2px; border-radius: 5px; }}"
-            f"QScrollBar::handle:vertical {{ background: {WHITE_20}; border-radius: 4px; min-height: 20px; }}"
+            f"QScrollBar:vertical {{ width: 10px; background: {WHITE_5}; margin: 2px; border: none; border-radius: 5px; }}"
+            f"QScrollBar::handle:vertical {{ background: {WHITE_20}; border-radius: 5px; min-height: 30px; margin: 0px; }}"
             f"QScrollBar::handle:vertical:hover {{ background: {CYAN_40}; }}"
             "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }"
             "QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: transparent; }"
@@ -104,3 +104,7 @@ class DarkMinimalStyle(BaseStyle):
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.setPen(QPen(self.accent, 2))
             painter.drawRoundedRect(rect, radius, radius)
+
+    def paint_waveform_panel(self, painter, rect, w, h, cy):
+        """Dark minimal has no waveform panel - transparent background."""
+        pass

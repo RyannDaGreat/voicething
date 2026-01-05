@@ -120,11 +120,11 @@ class DarkGradientStyle(BaseStyle):
 
     def scrollbar_css(self):
         return (
-            "QScrollBar:vertical { width: 8px; background: transparent; margin: 2px; }"
+            "QScrollBar:vertical { width: 10px; background: transparent; margin: 2px; border: none; }"
             "QScrollBar::handle:vertical { "
             "background: qlineargradient(x1:0, y1:0, x2:1, y2:0, "
             "stop:0 rgba(80,90,110,0.6), stop:0.5 rgba(100,110,130,0.7), stop:1 rgba(80,90,110,0.6)); "
-            "border-radius: 4px; min-height: 20px; }"
+            "border-radius: 5px; min-height: 30px; margin: 0px; }"
             "QScrollBar::handle:vertical:hover { "
             "background: qlineargradient(x1:0, y1:0, x2:1, y2:0, "
             "stop:0 rgba(100,180,230,0.5), stop:0.5 rgba(100,200,255,0.6), stop:1 rgba(100,180,230,0.5)); }"
@@ -193,3 +193,28 @@ class DarkGradientStyle(BaseStyle):
             # Inner accent border
             painter.setPen(QPen(self.accent, 2))
             painter.drawRoundedRect(rect, radius, radius)
+
+    def paint_waveform_panel(self, painter, rect, w, h, cy):
+        """Dark gradient panel with cyan grid."""
+        # Dark gradient background
+        panel_grad = QLinearGradient(0, 0, 0, h)
+        panel_grad.setColorAt(0, QColor(35, 38, 48, 240))
+        panel_grad.setColorAt(0.5, QColor(28, 30, 38, 240))
+        panel_grad.setColorAt(1, QColor(22, 24, 32, 240))
+        painter.setBrush(QBrush(panel_grad))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawRoundedRect(rect, 8, 8)
+
+        # Subtle cyan grid
+        painter.setPen(QPen(QColor(100, 200, 255, 15), 1))
+        for i in range(1, 4):
+            y = int(h * i / 4)
+            painter.drawLine(0, y, w, y)
+        num_sections = 8
+        for i in range(1, num_sections):
+            painter.drawLine(int(w * i / num_sections), 0, int(w * i / num_sections), h)
+
+        # Subtle border
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.setPen(QPen(QColor(50, 55, 65, 150), 1))
+        painter.drawRoundedRect(rect, 8, 8)

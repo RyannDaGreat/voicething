@@ -62,6 +62,9 @@ class FrutigerAeroStyle(BaseStyle):
     name = "frutiger_aero"
     font = "Segoe UI"  # Authentic Aero font
 
+    # Aquatic effects - enable bubbles on waveform panel
+    waveform_bubbles = True
+
     # Colors
     accent = AERO_BLUE
     text_primary = TEXT_DARK
@@ -141,11 +144,11 @@ class FrutigerAeroStyle(BaseStyle):
 
     def scrollbar_css(self):
         return (
-            f"QScrollBar:vertical {{ width: 12px; background: {SCROLL_BG}; margin: 0; border-radius: 6px; }}"
+            f"QScrollBar:vertical {{ width: 12px; background: {SCROLL_BG}; margin: 2px; border: none; border-radius: 6px; }}"
             f"QScrollBar::handle:vertical {{ "
             f"background: qlineargradient(x1:0, y1:0, x2:1, y2:0, "
             f"stop:0 {SCROLL_HANDLE_EDGE}, stop:0.5 {SCROLL_HANDLE}, stop:1 rgb(136,136,136)); "
-            f"border: 1px solid rgb(102,102,102); border-radius: 5px; min-height: 20px; margin: 2px; }}"
+            f"border: 1px solid rgb(102,102,102); border-radius: 6px; min-height: 30px; margin: 0px; }}"
             f"QScrollBar::handle:vertical:hover {{ "
             f"background: qlineargradient(x1:0, y1:0, x2:1, y2:0, "
             f"stop:0 rgb(221,221,221), stop:0.5 rgb(187,187,187), stop:1 rgb(153,153,153)); }}"
@@ -225,3 +228,44 @@ class FrutigerAeroStyle(BaseStyle):
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QBrush(bubble_grad))
         painter.drawEllipse(int(x), int(y), int(radius * 2), int(radius * 2))
+
+    def paint_waveform_panel(self, painter, rect, w, h, cy):
+        """Frutiger Aero glassy panel with aquatic bubbles."""
+        # Glass gradient background
+        panel_grad = QLinearGradient(0, 0, 0, h)
+        panel_grad.setColorAt(0, QColor(200, 220, 240, 230))
+        panel_grad.setColorAt(0.3, QColor(180, 210, 235, 220))
+        panel_grad.setColorAt(0.7, QColor(160, 200, 230, 210))
+        panel_grad.setColorAt(1, QColor(140, 180, 220, 200))
+        painter.setBrush(QBrush(panel_grad))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawRoundedRect(rect, 4, 4)
+
+        # Top glossy highlight
+        highlight = QLinearGradient(0, 0, 0, h * 0.4)
+        highlight.setColorAt(0, QColor(255, 255, 255, 150))
+        highlight.setColorAt(0.5, QColor(255, 255, 255, 50))
+        highlight.setColorAt(1, QColor(255, 255, 255, 0))
+        painter.setBrush(QBrush(highlight))
+        painter.drawRoundedRect(rect.adjusted(1, 1, -1, -int(h * 0.6)), 3, 3)
+
+        # Subtle grid
+        painter.setPen(QPen(QColor(6, 137, 228, 20), 1))
+        for i in range(1, 4):
+            y = int(h * i / 4)
+            painter.drawLine(0, y, w, y)
+
+        # Decorative bubbles (static, corners only)
+        self._draw_bubble(painter, 8, h - 22, 6, 0.7)
+        self._draw_bubble(painter, 20, h - 14, 4, 0.6)
+        self._draw_bubble(painter, w - 28, h - 20, 5, 0.65)
+        self._draw_bubble(painter, w - 15, h - 10, 3, 0.5)
+
+        # Panel border
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.setPen(QPen(QColor(136, 136, 136), 1))
+        painter.drawRoundedRect(rect, 4, 4)
+
+        # Center line
+        painter.setPen(QPen(QColor(6, 137, 228, 60), 1))
+        painter.drawLine(0, int(cy), w, int(cy))

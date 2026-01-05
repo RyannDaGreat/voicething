@@ -1,5 +1,6 @@
 """Base style - just a plain class with defaults. Override what you need."""
 
+from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
 
 
@@ -55,6 +56,7 @@ class BaseStyle:
     waveform_glow_alpha = 200
     waveform_center_line = QColor(255, 255, 255, 40)
     waveform_panel = None  # None=transparent, "aqua"=blue macOS panel, "dark"=dark gradient panel
+    waveform_bubbles = False  # True for Frutiger Aero aquatic effects
 
     # Transcription panel background
     transcription_panel_bg = "rgba(20,20,30,200)"
@@ -95,3 +97,27 @@ class BaseStyle:
     def paint_window(self, painter, rect, width, height, focused=True):
         """Paint the entire window background. Subclasses implement this."""
         pass
+
+    def paint_waveform_panel(self, painter, rect, w, h, cy):
+        """Paint the waveform panel background. Subclasses implement this.
+
+        Default: transparent (no painting). Override in style subclasses.
+        """
+        pass
+
+    def draw_bubble(self, painter, x, y, radius, alpha_mult=1.0):
+        """Draw a single decorative water bubble with radial gradient.
+
+        Shared utility for styles that want aquatic bubble effects.
+        """
+        from PyQt6.QtCore import QPointF
+        from PyQt6.QtGui import QRadialGradient, QBrush
+        center = QPointF(x + radius * 0.3, y + radius * 0.3)
+        bubble_grad = QRadialGradient(center, radius * 1.2)
+        bubble_grad.setColorAt(0.0, QColor(255, 255, 255, int(200 * alpha_mult)))
+        bubble_grad.setColorAt(0.3, QColor(200, 240, 255, int(180 * alpha_mult)))
+        bubble_grad.setColorAt(0.6, QColor(100, 200, 255, int(120 * alpha_mult)))
+        bubble_grad.setColorAt(1.0, QColor(50, 150, 200, int(60 * alpha_mult)))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QBrush(bubble_grad))
+        painter.drawEllipse(int(x), int(y), int(radius * 2), int(radius * 2))

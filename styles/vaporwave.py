@@ -112,11 +112,11 @@ class VaporwaveStyle(BaseStyle):
 
     def scrollbar_css(self):
         return (
-            f"QScrollBar:vertical {{ width: 10px; background: rgb(48,3,80); margin: 0; border-radius: 5px; }}"
+            f"QScrollBar:vertical {{ width: 12px; background: rgb(48,3,80); margin: 2px; border: none; border-radius: 6px; }}"
             f"QScrollBar::handle:vertical {{ "
             f"background: qlineargradient(x1:0, y1:0, x2:1, y2:0, "
             f"stop:0 rgb(185,103,255), stop:1 rgb(255,113,206)); "
-            f"border-radius: 4px; min-height: 20px; margin: 2px; }}"
+            f"border-radius: 6px; min-height: 30px; margin: 0px; }}"
             f"QScrollBar::handle:vertical:hover {{ "
             f"background: qlineargradient(x1:0, y1:0, x2:1, y2:0, "
             f"stop:0 rgb(200,120,255), stop:1 rgb(255,140,220)); }}"
@@ -175,3 +175,35 @@ class VaporwaveStyle(BaseStyle):
         else:
             painter.setPen(QPen(QColor(100, 60, 140, 150), 1))
             painter.drawRoundedRect(rect, radius, radius)
+
+    def paint_waveform_panel(self, painter, rect, w, h, cy):
+        """Vaporwave-style dark purple panel with pink/cyan gradient accents."""
+        # Dark purple background (#300350 - russian violet)
+        painter.setBrush(QColor(48, 3, 80))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawRect(rect)
+
+        # Horizontal pink-to-cyan gradient at bottom third
+        grad_rect = rect.adjusted(0, int(h * 0.6), 0, 0)
+        vapor_grad = QLinearGradient(0, grad_rect.top(), w, grad_rect.bottom())
+        vapor_grad.setColorAt(0, QColor(255, 113, 206, 50))    # Hot pink
+        vapor_grad.setColorAt(0.5, QColor(185, 103, 255, 35))  # Purple
+        vapor_grad.setColorAt(1, QColor(1, 205, 254, 45))      # Cyan
+        painter.setBrush(QBrush(vapor_grad))
+        painter.drawRect(rect)
+
+        # Subtle scanlines for retro effect
+        painter.setPen(QPen(QColor(255, 113, 206, 15), 1))
+        for y_line in range(0, h, 4):
+            painter.drawLine(0, y_line, w, y_line)
+
+        # Pink border glow
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.setPen(QPen(QColor(255, 113, 206, 100), 2))
+        painter.drawRect(rect.adjusted(1, 1, -1, -1))
+        painter.setPen(QPen(QColor(255, 113, 206, 50), 1))
+        painter.drawRect(rect)
+
+        # Center line in pink
+        painter.setPen(QPen(QColor(255, 113, 206, 40), 1))
+        painter.drawLine(0, int(cy), w, int(cy))

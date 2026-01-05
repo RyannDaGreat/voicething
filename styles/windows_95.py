@@ -12,10 +12,16 @@ Color reference from Windows 95 system colors:
 - TitleText: #FFFFFF (255,255,255)
 """
 
+import os
+
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QLinearGradient, QBrush, QPen
 
 from .base import BaseStyle
+
+# Asset paths for scrollbar arrows
+_STYLE_DIR = os.path.dirname(__file__)
+_ASSETS_DIR = os.path.join(os.path.dirname(_STYLE_DIR), "assets")
 
 
 # Windows 95 system colors (exact values)
@@ -144,10 +150,15 @@ class Windows95Style(BaseStyle):
         )
 
     def scrollbar_css(self):
-        # Win95 scrollbar with beveled track and handle
+        # Authentic Windows 95 scrollbar - gray beveled, no rounded corners
         return (
-            f"QScrollBar:vertical {{ width: 16px; background: {FACE_CSS}; margin: 16px 0 16px 0; "
-            f"border: 1px solid {SHADOW_CSS}; }}"
+            # Track - gray with inset bevel
+            f"QScrollBar:vertical {{ "
+            f"width: 16px; "
+            f"background: {FACE_CSS}; "
+            f"border: none; "
+            f"margin: 16px 0 16px 0; }}"
+            # Handle - raised gray button with 3D bevel
             f"QScrollBar::handle:vertical {{ "
             f"background: {FACE_CSS}; "
             f"border: 2px solid; "
@@ -158,15 +169,51 @@ class Windows95Style(BaseStyle):
             f"min-height: 20px; }}"
             f"QScrollBar::handle:vertical:hover {{ "
             f"background: rgb(200,200,200); }}"
-            f"QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ "
-            f"height: 16px; background: {FACE_CSS}; "
+            # Up arrow button - raised gray with bevel
+            f"QScrollBar::sub-line:vertical {{ "
+            f"height: 16px; "
+            f"subcontrol-position: top; "
+            f"subcontrol-origin: margin; "
+            f"background: {FACE_CSS}; "
             f"border: 2px solid; "
             f"border-top-color: {HIGHLIGHT_CSS}; "
             f"border-left-color: {HIGHLIGHT_CSS}; "
             f"border-bottom-color: {DARK_CSS}; "
             f"border-right-color: {DARK_CSS}; }}"
-            "QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { "
-            f"background: rgb(192,192,192); }}"
+            f"QScrollBar::sub-line:vertical:hover {{ background: rgb(200,200,200); }}"
+            f"QScrollBar::sub-line:vertical:pressed {{ "
+            f"border-top-color: {DARK_CSS}; "
+            f"border-left-color: {DARK_CSS}; "
+            f"border-bottom-color: {HIGHLIGHT_CSS}; "
+            f"border-right-color: {HIGHLIGHT_CSS}; }}"
+            # Down arrow button - raised gray with bevel
+            f"QScrollBar::add-line:vertical {{ "
+            f"height: 16px; "
+            f"subcontrol-position: bottom; "
+            f"subcontrol-origin: margin; "
+            f"background: {FACE_CSS}; "
+            f"border: 2px solid; "
+            f"border-top-color: {HIGHLIGHT_CSS}; "
+            f"border-left-color: {HIGHLIGHT_CSS}; "
+            f"border-bottom-color: {DARK_CSS}; "
+            f"border-right-color: {DARK_CSS}; }}"
+            f"QScrollBar::add-line:vertical:hover {{ background: rgb(200,200,200); }}"
+            f"QScrollBar::add-line:vertical:pressed {{ "
+            f"border-top-color: {DARK_CSS}; "
+            f"border-left-color: {DARK_CSS}; "
+            f"border-bottom-color: {HIGHLIGHT_CSS}; "
+            f"border-right-color: {HIGHLIGHT_CSS}; }}"
+            # Arrow icons - use image-based arrows for authentic Win95 look
+            # The CSS border trick doesn't work well in Qt, so use images
+            f"QScrollBar::up-arrow:vertical {{ "
+            f"image: url({os.path.join(_ASSETS_DIR, 'scroll-up.svg')}); "
+            f"width: 8px; height: 4px; }}"
+            f"QScrollBar::down-arrow:vertical {{ "
+            f"image: url({os.path.join(_ASSETS_DIR, 'scroll-down.svg')}); "
+            f"width: 8px; height: 4px; }}"
+            # Track page areas - gray
+            f"QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ "
+            f"background: {FACE_CSS}; }}"
         )
 
     def panel_bg_css(self):
@@ -228,3 +275,36 @@ class Windows95Style(BaseStyle):
             painter.setPen(QPen(QColor(0, 0, 128, 40), 2))
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawRect(rect.adjusted(3, 3, -3, -3))
+
+    def paint_waveform_panel(self, painter, rect, w, h, cy):
+        """Windows 95 style - black recessed panel with inset bevel."""
+        # Black background
+        painter.setBrush(QColor(0, 0, 0))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawRect(rect)
+
+        # Inset bevel - dark on top/left, light on bottom/right
+        # Top edge - dark shadow
+        painter.setPen(QPen(QColor(0, 0, 0), 1))
+        painter.drawLine(rect.left(), rect.top(), rect.right(), rect.top())
+        # Left edge - dark shadow
+        painter.drawLine(rect.left(), rect.top(), rect.left(), rect.bottom())
+
+        # Inner dark gray
+        painter.setPen(QPen(QColor(128, 128, 128), 1))
+        painter.drawLine(rect.left() + 1, rect.top() + 1, rect.right() - 1, rect.top() + 1)
+        painter.drawLine(rect.left() + 1, rect.top() + 1, rect.left() + 1, rect.bottom() - 1)
+
+        # Bottom edge - white/light highlight
+        painter.setPen(QPen(QColor(255, 255, 255), 1))
+        painter.drawLine(rect.left(), rect.bottom(), rect.right(), rect.bottom())
+        painter.drawLine(rect.right(), rect.top(), rect.right(), rect.bottom())
+
+        # Inner light gray
+        painter.setPen(QPen(QColor(223, 223, 223), 1))
+        painter.drawLine(rect.left() + 1, rect.bottom() - 1, rect.right() - 1, rect.bottom() - 1)
+        painter.drawLine(rect.right() - 1, rect.top() + 1, rect.right() - 1, rect.bottom() - 1)
+
+        # Center line in dim green (optional subtle guide)
+        painter.setPen(QPen(QColor(0, 64, 0, 60), 1))
+        painter.drawLine(0, int(cy), w, int(cy))
