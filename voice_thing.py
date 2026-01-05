@@ -1347,7 +1347,7 @@ class VoiceThingWindow(QWidget):
         self.warning_btn.hide()
         status_row.addWidget(self.warning_btn)
         self.status_label = QLabel("Double-tap ⌥")
-        self.status_label.setStyleSheet(title_style(14))
+        self.status_label.setStyleSheet(title_style(11))
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         status_row.addWidget(self.status_label, 1)
         # Spacer to balance the window control buttons
@@ -1898,7 +1898,7 @@ class VoiceThingWindow(QWidget):
         self.output_panel.setStyleSheet(f"QTextEdit {{ {PANEL_BG_FLAT_CSS} color: {TEXT_SECONDARY}; font-size: 11px; }} {SCROLLBAR_CSS}")
         self.transcriptions_panel._apply_style()
         # Refresh status label
-        self.status_label.setStyleSheet(title_style(14))
+        self.status_label.setStyleSheet(title_style(11))
         # Refresh waveform glow
         self.waveform._update_glow()
         # Force repaint for background, timer, waveform
