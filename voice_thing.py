@@ -683,7 +683,7 @@ class TranscriptionRow(QFrame):
     @staticmethod
     def _btn_style():
         return (
-            "QPushButton { background: transparent; border: none; border-radius: 4px; }"
+            f"QPushButton {{ background: {STYLE.transcription_row_btn_bg}; border: none; border-radius: 4px; }}"
             f"QPushButton:hover {{ background: {STYLE.transcription_row_btn_hover}; }}"
             f"QPushButton:pressed {{ background: {STYLE.transcription_row_btn_pressed}; }}"
         )
@@ -694,6 +694,7 @@ class TranscriptionRow(QFrame):
         self.other_text = other_text  # The other version for diff comparison
         self.is_raw = is_raw  # True if this is the raw (pre-LLM) text
         self.dimmed = dimmed
+        self._buttons = []  # Store button references for style updates
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(8, 4, 8, 4)
@@ -705,9 +706,7 @@ class TranscriptionRow(QFrame):
         self.label.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.label.customContextMenuRequested.connect(self._show_context_menu)
         self.label.installEventFilter(self)
-        text_color = STYLE.transcription_text_dimmed if dimmed else STYLE.transcription_text
-        self.base_style = f"font-size: 11px; color: {text_color};"
-        self.label.setStyleSheet(self.base_style)
+        self._update_label_style()
         self.label.setWordWrap(True)
         self.label.setTextFormat(Qt.TextFormat.RichText)
         layout.addWidget(self.label, 1)
@@ -716,27 +715,47 @@ class TranscriptionRow(QFrame):
         self._set_diff_highlight(False)
 
         # Icons styled for current theme
-        icon_color = ICON_COLOR_MUTED
-        btn_style = self._btn_style()
         if show_deramble:
             deramble_btn = QPushButton()
             deramble_btn.setFixedSize(24, 24)
-            deramble_btn.setIcon(load_icon(ACTIONS_BY_ID["llm"][2], color=icon_color))
             deramble_btn.setIconSize(QSize(16, 16))
-            deramble_btn.setStyleSheet(btn_style)
             deramble_btn.setToolTip("De-ramble with LLM")
             deramble_btn.clicked.connect(lambda: self.deramble_clicked.emit(self.text))
+            deramble_btn.icon_name = ACTIONS_BY_ID["llm"][2]
             layout.addWidget(deramble_btn, 0, Qt.AlignmentFlag.AlignTop)
+            self._buttons.append(deramble_btn)
 
         copy_btn = QPushButton()
         copy_btn.setFixedSize(24, 24)
-        copy_btn.setIcon(load_icon(ACTIONS_BY_ID["copy"][2], color=icon_color))
         copy_btn.setIconSize(QSize(16, 16))
-        copy_btn.setStyleSheet(btn_style)
         copy_btn.setToolTip("Copy to clipboard")
         copy_btn.clicked.connect(lambda: self.clicked.emit(self.text))
+        copy_btn.icon_name = ACTIONS_BY_ID["copy"][2]
         layout.addWidget(copy_btn, 0, Qt.AlignmentFlag.AlignTop)
+        self._buttons.append(copy_btn)
 
+        # Apply initial button styles
+        self._update_button_styles()
+        self._update_bg(False)
+
+    def _update_label_style(self):
+        """Update label text color from current style."""
+        text_color = STYLE.transcription_text_dimmed if self.dimmed else STYLE.transcription_text
+        self.base_style = f"font-size: 11px; color: {text_color};"
+        self.label.setStyleSheet(self.base_style)
+
+    def _update_button_styles(self):
+        """Update button styles and icons from current style."""
+        btn_style = self._btn_style()
+        icon_color = STYLE.icon_color_muted
+        for btn in self._buttons:
+            btn.setStyleSheet(btn_style)
+            btn.setIcon(load_icon(btn.icon_name, color=icon_color))
+
+    def update_style(self):
+        """Called when global style changes - refresh all style-dependent properties."""
+        self._update_label_style()
+        self._update_button_styles()
         self._update_bg(False)
 
     def _set_diff_highlight(self, highlight):
@@ -862,6 +881,13 @@ class TranscriptionItem(QFrame):
         for row in self.diff_rows:
             row.set_diff_highlight(hovered)
 
+    def update_style(self):
+        """Update style on all child rows."""
+        for row in self.diff_rows:
+            row.update_style()
+        if self.first_row and self.first_row not in self.diff_rows:
+            self.first_row.update_style()
+
 
 class TranscriptionList(QScrollArea):
     """Scrollable list of transcription items."""
@@ -870,18 +896,18 @@ class TranscriptionList(QScrollArea):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._apply_style()
         self.setWidgetResizable(True)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.item_count = 0
 
         self.container = QWidget()
         self.container.setStyleSheet("background: transparent;")
-        self.layout = QVBoxLayout(self.container)
-        self.layout.setContentsMargins(0, 0, 0, 0)
-        self.layout.setSpacing(0)
-        self.layout.addStretch()
+        self._layout = QVBoxLayout(self.container)
+        self._layout.setContentsMargins(0, 0, 0, 0)
+        self._layout.setSpacing(0)
+        self._layout.addStretch()
         self.setWidget(self.container)
+        self._apply_style()
 
     def _apply_style(self):
         css = (
@@ -890,7 +916,11 @@ class TranscriptionList(QScrollArea):
             + SCROLLBAR_CSS
         )
         self.setStyleSheet(css)
-
+        # Update all child items' styles
+        for i in range(self._layout.count() - 1):  # Skip the stretch
+            item = self._layout.itemAt(i)
+            if item and item.widget():
+                item.widget().update_style()
 
     def add_transcription(self, raw_text, processed_text):
         index = self.item_count
@@ -899,7 +929,7 @@ class TranscriptionList(QScrollArea):
         item.copy_clicked.connect(self.copy_requested.emit)
         item.deramble_clicked.connect(self.deramble_requested.emit)
         # Insert before the stretch
-        self.layout.insertWidget(self.layout.count() - 1, item)
+        self._layout.insertWidget(self._layout.count() - 1, item)
         # Scroll to bottom
         QTimer.singleShot(10, lambda: self.verticalScrollBar().setValue(
             self.verticalScrollBar().maximum()))
@@ -907,21 +937,21 @@ class TranscriptionList(QScrollArea):
     def update_transcription(self, index, raw_text, processed_text):
         """Replace transcription at index with updated raw+processed version."""
         # Find the widget at this index (widgets are in order, stretch is last)
-        if index < self.layout.count() - 1:
-            old_item = self.layout.takeAt(index)
+        if index < self._layout.count() - 1:
+            old_item = self._layout.takeAt(index)
             if old_item and old_item.widget():
                 old_item.widget().deleteLater()
             new_item = TranscriptionItem(raw_text, processed_text, index)
             new_item.copy_clicked.connect(self.copy_requested.emit)
             new_item.deramble_clicked.connect(self.deramble_requested.emit)
-            self.layout.insertWidget(index, new_item)
+            self._layout.insertWidget(index, new_item)
             # Scroll to bottom after update
             QTimer.singleShot(10, lambda: self.verticalScrollBar().setValue(
                 self.verticalScrollBar().maximum()))
 
     def clear(self):
-        while self.layout.count() > 1:  # Keep the stretch
-            item = self.layout.takeAt(0)
+        while self._layout.count() > 1:  # Keep the stretch
+            item = self._layout.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
         self.item_count = 0
@@ -1863,11 +1893,12 @@ class VoiceThingWindow(QWidget):
         # Refresh tab buttons
         self.output_tab.setStyleSheet(get_tab_css())
         self.transcriptions_tab.setStyleSheet(get_tab_css())
+        self._update_tab_icons()
         # Refresh panels
         self.output_panel.setStyleSheet(f"QTextEdit {{ {PANEL_BG_FLAT_CSS} color: {TEXT_SECONDARY}; font-size: 11px; }} {SCROLLBAR_CSS}")
         self.transcriptions_panel._apply_style()
         # Refresh status label
-        self.status_label.setStyleSheet(title_style(18))
+        self.status_label.setStyleSheet(title_style(14))
         # Refresh waveform glow
         self.waveform._update_glow()
         # Force repaint for background, timer, waveform

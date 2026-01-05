@@ -3,7 +3,32 @@
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QLinearGradient, QBrush, QPen
 
-from .base import BaseStyle
+from .base import BaseStyle, CYAN, RED_ERROR, LIGHT_GRAY, CYAN_MUTED
+
+
+# White/black with alpha
+WHITE_90 = "rgba(255,255,255,0.9)"
+WHITE_70 = "rgba(255,255,255,0.7)"
+WHITE_60 = "rgba(255,255,255,0.6)"
+WHITE_40 = "rgba(255,255,255,0.4)"
+WHITE_20 = "rgba(255,255,255,0.2)"
+WHITE_8 = "rgba(255,255,255,0.08)"
+
+# Cyan accent colors
+CYAN_90 = "rgba(100,200,255,0.9)"
+CYAN_60 = "rgba(100,200,255,0.6)"
+CYAN_35 = "rgba(100,200,255,0.35)"
+CYAN_20 = "rgba(100,180,230,0.2)"
+CYAN_8 = "rgba(100,180,230,0.08)"
+
+# Glass effect borders
+GLASS_BORDER = "rgba(90,90,105,0.8)"
+GLASS_BORDER_DARK = "rgba(60,60,70,0.6)"
+GLASS_BORDER_HOVER = "rgba(100,180,230,0.4)"
+PANEL_BORDER = "rgba(70,75,90,0.7)"
+PANEL_BORDER_DARK = "rgba(60,65,80,0.6)"
+
+# Gradient definitions kept inline since they're complex multi-stop
 
 
 class DarkGradientStyle(BaseStyle):
@@ -11,78 +36,71 @@ class DarkGradientStyle(BaseStyle):
     font = "Futura"
 
     # Dark theme colors
-    accent = QColor(100, 200, 255)
-    text_primary = "rgba(255,255,255,0.9)"
-    text_secondary = "rgba(255,255,255,0.7)"
-    text_muted = "rgba(255,255,255,0.4)"
-    text_error = "rgb(255,80,80)"
-    text_link = "rgba(100,200,255,0.9)"
-    border_color = "rgba(90,90,105,0.8)"
-    border_dark = "rgba(60,60,70,0.6)"
+    accent = CYAN
+    text_primary = WHITE_90
+    text_secondary = WHITE_70
+    text_muted = WHITE_40
+    text_error = RED_ERROR
+    text_link = CYAN_90
+    border_color = GLASS_BORDER
+    border_dark = GLASS_BORDER_DARK
     icon_color_dark = '#ffffff'
     icon_color_light = '#ffffff'
-    icon_color_muted = 'rgba(255,255,255,0.6)'
+    icon_color_muted = '#999999'  # Solid gray for SVG compatibility
 
     # Waveform - cyan with glow and dark panel with grid
-    waveform_color = QColor(100, 200, 255)
+    waveform_color = CYAN
     waveform_glow = True
     waveform_center_line = QColor(100, 200, 255, 30)
     waveform_panel = "dark"  # Dark gradient panel with cyan grid
 
     # Timer - LCD panel style (dark gradient has the LCD look)
     timer_use_lcd = True
-    timer_color = QColor(100, 200, 255)
+    timer_color = CYAN
 
     # Transcription colors (dark theme)
-    transcription_text = "#b0b0b0"
-    transcription_text_dimmed = "rgba(130,150,170,0.7)"
+    transcription_text = LIGHT_GRAY
+    transcription_text_dimmed = CYAN_MUTED
     transcription_panel_bg = (
         "qlineargradient(x1:0, y1:0, x2:0, y2:1, "
         "stop:0 rgba(35,38,48,0.95), stop:1 rgba(25,27,35,0.95))"
     )
-    transcription_panel_border = "rgba(60,65,80,0.6)"
-    transcription_row_hover = "rgba(100,180,230,0.08)"
-    transcription_row_btn_hover = (
-        "qlineargradient(x1:0, y1:0, x2:0, y2:1, "
-        "stop:0 rgba(85,85,105,0.8), stop:1 rgba(55,55,70,0.8))"
-    )
-    transcription_row_btn_pressed = (
-        "qlineargradient(x1:0, y1:0, x2:0, y2:1, "
-        "stop:0 rgba(60,140,180,0.6), stop:1 rgba(40,100,140,0.6))"
-    )
+    transcription_panel_border = PANEL_BORDER_DARK
+    transcription_row_hover = CYAN_8
+    transcription_row_btn_bg = WHITE_8
+    transcription_row_btn_hover = CYAN_20
+    transcription_row_btn_pressed = CYAN_35
 
     def button_css(self):
-        # Glass pill button with gradient and subtle glow
+        # Glass pill button with gradient - uniform border color
         return (
             f"QPushButton {{ "
-            f"color: rgba(255,255,255,0.7); "
+            f"color: {WHITE_70}; "
             f"background: qlineargradient(x1:0, y1:0, x2:0, y2:1, "
             f"stop:0 rgba(70,70,85,0.9), stop:0.1 rgba(55,55,70,0.9), "
             f"stop:0.9 rgba(35,35,48,0.9), stop:1 rgba(30,30,42,0.9)); "
-            f"border: 1px solid rgba(90,90,105,0.8); "
-            f"border-top: 1px solid rgba(120,120,140,0.5); "
+            f"border: 1px solid {GLASS_BORDER}; "
             f"border-radius: 4px; padding: 2px 4px; font-size: 10px; font-family: {self.font}; text-align: left; }}"
-            "QPushButton:hover { "
-            "background: qlineargradient(x1:0, y1:0, x2:0, y2:1, "
-            "stop:0 rgba(85,85,105,0.95), stop:0.1 rgba(70,70,88,0.95), "
-            "stop:0.9 rgba(50,50,65,0.95), stop:1 rgba(42,42,55,0.95)); "
-            "border: 1px solid rgba(100,180,230,0.4); }"
-            "QPushButton:pressed { "
-            "background: qlineargradient(x1:0, y1:0, x2:0, y2:1, "
-            "stop:0 rgba(30,30,42,0.95), stop:0.1 rgba(35,35,48,0.95), "
-            "stop:0.9 rgba(50,50,65,0.95), stop:1 rgba(60,60,75,0.95)); "
-            "border: 1px solid rgba(100,200,255,0.6); "
-            "border-top: 1px solid rgba(60,60,75,0.8); }"
-            "QPushButton:disabled { color: rgba(255,255,255,0.2); background: rgba(40,40,50,0.3); border: 1px solid rgba(60,60,70,0.3); }"
-            "QPushButton:checked { "
-            "background: qlineargradient(x1:0, y1:0, x2:0, y2:1, "
-            "stop:0 rgba(60,140,180,0.5), stop:0.1 rgba(50,120,160,0.5), "
-            "stop:0.9 rgba(40,100,140,0.5), stop:1 rgba(35,90,130,0.5)); "
-            "border: 1px solid rgba(100,200,255,0.6); }"
-            "QPushButton:checked:hover { "
-            "background: qlineargradient(x1:0, y1:0, x2:0, y2:1, "
-            "stop:0 rgba(70,150,190,0.6), stop:0.1 rgba(60,130,170,0.6), "
-            "stop:0.9 rgba(50,110,150,0.6), stop:1 rgba(45,100,140,0.6)); }"
+            f"QPushButton:hover {{ "
+            f"background: qlineargradient(x1:0, y1:0, x2:0, y2:1, "
+            f"stop:0 rgba(85,85,105,0.95), stop:0.1 rgba(70,70,88,0.95), "
+            f"stop:0.9 rgba(50,50,65,0.95), stop:1 rgba(42,42,55,0.95)); "
+            f"border: 1px solid {GLASS_BORDER_HOVER}; }}"
+            f"QPushButton:pressed {{ "
+            f"background: qlineargradient(x1:0, y1:0, x2:0, y2:1, "
+            f"stop:0 rgba(30,30,42,0.95), stop:0.1 rgba(35,35,48,0.95), "
+            f"stop:0.9 rgba(50,50,65,0.95), stop:1 rgba(60,60,75,0.95)); "
+            f"border: 1px solid {CYAN_60}; }}"
+            f"QPushButton:disabled {{ color: {WHITE_20}; background: rgba(40,40,50,0.3); border: 1px solid rgba(60,60,70,0.3); }}"
+            f"QPushButton:checked {{ "
+            f"background: qlineargradient(x1:0, y1:0, x2:0, y2:1, "
+            f"stop:0 rgba(60,140,180,0.5), stop:0.1 rgba(50,120,160,0.5), "
+            f"stop:0.9 rgba(40,100,140,0.5), stop:1 rgba(35,90,130,0.5)); "
+            f"border: 1px solid {CYAN_60}; }}"
+            f"QPushButton:checked:hover {{ "
+            f"background: qlineargradient(x1:0, y1:0, x2:0, y2:1, "
+            f"stop:0 rgba(70,150,190,0.6), stop:0.1 rgba(60,130,170,0.6), "
+            f"stop:0.9 rgba(50,110,150,0.6), stop:1 rgba(45,100,140,0.6)); }}"
         )
 
     def menu_css(self):
@@ -97,7 +115,7 @@ class DarkGradientStyle(BaseStyle):
             "QMenu::item:selected { "
             "background: qlineargradient(x1:0, y1:0, x2:0, y2:1, "
             "stop:0 rgba(100,180,230,0.3), stop:1 rgba(80,150,200,0.3)); }"
-            "QMenu::separator { height: 1px; background: rgba(255,255,255,0.2); margin: 4px 8px; }"
+            f"QMenu::separator {{ height: 1px; background: {WHITE_20}; margin: 4px 8px; }}"
         )
 
     def scrollbar_css(self):
@@ -118,8 +136,7 @@ class DarkGradientStyle(BaseStyle):
         return (
             "background: qlineargradient(x1:0, y1:0, x2:0, y2:1, "
             "stop:0 rgba(45,48,58,0.95), stop:1 rgba(30,32,40,0.95)); "
-            "border: 1px solid rgba(70,75,90,0.7); "
-            "border-top: 1px solid rgba(90,95,110,0.5); "
+            f"border: 1px solid {PANEL_BORDER}; "
             "border-radius: 8px;"
         )
 
@@ -127,8 +144,7 @@ class DarkGradientStyle(BaseStyle):
         return (
             "background: qlineargradient(x1:0, y1:0, x2:0, y2:1, "
             "stop:0 rgba(35,38,48,0.95), stop:1 rgba(25,27,35,0.95)); "
-            "border: 1px solid rgba(60,65,80,0.6); "
-            "border-top: 1px solid rgba(40,45,55,0.9); "
+            f"border: 1px solid {PANEL_BORDER_DARK}; "
             "border-radius: 8px;"
         )
 
