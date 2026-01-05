@@ -16,7 +16,7 @@ class MacOS2005Style(BaseStyle):
     waveform_color = QColor(100, 255, 100)
     waveform_glow = True
     waveform_center_line = None  # No center line with glow style
-    waveform_panel = True  # Aqua-style blue panel background
+    waveform_panel = "aqua"  # Aqua-style blue panel background
 
     # Timer - LCD panel style
     timer_use_lcd = True

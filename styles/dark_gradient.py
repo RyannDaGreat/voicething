@@ -23,11 +23,11 @@ class DarkGradientStyle(BaseStyle):
     icon_color_light = '#ffffff'
     icon_color_muted = 'rgba(255,255,255,0.6)'
 
-    # Waveform - flat cyan with center line (no glow, no panel)
+    # Waveform - cyan with glow and dark panel with grid
     waveform_color = QColor(100, 200, 255)
-    waveform_glow = False
-    waveform_center_line = QColor(255, 255, 255, 40)
-    waveform_panel = False
+    waveform_glow = True
+    waveform_center_line = QColor(100, 200, 255, 30)
+    waveform_panel = "dark"  # Dark gradient panel with cyan grid
 
     # Timer - LCD panel style (dark gradient has the LCD look)
     timer_use_lcd = True
@@ -36,11 +36,20 @@ class DarkGradientStyle(BaseStyle):
     # Transcription colors (dark theme)
     transcription_text = "#b0b0b0"
     transcription_text_dimmed = "rgba(130,150,170,0.7)"
-    transcription_panel_bg = "rgba(20,20,30,200)"
-    transcription_panel_border = "rgb(30,30,40)"
-    transcription_row_hover = "rgba(255,255,255,0.05)"
-    transcription_row_btn_hover = "rgba(255,255,255,0.15)"
-    transcription_row_btn_pressed = "rgba(100,200,255,0.4)"
+    transcription_panel_bg = (
+        "qlineargradient(x1:0, y1:0, x2:0, y2:1, "
+        "stop:0 rgba(35,38,48,0.95), stop:1 rgba(25,27,35,0.95))"
+    )
+    transcription_panel_border = "rgba(60,65,80,0.6)"
+    transcription_row_hover = "rgba(100,180,230,0.08)"
+    transcription_row_btn_hover = (
+        "qlineargradient(x1:0, y1:0, x2:0, y2:1, "
+        "stop:0 rgba(85,85,105,0.8), stop:1 rgba(55,55,70,0.8))"
+    )
+    transcription_row_btn_pressed = (
+        "qlineargradient(x1:0, y1:0, x2:0, y2:1, "
+        "stop:0 rgba(60,140,180,0.6), stop:1 rgba(40,100,140,0.6))"
+    )
 
     def button_css(self):
         # Glass pill button with gradient and subtle glow
@@ -126,35 +135,45 @@ class DarkGradientStyle(BaseStyle):
     def paint_window(self, painter, rect, width, height, focused=True):
         """Paint gradient background with drop shadow and highlight."""
         radius = self.corner_radius
+        alpha_mult = 1.0 if focused else 0.88
 
-        # Outer drop shadow (multiple layers for soft shadow)
-        for offset, alpha in [(6, 25), (4, 35), (2, 45)]:
-            shadow_rect = rect.adjusted(-offset//2, offset//2, offset//2, offset)
-            painter.setBrush(QColor(0, 0, 0, alpha))
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.drawRoundedRect(shadow_rect, radius, radius)
-
-        # Main gradient background
+        # Main gradient background (top lighter, bottom darker)
         grad = QLinearGradient(0, rect.top(), 0, rect.bottom())
-        grad.setColorAt(0, QColor(50, 52, 65, 250))
-        grad.setColorAt(0.15, QColor(40, 42, 54, 250))
-        grad.setColorAt(0.85, QColor(30, 32, 42, 250))
-        grad.setColorAt(1, QColor(25, 27, 36, 250))
+        grad.setColorAt(0, QColor(52, 52, 66, int(255 * alpha_mult)))
+        grad.setColorAt(0.15, QColor(42, 42, 54, int(255 * alpha_mult)))
+        grad.setColorAt(0.85, QColor(28, 28, 38, int(255 * alpha_mult)))
+        grad.setColorAt(1, QColor(22, 22, 30, int(255 * alpha_mult)))
         painter.setBrush(QBrush(grad))
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.drawRoundedRect(rect, radius - 2, radius - 2)
+        painter.drawRoundedRect(rect, radius, radius)
 
-        # Top highlight
-        highlight_grad = QLinearGradient(0, rect.top(), 0, rect.top() + 15)
-        highlight_grad.setColorAt(0, QColor(255, 255, 255, 20))
+        # Inner highlight at top (subtle bevel effect)
+        inner_rect = rect.adjusted(1, 1, -1, -1)
+        highlight_grad = QLinearGradient(0, rect.top(), 0, rect.top() + 20)
+        highlight_grad.setColorAt(0, QColor(255, 255, 255, int(18 * alpha_mult)))
         highlight_grad.setColorAt(1, QColor(255, 255, 255, 0))
         painter.setBrush(QBrush(highlight_grad))
-        painter.drawRoundedRect(rect.adjusted(1, 1, -1, -rect.height() + 16), radius - 3, radius - 3)
+        painter.drawRoundedRect(inner_rect, radius - 1, radius - 1)
 
-        # Border with glow when focused
+        # Inner shadow at top edge (inset effect)
+        shadow_grad = QLinearGradient(0, rect.top(), 0, rect.top() + 8)
+        shadow_grad.setColorAt(0, QColor(0, 0, 0, int(40 * alpha_mult)))
+        shadow_grad.setColorAt(1, QColor(0, 0, 0, 0))
+        painter.setBrush(QBrush(shadow_grad))
+        painter.drawRoundedRect(rect.adjusted(0, 0, 0, -rect.height() + 12), radius, radius)
+
+        # Subtle border
         painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.setPen(QPen(QColor(80, 80, 95, int(180 * alpha_mult)), 1))
+        painter.drawRoundedRect(rect, radius, radius)
+
+        # Focus glow effect
         if focused:
-            painter.setPen(QPen(QColor(100, 180, 230, 80), 1.5))
-        else:
-            painter.setPen(QPen(QColor(80, 85, 100, 150), 1))
-        painter.drawRoundedRect(rect, radius - 2, radius - 2)
+            # Outer glow
+            for i in range(3):
+                glow_alpha = int(40 - i * 12)
+                painter.setPen(QPen(QColor(100, 200, 255, glow_alpha), 3 + i * 2))
+                painter.drawRoundedRect(rect.adjusted(-i, -i, i, i), radius + i, radius + i)
+            # Inner accent border
+            painter.setPen(QPen(self.accent, 2))
+            painter.drawRoundedRect(rect, radius, radius)

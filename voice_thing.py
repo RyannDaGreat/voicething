@@ -1052,14 +1052,17 @@ class _WaveformInner(QWidget):
         points += [QPointF(x, y) for x, y in zip(x_coords[::-1], bottom_y)]
         polygon = QPolygonF(points)
 
-        # Draw waveform - gradient if glow enabled, flat otherwise
+        # Draw waveform - gradient with alpha fade at edges if glow enabled
         color = STYLE.waveform_color
         if STYLE.waveform_glow:
             wave_grad = QLinearGradient(0, cy - h/2 * 0.85, 0, cy + h/2 * 0.85)
-            light = QColor(color.red() + 80, color.green(), color.blue() + 80)
-            wave_grad.setColorAt(0, light)
-            wave_grad.setColorAt(0.5, color)
-            wave_grad.setColorAt(1, light)
+            # Fade to transparent at edges, full color in middle
+            edge = QColor(color.red(), color.green(), color.blue(), 60)
+            mid = QColor(color.red(), color.green(), color.blue(), 255)
+            wave_grad.setColorAt(0, edge)
+            wave_grad.setColorAt(0.3, mid)
+            wave_grad.setColorAt(0.7, mid)
+            wave_grad.setColorAt(1, edge)
             p.setBrush(QBrush(wave_grad))
         else:
             p.setBrush(color)
@@ -1163,7 +1166,13 @@ class WaveformWidget(QWidget):
         cy = h / 2
         rect = self.rect()
 
-        # Aqua-style blue panel background - classic macOS look
+        if STYLE.waveform_panel == "aqua":
+            self._paint_aqua_panel(p, rect, w, h, cy)
+        elif STYLE.waveform_panel == "dark":
+            self._paint_dark_panel(p, rect, w, h, cy)
+
+    def _paint_aqua_panel(self, p, rect, w, h, cy):
+        """Aqua-style blue panel background - classic macOS look."""
         panel_grad = QLinearGradient(0, 0, 0, h)
         panel_grad.setColorAt(0, QColor(140, 180, 220))
         panel_grad.setColorAt(0.3, QColor(80, 140, 200))
@@ -1173,7 +1182,7 @@ class WaveformWidget(QWidget):
         p.setPen(Qt.PenStyle.NoPen)
         p.drawRoundedRect(rect, 8, 8)
 
-        # Glassy top highlight (specular reflection)
+        # Glassy top highlight
         highlight = QLinearGradient(0, 0, 0, h * 0.4)
         highlight.setColorAt(0, QColor(255, 255, 255, 120))
         highlight.setColorAt(0.5, QColor(255, 255, 255, 40))
@@ -1181,33 +1190,22 @@ class WaveformWidget(QWidget):
         p.setBrush(QBrush(highlight))
         p.drawRoundedRect(rect.adjusted(2, 2, -2, -int(h * 0.6)), 6, 6)
 
-        # Draw infinite grid (with lighter colors for aqua theme)
+        # Draw infinite grid
         self._draw_infinite_grid(p, w, h)
 
-        # Engraved effect - dark inner shadows on all edges
-        # Top shadow (strongest - light comes from above)
-        inner_top = QLinearGradient(0, 0, 0, 12)
-        inner_top.setColorAt(0, QColor(0, 0, 0, 100))
-        inner_top.setColorAt(1, QColor(0, 0, 0, 0))
-        p.setBrush(QBrush(inner_top))
-        p.setPen(Qt.PenStyle.NoPen)
-        p.drawRoundedRect(rect.adjusted(1, 1, -1, -h + 14), 7, 7)
+        # Engraved shadows
+        for grad, adj in [
+            (QLinearGradient(0, 0, 0, 12), rect.adjusted(1, 1, -1, -h + 14)),
+            (QLinearGradient(0, 0, 10, 0), rect.adjusted(1, 1, -w + 12, -1)),
+            (QLinearGradient(w, 0, w - 10, 0), rect.adjusted(w - 12, 1, -1, -1)),
+        ]:
+            grad.setColorAt(0, QColor(0, 0, 0, 50 if grad.start().x() else 100))
+            grad.setColorAt(1, QColor(0, 0, 0, 0))
+            p.setBrush(QBrush(grad))
+            p.setPen(Qt.PenStyle.NoPen)
+            p.drawRoundedRect(adj, 7, 7)
 
-        # Left shadow
-        inner_left = QLinearGradient(0, 0, 10, 0)
-        inner_left.setColorAt(0, QColor(0, 0, 0, 50))
-        inner_left.setColorAt(1, QColor(0, 0, 0, 0))
-        p.setBrush(QBrush(inner_left))
-        p.drawRoundedRect(rect.adjusted(1, 1, -w + 12, -1), 7, 7)
-
-        # Right shadow
-        inner_right = QLinearGradient(w, 0, w - 10, 0)
-        inner_right.setColorAt(0, QColor(0, 0, 0, 50))
-        inner_right.setColorAt(1, QColor(0, 0, 0, 0))
-        p.setBrush(QBrush(inner_right))
-        p.drawRoundedRect(rect.adjusted(w - 12, 1, -1, -1), 7, 7)
-
-        # Panel border (darker for engraved look)
+        # Panel border
         p.setBrush(Qt.BrushStyle.NoBrush)
         p.setPen(QPen(QColor(20, 50, 100), 1.5))
         p.drawRoundedRect(rect, 8, 8)
@@ -1215,6 +1213,38 @@ class WaveformWidget(QWidget):
         # Center line
         p.setPen(QPen(QColor(20, 60, 120, 150), 1))
         p.drawLine(0, int(cy), w, int(cy))
+
+    def _paint_dark_panel(self, p, rect, w, h, cy):
+        """Dark gradient panel with cyan grid."""
+        # Dark gradient background
+        panel_grad = QLinearGradient(0, 0, 0, h)
+        panel_grad.setColorAt(0, QColor(32, 36, 46, 180))
+        panel_grad.setColorAt(1, QColor(26, 30, 40, 180))
+        p.setBrush(QBrush(panel_grad))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.drawRoundedRect(rect, 8, 8)
+
+        # Subtle cyan grid lines
+        p.setPen(QPen(QColor(100, 200, 255, 12), 1))
+        for i in range(1, 4):
+            y = int(h * i / 4)
+            p.drawLine(0, y, w, y)
+        for i in range(1, 8):
+            x = int(w * i / 8)
+            p.drawLine(x, 0, x, h)
+
+        # Panel inner shadow
+        shadow_grad = QLinearGradient(0, 0, 0, 8)
+        shadow_grad.setColorAt(0, QColor(0, 0, 0, 50))
+        shadow_grad.setColorAt(1, QColor(0, 0, 0, 0))
+        p.setBrush(QBrush(shadow_grad))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.drawRoundedRect(rect.adjusted(0, 0, 0, -h + 10), 8, 8)
+
+        # Panel border
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.setPen(QPen(QColor(50, 55, 65, 150), 1))
+        p.drawRoundedRect(rect, 8, 8)
 
 
 class VoiceThingWindow(QWidget):

@@ -27,7 +27,7 @@ class BaseStyle:
     waveform_glow_radius = 18
     waveform_glow_alpha = 200
     waveform_center_line = QColor(255, 255, 255, 40)  # Center line color
-    waveform_panel = False  # If True, draw Aqua-style blue panel background
+    waveform_panel = None  # None=transparent, "aqua"=blue macOS panel, "dark"=dark gradient panel
 
     # Transcription panel background
     transcription_panel_bg = "rgba(20,20,30,200)"
