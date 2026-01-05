@@ -1,0 +1,518 @@
+/* PyQt6 QSS Stylesheet: Y2K/Vaporwave/Windows 95/Winamp Aesthetic Blend */
+
+/* ============================================================================
+   GENERAL APPLICATION STYLING
+   ============================================================================ */
+
+QWidget {
+    background-color: #C0C0C0;
+    color: #000000;
+    font-family: Verdana;
+    font-size: 10pt;
+}
+
+/* Main window background */
+QMainWindow {
+    background-color: #C0C0C0;
+}
+
+/* Dark panels (Winamp-inspired) */
+QFrame[frameShape="2"] {  /* StyledPanel */
+    background-color: #1a1a1a;
+    border: 2px outset;
+    border-color: #FFFFFF #808080 #808080 #FFFFFF;
+}
+
+/* ============================================================================
+   WINDOW TITLE BAR & MENU BAR
+   ============================================================================ */
+
+QMainWindow::title {
+    color: #FFFFFF;
+    background-color: #1a1a1a;
+}
+
+QMenuBar {
+    background-color: #C0C0C0;
+    color: #000000;
+    border-bottom: 2px solid #808080;
+}
+
+QMenuBar::item:selected {
+    background-color: #1a1a1a;
+    color: #FFD700;
+}
+
+QMenu {
+    background-color: #C0C0C0;
+    color: #000000;
+    border: 2px outset;
+    border-color: #FFFFFF #808080 #808080 #FFFFFF;
+}
+
+QMenu::item:selected {
+    background-color: #1a1a1a;
+    color: #FFD700;
+}
+
+/* ============================================================================
+   BUTTONS: Windows 95 Beveled Style with Y2K Metallic Variants
+   ============================================================================ */
+
+QPushButton {
+    background: qlineargradient(spread:pad, x1:0, y1:0, x2:0, y2:1,
+                                stop:0 #FFFFFF, stop:0.5 #C0C0C0, stop:1 #A0A0A0);
+    color: #000000;
+    border: 2px outset;
+    border-color: #FFFFFF #808080 #808080 #FFFFFF;
+    border-radius: 0px;
+    padding: 4px 12px;
+    font-weight: bold;
+    font-size: 10pt;
+    min-height: 20px;
+}
+
+QPushButton:hover {
+    background: qlineargradient(spread:pad, x1:0, y1:0, x2:0, y2:1,
+                                stop:0 #FFFFFF, stop:0.5 #E8E8E8, stop:1 #B8B8B8);
+}
+
+QPushButton:pressed {
+    border-style: inset;
+    border-color: #808080 #FFFFFF #FFFFFF #808080;
+    background: qlineargradient(spread:pad, x1:0, y1:0, x2:0, y2:1,
+                                stop:0 #C0C0C0, stop:0.5 #B0B0B0, stop:1 #A0A0A0);
+}
+
+/* Accent buttons: Record, Play, Stop, etc. (Y2K Gold) */
+QPushButton[accent="true"] {
+    background: qlineargradient(spread:pad, x1:0, y1:0, x2:0, y2:1,
+                                stop:0 #FFD700, stop:0.5 #FFA500, stop:1 #FF8C00);
+    color: #000000;
+    border: 2px outset;
+    border-color: #FFFFCC #CC8800 #CC8800 #FFFFCC;
+    font-weight: bold;
+}
+
+QPushButton[accent="true"]:hover {
+    background: qlineargradient(spread:pad, x1:0, y1:0, x2:0, y2:1,
+                                stop:0 #FFFF00, stop:0.5 #FFB600, stop:1 #FF9500);
+}
+
+QPushButton[accent="true"]:pressed {
+    border-style: inset;
+}
+
+/* Record button: Red when recording (handled via property or stylesheet selectors) */
+QPushButton[recording="true"] {
+    background: qlineargradient(spread:pad, x1:0, y1:0, x2:0, y2:1,
+                                stop:0 #FF6B6B, stop:0.5 #FF0000, stop:1 #DD0000);
+    color: #FFFFFF;
+    border: 2px outset;
+    border-color: #FFFFFF #880000 #880000 #FFFFFF;
+}
+
+/* Vaporwave variant: Pink/Purple gradient buttons (optional accent style) */
+QPushButton[vaporwave="true"] {
+    background: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:1,
+                                stop:0 #FF71CE, stop:1 #B967FF);
+    color: #FFFFFF;
+    border: 2px outset;
+    border-color: #FFFFFF #660066 #660066 #FFFFFF;
+    font-weight: bold;
+}
+
+QPushButton[vaporwave="true"]:pressed {
+    border-style: inset;
+}
+
+/* ============================================================================
+   GROUP BOXES & PANELS
+   ============================================================================ */
+
+QGroupBox {
+    background-color: #C0C0C0;
+    border: 2px outset;
+    border-color: #FFFFFF #808080 #808080 #FFFFFF;
+    border-radius: 0px;
+    margin-top: 8px;
+    padding-top: 8px;
+    padding-left: 8px;
+    padding-right: 8px;
+    padding-bottom: 8px;
+    font-weight: bold;
+}
+
+QGroupBox::title {
+    subcontrol-origin: margin;
+    subcontrol-position: top left;
+    left: 10px;
+    padding: 0px 3px 0px 3px;
+    background-color: #1a1a1a;
+    color: #FFD700;
+    font-weight: bold;
+    font-size: 10pt;
+}
+
+/* Dark panel variant (Winamp style) */
+QFrame#darkPanel, QFrame[darkPanel="true"] {
+    background-color: #1a1a1a;
+    border: 2px inset;
+    border-color: #808080 #FFFFFF #FFFFFF #808080;
+}
+
+/* ============================================================================
+   TEXT INPUT & LABELS
+   ============================================================================ */
+
+QLineEdit, QTextEdit, QPlainTextEdit {
+    background-color: #FFFFFF;
+    color: #000000;
+    border: 2px inset;
+    border-color: #808080 #FFFFFF #FFFFFF #808080;
+    padding: 4px;
+    font-family: Verdana;
+    font-size: 10pt;
+}
+
+QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus {
+    background-color: #FFFFDD;
+    border: 2px inset;
+    border-color: #0000FF #FFFFFF #FFFFFF #0000FF;
+}
+
+/* Dark text area for waveform info */
+QLineEdit#darkText, QTextEdit#darkText {
+    background-color: #1a1a1a;
+    color: #00FF00;
+    border: 2px inset;
+    border-color: #000000 #333333 #333333 #000000;
+    font-family: Consolas;
+    font-size: 9pt;
+}
+
+QLabel {
+    color: #000000;
+    background-color: transparent;
+    font-family: Verdana;
+    font-size: 10pt;
+}
+
+QLabel#darkLabel {
+    color: #FFFFFF;
+    background-color: transparent;
+}
+
+QLabel#titleLabel {
+    color: #FFD700;
+    background-color: transparent;
+    font-weight: bold;
+    font-size: 12pt;
+}
+
+QLabel#techLabel {
+    color: #808080;
+    background-color: transparent;
+    font-family: Consolas;
+    font-size: 9pt;
+}
+
+/* ============================================================================
+   SLIDERS & SPINBOXES (Input Controls)
+   ============================================================================ */
+
+QSlider::groove:horizontal {
+    background-color: #808080;
+    border: 1px inset;
+    border-color: #000000 #FFFFFF #FFFFFF #000000;
+    height: 8px;
+}
+
+QSlider::handle:horizontal {
+    background: qlineargradient(spread:pad, x1:0, y1:0, x2:0, y2:1,
+                                stop:0 #FFFFFF, stop:0.5 #C0C0C0, stop:1 #808080);
+    border: 2px outset;
+    border-color: #FFFFFF #808080 #808080 #FFFFFF;
+    width: 14px;
+    margin: -3px 0px;
+    border-radius: 0px;
+}
+
+QSlider::handle:horizontal:hover {
+    background: qlineargradient(spread:pad, x1:0, y1:0, x2:0, y2:1,
+                                stop:0 #FFFFFF, stop:0.5 #E8E8E8, stop:1 #A0A0A0);
+}
+
+QSpinBox, QDoubleSpinBox {
+    background-color: #FFFFFF;
+    color: #000000;
+    border: 2px inset;
+    border-color: #808080 #FFFFFF #FFFFFF #808080;
+    padding: 2px;
+    font-family: Verdana;
+    font-size: 10pt;
+}
+
+QSpinBox::up-button, QDoubleSpinBox::up-button {
+    background: qlineargradient(spread:pad, x1:0, y1:0, x2:0, y2:1,
+                                stop:0 #FFFFFF, stop:0.5 #C0C0C0, stop:1 #A0A0A0);
+    border: 1px outset;
+    border-color: #FFFFFF #808080 #808080 #FFFFFF;
+    width: 16px;
+}
+
+QSpinBox::down-button, QDoubleSpinBox::down-button {
+    background: qlineargradient(spread:pad, x1:0, y1:0, x2:0, y2:1,
+                                stop:0 #FFFFFF, stop:0.5 #C0C0C0, stop:1 #A0A0A0);
+    border: 1px outset;
+    border-color: #FFFFFF #808080 #808080 #FFFFFF;
+    width: 16px;
+}
+
+/* ============================================================================
+   SCROLLBARS & PROGRESS BARS
+   ============================================================================ */
+
+QScrollBar:vertical {
+    background-color: #C0C0C0;
+    width: 16px;
+    border: 2px outset;
+    border-color: #FFFFFF #808080 #808080 #FFFFFF;
+}
+
+QScrollBar::handle:vertical {
+    background: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:0,
+                                stop:0 #FFFFFF, stop:0.5 #C0C0C0, stop:1 #808080);
+    border: 2px outset;
+    border-color: #FFFFFF #808080 #808080 #FFFFFF;
+    border-radius: 0px;
+    margin: 16px 0px 16px 0px;
+    min-height: 20px;
+}
+
+QScrollBar::up-button:vertical, QScrollBar::down-button:vertical {
+    background: qlineargradient(spread:pad, x1:0, y1:0, x2:0, y2:1,
+                                stop:0 #FFFFFF, stop:0.5 #C0C0C0, stop:1 #808080);
+    border: 2px outset;
+    border-color: #FFFFFF #808080 #808080 #FFFFFF;
+    height: 16px;
+    width: 16px;
+}
+
+/* Progress bar for level meters */
+QProgressBar {
+    background-color: #1a1a1a;
+    border: 2px inset;
+    border-color: #000000 #333333 #333333 #000000;
+    padding: 2px;
+    text-align: center;
+    color: #FFFFFF;
+}
+
+QProgressBar::chunk {
+    background: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:0,
+                                stop:0 #01CDFE, stop:0.5 #05FFA1, stop:1 #B967FF);
+    margin: 0px;
+}
+
+/* ============================================================================
+   COMBO BOXES & DROPDOWNS
+   ============================================================================ */
+
+QComboBox {
+    background-color: #FFFFFF;
+    color: #000000;
+    border: 2px inset;
+    border-color: #808080 #FFFFFF #FFFFFF #808080;
+    padding: 4px;
+    font-family: Verdana;
+    font-size: 10pt;
+}
+
+QComboBox::drop-down {
+    background: qlineargradient(spread:pad, x1:0, y1:0, x2:0, y2:1,
+                                stop:0 #FFFFFF, stop:0.5 #C0C0C0, stop:1 #A0A0A0);
+    border: 1px outset;
+    border-color: #FFFFFF #808080 #808080 #FFFFFF;
+    width: 18px;
+}
+
+QComboBox::down-arrow {
+    width: 8px;
+    height: 8px;
+}
+
+/* ============================================================================
+   CUSTOM VISUALIZATION PANELS
+   ============================================================================ */
+
+/* Spectrum analyzer visualization background */
+QFrame#spectrumPanel, QFrame[spectrumPanel="true"] {
+    background-color: #121212;
+    border: 2px inset;
+    border-color: #000000 #333333 #333333 #000000;
+}
+
+/* Waveform display background */
+QFrame#waveformPanel, QFrame[waveformPanel="true"] {
+    background-color: #1a1a1a;
+    border: 2px inset;
+    border-color: #000000 #333333 #333333 #000000;
+}
+
+/* Level meter panel */
+QFrame#levelPanel, QFrame[levelPanel="true"] {
+    background-color: #1a1a1a;
+    border: 2px inset;
+    border-color: #000000 #333333 #333333 #000000;
+    padding: 4px;
+}
+
+/* ============================================================================
+   TABS & TREE/TABLE WIDGETS
+   ============================================================================ */
+
+QTabBar::tab {
+    background: qlineargradient(spread:pad, x1:0, y1:0, x2:0, y2:1,
+                                stop:0 #FFFFFF, stop:0.5 #C0C0C0, stop:1 #A0A0A0);
+    color: #000000;
+    border: 2px outset;
+    border-color: #FFFFFF #808080 #808080 #FFFFFF;
+    padding: 4px 12px;
+    margin: 0px;
+    border-bottom-style: none;
+    border-bottom-width: 0px;
+    font-weight: bold;
+}
+
+QTabBar::tab:selected {
+    background: qlineargradient(spread:pad, x1:0, y1:0, x2:0, y2:1,
+                                stop:0 #FFFFFF, stop:0.5 #E8E8E8, stop:1 #C0C0C0);
+    color: #000000;
+    border-bottom: 2px solid #C0C0C0;
+}
+
+QTableWidget, QTreeWidget {
+    background-color: #FFFFFF;
+    color: #000000;
+    border: 2px inset;
+    border-color: #808080 #FFFFFF #FFFFFF #808080;
+    gridline-color: #C0C0C0;
+}
+
+QTableWidget::item:selected, QTreeWidget::item:selected {
+    background-color: #1a1a1a;
+    color: #00FF00;
+}
+
+QHeaderView::section {
+    background: qlineargradient(spread:pad, x1:0, y1:0, x2:0, y2:1,
+                                stop:0 #FFFFFF, stop:0.5 #C0C0C0, stop:1 #A0A0A0);
+    color: #000000;
+    border: 1px outset;
+    border-color: #FFFFFF #808080 #808080 #FFFFFF;
+    padding: 4px;
+    font-weight: bold;
+}
+
+/* ============================================================================
+   DIALOGS & MESSAGE BOXES
+   ============================================================================ */
+
+QDialog {
+    background-color: #C0C0C0;
+}
+
+QMessageBox {
+    background-color: #C0C0C0;
+}
+
+QDialogButtonBox {
+    background-color: #C0C0C0;
+}
+
+QToolTip {
+    background-color: #FFFFDD;
+    color: #000000;
+    border: 2px solid #808080;
+    padding: 3px;
+    font-family: Verdana;
+    font-size: 9pt;
+}
+
+/* ============================================================================
+   SPECIAL STYLING CLASSES (for custom widgets)
+   ============================================================================ */
+
+/* For mono-spaced display text (time codes, file info, technical data) */
+QLabel#monoText {
+    font-family: Consolas;
+    font-size: 9pt;
+    color: #000000;
+}
+
+QLabel#monoTextDark {
+    font-family: Consolas;
+    font-size: 9pt;
+    color: #00FF00;
+    background-color: #1a1a1a;
+}
+
+/* For title/header text */
+QLabel#headerText {
+    color: #FFD700;
+    font-weight: bold;
+    font-size: 12pt;
+    background-color: transparent;
+}
+
+/* For secondary/muted text */
+QLabel#muteText {
+    color: #808080;
+    font-size: 9pt;
+    background-color: transparent;
+}
+
+/* Status bar styling */
+QStatusBar {
+    background-color: #C0C0C0;
+    color: #000000;
+    border-top: 2px outset;
+    border-color: #FFFFFF #808080 #808080 #FFFFFF;
+}
+
+QStatusBar::item {
+    border: none;
+    padding: 2px;
+}
+
+/* Toolbar styling */
+QToolBar {
+    background-color: #C0C0C0;
+    border: 2px outset;
+    border-color: #FFFFFF #808080 #808080 #FFFFFF;
+    spacing: 4px;
+    padding: 4px;
+}
+
+QToolButton {
+    background: qlineargradient(spread:pad, x1:0, y1:0, x2:0, y2:1,
+                                stop:0 #FFFFFF, stop:0.5 #C0C0C0, stop:1 #A0A0A0);
+    color: #000000;
+    border: 2px outset;
+    border-color: #FFFFFF #808080 #808080 #FFFFFF;
+    padding: 4px 8px;
+    margin: 2px;
+    font-weight: bold;
+    border-radius: 0px;
+}
+
+QToolButton:hover {
+    background: qlineargradient(spread:pad, x1:0, y1:0, x2:0, y2:1,
+                                stop:0 #FFFFFF, stop:0.5 #E8E8E8, stop:1 #B8B8B8);
+}
+
+QToolButton:pressed {
+    border-style: inset;
+    border-color: #808080 #FFFFFF #FFFFFF #808080;
+}

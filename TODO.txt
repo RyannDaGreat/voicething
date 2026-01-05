@@ -1,0 +1,66 @@
+VoiceThing TODO List
+====================
+Last updated: 2026-01-05
+
+COMPLETED
+---------
+[x] Download cuter dog sprites (LPC Cats & Dogs, Pet Mobile pack)
+[x] Clean up junk files (scratchpad_agent_*.py)
+[x] Update pet_companion.py with new LPC pet types
+[x] Add pet sound effects (bark, meow, squeak) - CC0 licensed sounds from Internet Archive, BigSoundBank, Mixkit
+[x] Integrate pet companions into main window (top-left, left of seven-segment display)
+[x] Create settings UI with pet selection checkboxes (with pet icons)
+[x] Fix blurry pet animation (disabled smooth scaling)
+[x] Fix timer centering (pet doesn't push counter off-center)
+[x] BUG FIX: Model change during recording (now disabled during recording)
+[x] Code review - remove redundancy (removed example/reference .py files)
+
+PENDING
+-------
+[ ] Take screenshots of pet companion system (requires manual user action)
+
+BUGS & ISSUES (HIGH PRIORITY)
+-----------------------------
+[x] Simple mode glitch: transcription text area disappears on resize (fixed: tab_stack stays visible in simple_mode)
+[x] Simple mode: should just hide tab buttons, keep text area visible (fixed: resizeEvent uses `show_output or self.simple_mode`)
+[x] Resize event timing: elements appear/disappear at wrong times (fixed: separate show_tabs threshold at 220px)
+[x] Small mode button grows during animation - janky behavior (fixed: removed animation entirely, button is fixed 12x12)
+[x] Small mode cuts off seven-segment display (fixed: increased small mode width from 143 to 200px)
+[x] Pet checkboxes: clicking row should toggle, not just tiny checkbox target
+[x] No pets enabled by default (now empty by default)
+[x] Simple mode label has white text, inconsistent with gray text elsewhere (fixed: uses TEXT_SECONDARY)
+
+UI REFACTORING (MAJOR)
+----------------------
+[x] Consolidate UI update logic - React-like single update function (fixed: _update_ui() is now single source of truth)
+[x] Progressive collapse should handle small mode automatically (fixed: _update_ui() handles all visibility)
+[x] Narrow width: reduce to 4 buttons, show icons only (centered) (fixed: _update_button_mode at <350px icon-only, <250px 4 buttons)
+[x] Text cutoff in buttons at narrow width: switch to icon-only mode (fixed: buttons hide text at narrow widths)
+[x] Remove bloated code (268 lines added recently) (fixed: unified _update_ui() is now ~47 lines, clean single source of truth)
+[x] Small mode should just resize window small (remove separate logic) (fixed: toggle_small_mode just calls resize(), _update_ui handles visibility)
+[x] Consistent styling throughout (font colors, spacing) (fixed: replaced hardcoded colors with style constants - BORDER_COLOR, CYAN_CSS, TEXT_PRIMARY)
+
+UI/UX FEATURES
+--------------
+[x] Add simple mode toggle (hides VRM, F, L, C buttons and output panel) - key I
+[x] Implement settings.json auto-save/load with json library (no save button)
+[x] Animated yellow button resize with smooth transitions (QPropertyAnimation with InOutCubic easing)
+[x] Progressive element hiding on window shrink (fixed: _update_ui uses height thresholds 250->220->180->120px)
+    Order: output -> buttons -> waveform -> timer only
+[x] Make seven-segment timer display the minimum window size (fixed: min size derived from STYLE.timer_panel_size)
+
+SPRITE ISSUES
+-------------
+[ ] LPC sprites are TOP-DOWN RPG format - sleep/eat look like blobs
+[ ] Need side-view pet sprites for desktop companion
+[ ] Download better sprites from itch.io:
+    - Pixel Dogs by Benvictus (64x48, has side-view sleep): https://benvictus.itch.io/pixel-dogs
+    - Dog Pack by megamicrobats: https://megamicrobats.itch.io/dogpack
+    - Pet Mobile by ToffeeCraft (includes accessories): https://toffeecraft.itch.io/pet-virtual-mobile-pixel-asset
+
+NOTES
+-----
+- See assets/pets/README.md for full artist credits and licenses
+- LPC sprites are CC-BY 3.0 licensed (credit: Stephen Challener aka Redshrike)
+- LPC sprites have proper RGBA transparency (no color keying needed)
+- Original pets use color keying for transparency (RGB 164, 117, 160)
