@@ -48,7 +48,8 @@ from AppKit import NSWorkspace, NSApplicationActivateIgnoringOtherApps
 from pynput import keyboard
 from pynput.keyboard import Controller as KeyboardController, Key
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QSize, QPointF, QRectF
-from PyQt6.QtGui import QPainter, QColor, QPen, QIcon, QFont, QFontDatabase, QPolygonF, QLinearGradient, QBrush, QPainterPath
+from PyQt6.QtGui import QPainter, QColor, QPen, QIcon, QFont, QFontDatabase, QPolygonF, QLinearGradient, QBrush, QPainterPath, QPixmap
+from PyQt6.QtSvg import QSvgRenderer
 from PyQt6.QtWidgets import (
     QApplication,
     QWidget,
@@ -65,7 +66,10 @@ from PyQt6.QtWidgets import (
     QScrollArea,
     QFrame,
     QGraphicsDropShadowEffect,
+    QSizePolicy,
+    QMessageBox,
 )
+from Foundation import NSBundle
 
 APP_NAME = "VoiceThing"
 SAMPLE_RATE = 16000
@@ -77,7 +81,7 @@ WAVEFORM_DURATION_SECONDS = 10  # Duration of audio shown in waveform display
 # Import style system - all UI styling comes from here
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
-from styles import get_style
+from styles import get_style, STYLES
 STYLE = get_style("macos_2005")  # Can swap to "windows_95" etc later
 
 # Expose style properties as module-level for backward compatibility
@@ -103,8 +107,27 @@ def body_style(size=10):
 def section_style():
     return STYLE.section_style()
 
-def draw_vignette(painter, rect, width, height, radius=12):
-    return STYLE.draw_vignette(painter, rect, width, height, radius)
+# UI helper functions to reduce boilerplate
+def make_title(text, size=14):
+    """Create a centered title label."""
+    label = QLabel(text)
+    label.setStyleSheet(title_style(size))
+    label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    return label
+
+def make_section(text):
+    """Create a section header label."""
+    label = QLabel(text)
+    label.setStyleSheet(section_style())
+    return label
+
+def make_close_btn(text="Esc  Close", on_click=None):
+    """Create a standard close/cancel button."""
+    btn = QPushButton(text)
+    btn.setStyleSheet(get_btn_css())
+    if on_click:
+        btn.clicked.connect(on_click)
+    return btn
 
 # LLM post-processing settings
 LLM_MODEL = "OLLAMA:qwen2.5:7b"
@@ -219,8 +242,6 @@ def load_icon(name, color=None):
         svg = f.read()
     svg = svg.replace('#ffffff', color).replace('#FFFFFF', color)
     # Create pixmap from recolored SVG
-    from PyQt6.QtSvg import QSvgRenderer
-    from PyQt6.QtGui import QPixmap, QPainter
     renderer = QSvgRenderer(svg.encode())
     pixmap = QPixmap(256, 256)
     pixmap.fill(Qt.GlobalColor.transparent)
@@ -228,12 +249,6 @@ def load_icon(name, color=None):
     renderer.render(painter)
     painter.end()
     return QIcon(pixmap)
-
-
-# Background texture from style
-def get_brushed_metal_pixmap(height=512):
-    """Get background texture from current style."""
-    return STYLE.get_background_pixmap(height)
 
 
 WHISPER_MODELS = [
@@ -258,6 +273,7 @@ ACTIONS = [
     ("auto_hide", "V", "eye", "Toggle auto-minimize", None),
     ("llm", "R", "robot", "Toggle LLM post-processing", None),
     ("model", "M", "mic", "Change Whisper model", None),
+    ("prefs", "P", "settings", "Preferences", None),
     ("help", "?", "book", "Show help", "Help"),
 ]
 
@@ -343,22 +359,7 @@ class DraggableDialog(QDialog):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         rect = self.rect().adjusted(2, 2, -2, -2)
-
-        # Brushed metal texture - clipped to rounded rect
-        metal = get_brushed_metal_pixmap(max(512, self.height()))
-        path = QPainterPath()
-        path.addRoundedRect(QRectF(rect), 10, 10)
-        p.setClipPath(path)
-        p.drawTiledPixmap(rect, metal)
-        p.setClipping(False)
-
-        # Vignette overlay
-        draw_vignette(p, rect, self.width(), self.height(), radius=10)
-
-        # Border
-        p.setBrush(Qt.BrushStyle.NoBrush)
-        p.setPen(QPen(QColor(100, 100, 110), 1))
-        p.drawRoundedRect(rect, 10, 10)
+        STYLE.paint_window(p, rect, self.width(), self.height())
 
 
 class HelpDialog(DraggableDialog):
@@ -370,11 +371,7 @@ class HelpDialog(DraggableDialog):
         layout.setContentsMargins(15, 15, 15, 15)
         layout.setSpacing(10)
 
-        # Title
-        title = QLabel(APP_NAME)
-        title.setStyleSheet(title_style(18))
-        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(title)
+        layout.addWidget(make_title(APP_NAME, 18))
 
         # Main content: About | Keymap
         content = QHBoxLayout()
@@ -382,9 +379,7 @@ class HelpDialog(DraggableDialog):
 
         # Left side: About
         about_box = QVBoxLayout()
-        about_label = QLabel("About")
-        about_label.setStyleSheet(section_style())
-        about_box.addWidget(about_label)
+        about_box.addWidget(make_section("About"))
 
         about_text = QLabel(
             "Voice transcription powered by Whisper.\n\n"
@@ -425,9 +420,7 @@ class HelpDialog(DraggableDialog):
 
         # Right side: Keymap
         keymap_box = QVBoxLayout()
-        keymap_label = QLabel("Keymap")
-        keymap_label.setStyleSheet(section_style())
-        keymap_box.addWidget(keymap_label)
+        keymap_box.addWidget(make_section("Keymap"))
 
         for action_id, key, icon_name, desc, menu_text in ACTIONS:
             row = QHBoxLayout()
@@ -463,11 +456,7 @@ class HelpDialog(DraggableDialog):
 
         layout.addLayout(content)
 
-        # Close button
-        close_btn = QPushButton("Esc  Close")
-        close_btn.setStyleSheet(get_btn_css())
-        close_btn.clicked.connect(self.accept)
-        layout.addWidget(close_btn)
+        layout.addWidget(make_close_btn(on_click=self.accept))
 
         self.setFixedWidth(480)
 
@@ -489,10 +478,7 @@ class ModelDialog(DraggableDialog):
         layout.setContentsMargins(15, 15, 15, 15)
         layout.setSpacing(8)
 
-        title = QLabel("Select Whisper Model")
-        title.setStyleSheet(title_style(14))
-        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(title)
+        layout.addWidget(make_title("Select Whisper Model"))
 
         for key, model, desc in WHISPER_MODELS:
             btn = QPushButton(f"{key}  {model}")
@@ -503,11 +489,7 @@ class ModelDialog(DraggableDialog):
             btn.clicked.connect(lambda checked, m=model: self._select(m))
             layout.addWidget(btn)
 
-        cancel_btn = QPushButton("Esc  Cancel")
-        cancel_btn.setStyleSheet(get_btn_css())
-        cancel_btn.clicked.connect(self.reject)
-        layout.addWidget(cancel_btn)
-
+        layout.addWidget(make_close_btn("Esc  Cancel", self.reject))
         self.setFixedWidth(250)
 
     def _select(self, model):
@@ -520,6 +502,54 @@ class ModelDialog(DraggableDialog):
                    Qt.Key.Key_M: "medium", Qt.Key.Key_L: "large-v3"}
         if key in key_map:
             self._select(key_map[key])
+        elif key == Qt.Key.Key_Escape:
+            self.reject()
+        else:
+            super().keyPressEvent(e)
+
+
+class PrefsDialog(DraggableDialog):
+    """Preferences dialog with theme selection."""
+
+    style_changed = pyqtSignal(str)  # Emits style name when changed
+
+    def __init__(self, current_style, parent=None):
+        super().__init__(parent)
+        self.selected_style = None
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(15, 15, 15, 15)
+        layout.setSpacing(8)
+
+        layout.addWidget(make_title("Preferences"))
+        layout.addWidget(make_section("Theme"))
+
+        style_keys = list(STYLES.keys())
+        for i, style_name in enumerate(style_keys):
+            key = str(i + 1)
+            display_name = style_name.replace("_", " ").title()
+            btn = QPushButton(f"{key}  {display_name}")
+            btn.setStyleSheet(get_btn_css())
+            if style_name == current_style:
+                btn.setStyleSheet(get_btn_css() + "QPushButton { border: 2px solid rgb(100,200,255); }")
+            btn.clicked.connect(lambda checked, s=style_name: self._select(s))
+            layout.addWidget(btn)
+
+        layout.addWidget(make_close_btn("Esc  Cancel", self.reject))
+        self.setFixedWidth(250)
+
+    def _select(self, style_name):
+        self.selected_style = style_name
+        self.accept()
+
+    def keyPressEvent(self, e):
+        key = e.key()
+        style_keys = list(STYLES.keys())
+        # 1-9 keys select styles
+        if Qt.Key.Key_1 <= key <= Qt.Key.Key_9:
+            idx = key - Qt.Key.Key_1
+            if idx < len(style_keys):
+                self._select(style_keys[idx])
         elif key == Qt.Key.Key_Escape:
             self.reject()
         else:
@@ -545,10 +575,7 @@ class PermissionDialog(DraggableDialog):
         msg.setWordWrap(True)
         layout.addWidget(msg)
 
-        close_btn = QPushButton("Esc  Close")
-        close_btn.setStyleSheet(get_btn_css())
-        close_btn.clicked.connect(self.accept)
-        layout.addWidget(close_btn)
+        layout.addWidget(make_close_btn(on_click=self.accept))
 
         # Auto-size to fit content
         self.adjustSize()
@@ -653,15 +680,13 @@ class TranscriptionRow(QFrame):
     deramble_clicked = pyqtSignal(str)
     hover_changed = pyqtSignal(bool)  # Emitted when hover state changes
 
-    BTN_STYLE = (
-        "QPushButton { background: transparent; border: none; border-radius: 5px; }"
-        "QPushButton:hover { "
-        "background: qlineargradient(x1:0, y1:0, x2:0, y2:1, "
-        "stop:0 rgba(100,180,230,0.2), stop:1 rgba(80,150,200,0.15)); }"
-        "QPushButton:pressed { "
-        "background: qlineargradient(x1:0, y1:0, x2:0, y2:1, "
-        "stop:0 rgba(80,160,210,0.35), stop:1 rgba(100,200,255,0.4)); }"
-    )
+    @staticmethod
+    def _btn_style():
+        return (
+            "QPushButton { background: transparent; border: none; border-radius: 4px; }"
+            f"QPushButton:hover {{ background: {STYLE.transcription_row_btn_hover}; }}"
+            f"QPushButton:pressed {{ background: {STYLE.transcription_row_btn_pressed}; }}"
+        )
 
     def __init__(self, text, dimmed=False, show_deramble=False, other_text=None, is_raw=False, parent=None):
         super().__init__(parent)
@@ -680,10 +705,8 @@ class TranscriptionRow(QFrame):
         self.label.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.label.customContextMenuRequested.connect(self._show_context_menu)
         self.label.installEventFilter(self)
-        if dimmed:
-            self.base_style = "font-size: 11px; color: rgb(120,120,130);"
-        else:
-            self.base_style = "font-size: 11px; color: rgb(40,40,45);"
+        text_color = STYLE.transcription_text_dimmed if dimmed else STYLE.transcription_text
+        self.base_style = f"font-size: 11px; color: {text_color};"
         self.label.setStyleSheet(self.base_style)
         self.label.setWordWrap(True)
         self.label.setTextFormat(Qt.TextFormat.RichText)
@@ -692,14 +715,15 @@ class TranscriptionRow(QFrame):
         # Set initial HTML (unhighlighted)
         self._set_diff_highlight(False)
 
-        # Dark icons for light background (embossed look)
+        # Icons styled for current theme
         icon_color = ICON_COLOR_MUTED
+        btn_style = self._btn_style()
         if show_deramble:
             deramble_btn = QPushButton()
             deramble_btn.setFixedSize(24, 24)
             deramble_btn.setIcon(load_icon(ACTIONS_BY_ID["llm"][2], color=icon_color))
             deramble_btn.setIconSize(QSize(16, 16))
-            deramble_btn.setStyleSheet(self.BTN_STYLE)
+            deramble_btn.setStyleSheet(btn_style)
             deramble_btn.setToolTip("De-ramble with LLM")
             deramble_btn.clicked.connect(lambda: self.deramble_clicked.emit(self.text))
             layout.addWidget(deramble_btn, 0, Qt.AlignmentFlag.AlignTop)
@@ -708,7 +732,7 @@ class TranscriptionRow(QFrame):
         copy_btn.setFixedSize(24, 24)
         copy_btn.setIcon(load_icon(ACTIONS_BY_ID["copy"][2], color=icon_color))
         copy_btn.setIconSize(QSize(16, 16))
-        copy_btn.setStyleSheet(self.BTN_STYLE)
+        copy_btn.setStyleSheet(btn_style)
         copy_btn.setToolTip("Copy to clipboard")
         copy_btn.clicked.connect(lambda: self.clicked.emit(self.text))
         layout.addWidget(copy_btn, 0, Qt.AlignmentFlag.AlignTop)
@@ -739,10 +763,7 @@ class TranscriptionRow(QFrame):
         self._update_bg(False)
 
     def _update_bg(self, hovered):
-        if hovered:
-            bg = "qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 rgb(230,240,250), stop:0.5 rgb(220,235,250), stop:1 rgb(230,240,250))"
-        else:
-            bg = "transparent"
+        bg = STYLE.transcription_row_hover if hovered else "transparent"
         top = getattr(self, '_border_radius_top', 0)
         bottom = getattr(self, '_border_radius_bottom', 0)
         radius = f"border-top-left-radius: {top}px; border-top-right-radius: {top}px; border-bottom-left-radius: {bottom}px; border-bottom-right-radius: {bottom}px;"
@@ -847,11 +868,9 @@ class TranscriptionList(QScrollArea):
     copy_requested = pyqtSignal(str)
     deramble_requested = pyqtSignal(int, str)  # (index, raw_text)
 
-    STYLE = f"QScrollArea {{ {PANEL_BG_FLAT_CSS} }}" + SCROLLBAR_CSS
-
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setStyleSheet(self.STYLE)
+        self._apply_style()
         self.setWidgetResizable(True)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.item_count = 0
@@ -863,6 +882,14 @@ class TranscriptionList(QScrollArea):
         self.layout.setSpacing(0)
         self.layout.addStretch()
         self.setWidget(self.container)
+
+    def _apply_style(self):
+        css = (
+            f"QScrollArea {{ background: {STYLE.transcription_panel_bg}; "
+            f"border: 1px solid {STYLE.transcription_panel_border}; border-radius: 8px; }}"
+            + SCROLLBAR_CSS
+        )
+        self.setStyleSheet(css)
 
 
     def add_transcription(self, raw_text, processed_text):
@@ -900,8 +927,8 @@ class TranscriptionList(QScrollArea):
         self.item_count = 0
 
 
-class LCDTimerWidget(QWidget):
-    """LCD-style timer display with recessed panel effect and ghost segments."""
+class TimerWidget(QWidget):
+    """Timer display - flat or LCD style depending on STYLE.timer_use_lcd."""
 
     def __init__(self, seg_font):
         super().__init__()
@@ -923,15 +950,29 @@ class LCDTimerWidget(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         w, h = self.width(), self.height()
+        font = QFont(self.seg_font, STYLE.timer_font_size)
+        p.setFont(font)
 
-        # Calculate panel dimensions (centered, sized to fit text)
-        panel_w = 160
-        panel_h = 40
+        if STYLE.timer_use_lcd:
+            self._paint_lcd(p, w, h)
+        else:
+            self._paint_flat(p, w, h)
+
+    def _paint_flat(self, p, w, h):
+        """Simple centered text with opacity."""
+        color = STYLE.timer_color
+        alpha = int(255 * self.opacity)
+        p.setPen(QColor(color.red(), color.green(), color.blue(), alpha))
+        p.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, self.text)
+
+    def _paint_lcd(self, p, w, h):
+        """Recessed LCD panel with ghost segments and glow."""
+        panel_w, panel_h = STYLE.timer_panel_size
         panel_x = (w - panel_w) // 2
         panel_y = (h - panel_h) // 2
         panel_rect = self.rect().adjusted(panel_x, panel_y, panel_x - w + panel_w, panel_y - h + panel_h)
 
-        # Recessed LCD panel background (Aqua style - dark blue/black)
+        # Recessed LCD panel background
         panel_grad = QLinearGradient(0, panel_rect.top(), 0, panel_rect.bottom())
         panel_grad.setColorAt(0, QColor(20, 35, 50))
         panel_grad.setColorAt(0.3, QColor(15, 28, 42))
@@ -940,46 +981,42 @@ class LCDTimerWidget(QWidget):
         p.setPen(Qt.PenStyle.NoPen)
         p.drawRoundedRect(panel_rect, 6, 6)
 
-        # Inner shadow (top edge - recessed look)
+        # Inner shadow
         shadow_grad = QLinearGradient(0, panel_rect.top(), 0, panel_rect.top() + 6)
         shadow_grad.setColorAt(0, QColor(0, 0, 0, 120))
         shadow_grad.setColorAt(1, QColor(0, 0, 0, 0))
         p.setBrush(QBrush(shadow_grad))
         p.drawRoundedRect(panel_rect.adjusted(0, 0, 0, -panel_rect.height() + 8), 6, 6)
 
-        # Bottom highlight (subtle glassy reflection)
+        # Bottom highlight
         p.setPen(QPen(QColor(80, 120, 160, 80), 1))
         p.drawLine(panel_rect.left() + 6, panel_rect.bottom(),
                    panel_rect.right() - 6, panel_rect.bottom())
 
-        # Panel border (beveled)
+        # Panel border
         p.setBrush(Qt.BrushStyle.NoBrush)
         p.setPen(QPen(QColor(30, 50, 70), 1))
         p.drawRoundedRect(panel_rect, 6, 6)
 
-        # Ghost segments - match format of current text (e.g., 8:88.8 or 88:88.8)
-        font = QFont(self.seg_font, 28)
-        p.setFont(font)
+        # Ghost segments
         p.setPen(QColor(60, 180, 220, 25))
-        # Generate ghost by replacing digits with 8, keeping : and .
         ghost = ''.join('8' if c.isdigit() else c for c in self.text)
         p.drawText(panel_rect, Qt.AlignmentFlag.AlignCenter, ghost)
 
         # Active segments with glow
+        color = STYLE.timer_color
         accent_alpha = int(255 * self.opacity)
-        # Glow layer (slightly larger, blurred effect via multiple draws)
         if self.opacity > 0.5:
             for offset in [(0, 0), (-1, 0), (1, 0), (0, -1), (0, 1)]:
-                p.setPen(QColor(100, 200, 255, int(accent_alpha * 0.3)))
+                p.setPen(QColor(color.red(), color.green(), color.blue(), int(accent_alpha * 0.3)))
                 p.drawText(panel_rect.adjusted(offset[0], offset[1], offset[0], offset[1]),
                           Qt.AlignmentFlag.AlignCenter, self.text)
-        # Main text
-        p.setPen(QColor(100, 200, 255, accent_alpha))
+        p.setPen(QColor(color.red(), color.green(), color.blue(), accent_alpha))
         p.drawText(panel_rect, Qt.AlignmentFlag.AlignCenter, self.text)
 
 
 class _WaveformInner(QWidget):
-    """Inner widget that draws just the waveform polygon (for glow effect)."""
+    """Inner widget that draws just the waveform polygon."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -1015,18 +1052,28 @@ class _WaveformInner(QWidget):
         points += [QPointF(x, y) for x, y in zip(x_coords[::-1], bottom_y)]
         polygon = QPolygonF(points)
 
-        # Draw waveform with gradient - green oscilloscope style
-        wave_grad = QLinearGradient(0, cy - h/2 * 0.85, 0, cy + h/2 * 0.85)
-        wave_grad.setColorAt(0, QColor(180, 255, 180))
-        wave_grad.setColorAt(0.5, QColor(100, 255, 100))
-        wave_grad.setColorAt(1, QColor(180, 255, 180))
-        p.setBrush(QBrush(wave_grad))
+        # Draw waveform - gradient if glow enabled, flat otherwise
+        color = STYLE.waveform_color
+        if STYLE.waveform_glow:
+            wave_grad = QLinearGradient(0, cy - h/2 * 0.85, 0, cy + h/2 * 0.85)
+            light = QColor(color.red() + 80, color.green(), color.blue() + 80)
+            wave_grad.setColorAt(0, light)
+            wave_grad.setColorAt(0.5, color)
+            wave_grad.setColorAt(1, light)
+            p.setBrush(QBrush(wave_grad))
+        else:
+            p.setBrush(color)
         p.setPen(Qt.PenStyle.NoPen)
         p.drawPolygon(polygon)
 
+        # Center line (for flat style)
+        if STYLE.waveform_center_line:
+            p.setPen(QPen(STYLE.waveform_center_line, 1))
+            p.drawLine(0, int(cy), w, int(cy))
+
 
 class WaveformWidget(QWidget):
-    """Oscilloscope-style waveform display with glow effect via QGraphicsDropShadowEffect."""
+    """Waveform display - flat or with glow depending on STYLE.waveform_glow."""
 
     def __init__(self):
         super().__init__()
@@ -1034,16 +1081,24 @@ class WaveformWidget(QWidget):
         self.display_max = 0.01
         self.setMinimumHeight(40)
         self.setMaximumHeight(200)
-        from PyQt6.QtWidgets import QSizePolicy
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-
-        # Create inner waveform widget with glow effect (green)
         self._inner = _WaveformInner(self)
-        glow = QGraphicsDropShadowEffect(self)
-        glow.setBlurRadius(18)
-        glow.setColor(QColor(100, 255, 100, 200))
-        glow.setOffset(0, 0)
-        self._inner.setGraphicsEffect(glow)
+        self._glow = None
+        self._update_glow()
+
+    def _update_glow(self):
+        """Apply or remove glow effect based on style."""
+        if STYLE.waveform_glow:
+            if not self._glow:
+                self._glow = QGraphicsDropShadowEffect(self)
+                self._glow.setOffset(0, 0)
+            self._glow.setBlurRadius(STYLE.waveform_glow_radius)
+            color = STYLE.waveform_color
+            self._glow.setColor(QColor(color.red(), color.green(), color.blue(), STYLE.waveform_glow_alpha))
+            self._inner.setGraphicsEffect(self._glow)
+        else:
+            self._inner.setGraphicsEffect(None)
+            self._glow = None
 
     def sizeHint(self):
         return QSize(200, 100)
@@ -1057,7 +1112,6 @@ class WaveformWidget(QWidget):
         self.samples = samples[-max_samples:] if len(samples) > max_samples else samples
         if len(self.samples) > 0:
             self.display_max += (max(np.max(np.abs(self.samples)), 0.01) - self.display_max) * 0.04
-        # Update inner widget
         self._inner.samples = self.samples
         self._inner.display_max = self.display_max
         self._inner.update()
@@ -1101,6 +1155,8 @@ class WaveformWidget(QWidget):
             p.drawLine(int(w * i / num_sections), 0, int(w * i / num_sections), h)
 
     def paintEvent(self, event):
+        if not STYLE.waveform_panel:
+            return  # Transparent background for flat styles
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         w, h = self.width(), self.height()
@@ -1241,7 +1297,7 @@ class VoiceThingWindow(QWidget):
         layout.addLayout(status_row)
 
         self.seg_font = seg_font
-        self.timer_label = LCDTimerWidget(seg_font)
+        self.timer_label = TimerWidget(seg_font)
         layout.addWidget(self.timer_label)
 
         self.btn_row_widget = QWidget()
@@ -1290,6 +1346,9 @@ class VoiceThingWindow(QWidget):
         self.model_btn = make_btn("M", "mic", self.show_model_dialog)
         self.model_btn.setToolTip("Change Whisper model")
         self.model_btn.setEnabled(True)
+        self.prefs_btn = make_btn("P", "settings", self.show_prefs)
+        self.prefs_btn.setToolTip("Preferences")
+        self.prefs_btn.setEnabled(True)
         self.help_btn = make_btn("?", "book", self.show_help)
         self.help_btn.setToolTip("Show help")
         self.help_btn.setEnabled(True)
@@ -1301,7 +1360,8 @@ class VoiceThingWindow(QWidget):
             Qt.Key.Key_C: self.copy_btn, Qt.Key.Key_L: self.load_btn,
             Qt.Key.Key_F: self.folder_btn, Qt.Key.Key_S: self.sound_btn,
             Qt.Key.Key_V: self.eye_btn, Qt.Key.Key_R: self.llm_btn,
-            Qt.Key.Key_M: self.model_btn, Qt.Key.Key_Question: self.help_btn,
+            Qt.Key.Key_M: self.model_btn, Qt.Key.Key_P: self.prefs_btn,
+            Qt.Key.Key_Question: self.help_btn,
         }
 
         self.waveform = WaveformWidget()
@@ -1591,6 +1651,8 @@ class VoiceThingWindow(QWidget):
             self._switch_tab(1)
         elif no_mods and key == Qt.Key.Key_M:
             self.show_model_dialog()
+        elif no_mods and key == Qt.Key.Key_P:
+            self.show_prefs()
         elif key == Qt.Key.Key_Question:
             self.show_help()
         else:
@@ -1600,17 +1662,7 @@ class VoiceThingWindow(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         rect = self.rect().adjusted(2, 2, -2, -2)
-
-        # Brushed metal texture - clipped to rounded rect
-        metal = get_brushed_metal_pixmap(max(512, self.height()))
-        path = QPainterPath()
-        path.addRoundedRect(QRectF(rect), 12, 12)
-        p.setClipPath(path)
-        p.drawTiledPixmap(rect, metal)
-        p.setClipping(False)
-
-        # Vignette overlay
-        draw_vignette(p, rect, self.width(), self.height(), radius=12)
+        STYLE.paint_window(p, rect, self.width(), self.height(), self.isActiveWindow())
 
     def _cleanup(self):
         if self.stream:
@@ -1735,6 +1787,63 @@ class VoiceThingWindow(QWidget):
         dialog.center_on_parent()
         if dialog.exec() and dialog.selected_model and dialog.selected_model != self.current_model:
             self._change_model(dialog.selected_model)
+
+    def show_prefs(self):
+        """Show preferences dialog."""
+        dialog = PrefsDialog(STYLE.name, self)
+        dialog.center_on_parent()
+        if dialog.exec() and dialog.selected_style and dialog.selected_style != STYLE.name:
+            self._change_style(dialog.selected_style)
+
+    def _change_style(self, style_name):
+        """Change the UI style immediately."""
+        global STYLE, ACCENT, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_MUTED, TEXT_ERROR, TEXT_LINK
+        global BORDER_COLOR, BORDER_DARK, ICON_COLOR_DARK, ICON_COLOR_LIGHT, ICON_COLOR_MUTED
+        global SCROLLBAR_CSS, PANEL_BG_CSS, PANEL_BG_FLAT_CSS, UI_FONT
+
+        # Update global style
+        STYLE = get_style(style_name)
+        ACCENT = STYLE.accent
+        TEXT_PRIMARY = STYLE.text_primary
+        TEXT_SECONDARY = STYLE.text_secondary
+        TEXT_MUTED = STYLE.text_muted
+        TEXT_ERROR = STYLE.text_error
+        TEXT_LINK = STYLE.text_link
+        BORDER_COLOR = STYLE.border_color
+        BORDER_DARK = STYLE.border_dark
+        ICON_COLOR_DARK = STYLE.icon_color_dark
+        ICON_COLOR_LIGHT = STYLE.icon_color_light
+        ICON_COLOR_MUTED = STYLE.icon_color_muted
+        SCROLLBAR_CSS = STYLE.scrollbar_css()
+        PANEL_BG_CSS = STYLE.panel_bg_css()
+        PANEL_BG_FLAT_CSS = STYLE.panel_bg_flat_css()
+        UI_FONT = STYLE.font
+
+        # Refresh all widgets
+        self._refresh_styles()
+
+    def _refresh_styles(self):
+        """Refresh all widget styles after a style change."""
+        btn_css = get_btn_css()
+        # Refresh all buttons
+        for btn in [self.record_btn, self.cancel_btn, self.copy_btn, self.load_btn,
+                    self.folder_btn, self.sound_btn, self.eye_btn, self.llm_btn,
+                    self.model_btn, self.prefs_btn, self.help_btn]:
+            btn.setStyleSheet(btn_css)
+        # Refresh tab buttons
+        self.output_tab.setStyleSheet(get_tab_css())
+        self.transcriptions_tab.setStyleSheet(get_tab_css())
+        # Refresh panels
+        self.output_panel.setStyleSheet(f"QTextEdit {{ {PANEL_BG_FLAT_CSS} color: {TEXT_SECONDARY}; font-size: 11px; }} {SCROLLBAR_CSS}")
+        self.transcriptions_panel._apply_style()
+        # Refresh status label
+        self.status_label.setStyleSheet(title_style(18))
+        # Refresh waveform glow
+        self.waveform._update_glow()
+        # Force repaint for background, timer, waveform
+        self.timer_label.update()
+        self.waveform.update()
+        self.update()
 
     def _change_model(self, new_model):
         """Load a new Whisper model in background thread."""
@@ -1916,7 +2025,6 @@ def main():
 
     # Set process name for macOS Activity Monitor and menu bar
     try:
-        from Foundation import NSBundle
         bundle = NSBundle.mainBundle()
         info = bundle.localizedInfoDictionary() or bundle.infoDictionary()
         if info:

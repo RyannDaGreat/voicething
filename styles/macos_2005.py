@@ -12,6 +12,34 @@ class MacOS2005Style(BaseStyle):
 
     _metal_cache = None  # Class-level texture cache
 
+    # Waveform - green oscilloscope with glow and Aqua panel
+    waveform_color = QColor(100, 255, 100)
+    waveform_glow = True
+    waveform_center_line = None  # No center line with glow style
+    waveform_panel = True  # Aqua-style blue panel background
+
+    # Timer - LCD panel style
+    timer_use_lcd = True
+    timer_color = QColor(100, 200, 255)
+
+    # Transcription - light background style
+    transcription_text = "rgb(60,60,70)"
+    transcription_text_dimmed = "rgba(80,90,100,0.8)"
+    transcription_panel_bg = "rgb(255,255,255)"
+    transcription_panel_border = "rgb(160,160,170)"
+    transcription_row_hover = (
+        "qlineargradient(x1:0, y1:0, x2:0, y2:1, "
+        "stop:0 rgb(230,240,250), stop:0.5 rgb(220,235,250), stop:1 rgb(230,240,250))"
+    )
+    transcription_row_btn_hover = (
+        "qlineargradient(x1:0, y1:0, x2:0, y2:1, "
+        "stop:0 rgba(100,180,230,0.2), stop:1 rgba(80,150,200,0.15))"
+    )
+    transcription_row_btn_pressed = (
+        "qlineargradient(x1:0, y1:0, x2:0, y2:1, "
+        "stop:0 rgba(80,160,210,0.35), stop:1 rgba(100,200,255,0.4))"
+    )
+
     def button_css(self):
         # Aqua "jelly" button with horizon line for 3D bulge
         return (
@@ -109,7 +137,7 @@ class MacOS2005Style(BaseStyle):
         MacOS2005Style._metal_cache = QPixmap.fromImage(qimg)
         return MacOS2005Style._metal_cache
 
-    def draw_vignette(self, painter, rect, width, height, radius=12):
+    def _draw_vignette(self, painter, rect, width, height, radius=12):
         """Dark edges, clear middle."""
         for horizontal, alpha_mult in [(True, 0.5), (False, 1.0)]:
             grad = QLinearGradient(0, 0, width if horizontal else 0, 0 if horizontal else height)
@@ -118,3 +146,22 @@ class MacOS2005Style(BaseStyle):
             painter.setBrush(QBrush(grad))
             painter.setPen(Qt.PenStyle.NoPen)
             painter.drawRoundedRect(rect, radius, radius)
+
+    def paint_window(self, painter, rect, width, height, focused=True):
+        """Paint brushed metal background with vignette."""
+        from PyQt6.QtGui import QPainterPath
+        from PyQt6.QtCore import QRectF
+        radius = self.corner_radius
+
+        # Clip to rounded rect
+        path = QPainterPath()
+        path.addRoundedRect(QRectF(rect), radius, radius)
+        painter.setClipPath(path)
+
+        # Draw metal texture
+        metal = self.get_background_pixmap(max(512, height))
+        painter.drawTiledPixmap(rect, metal)
+        painter.setClipping(False)
+
+        # Vignette overlay
+        self._draw_vignette(painter, rect, width, height, radius)
