@@ -75,6 +75,8 @@ TRAY_ICON_SIZE = 44  # Menu bar icon size (2x for retina)
 WAVEFORM_DURATION_SECONDS = 10  # Duration of audio shown in waveform display
 
 # Import style system - all UI styling comes from here
+import sys, os
+sys.path.insert(0, os.path.dirname(__file__))
 from styles import get_style
 STYLE = get_style("macos_2005")  # Can swap to "windows_95" etc later
 
