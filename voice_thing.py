@@ -1979,8 +1979,8 @@ class VoiceThingWindow(QWidget):
         minimal_buttons = w < 250
 
         # --- Panel visibility ---
-        # In simple mode: always show transcriptions (tab_stack), hide tab buttons
-        self.tab_stack.setVisible(show_output or self.simple_mode)
+        # Simple mode only affects which tabs/buttons are shown, NOT height thresholds
+        self.tab_stack.setVisible(show_output)
         self.tab_row_widget.setVisible(show_tabs and not self.simple_mode)
         self.btn_row_widget.setVisible(show_buttons)
         self.waveform.setVisible(show_waveform)
