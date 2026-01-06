@@ -165,64 +165,87 @@ class RustGrungeStyle(BaseStyle):
         )
 
     def get_background_pixmap(self, height=512):
-        """Procedural rust texture with corrosion, peeling paint, and pitting."""
+        """Procedural rust texture with corrosion, brushed metal, and seamless tiling."""
         if RustGrungeStyle._rust_cache is not None:
             return RustGrungeStyle._rust_cache
 
-        from scipy.ndimage import gaussian_filter, uniform_filter1d, maximum_filter
+        from scipy.ndimage import gaussian_filter, uniform_filter1d
 
         width = 256
         np.random.seed(1337)
 
-        # === PERLIN-LIKE ORGANIC NOISE (multi-octave) ===
-        def fractal_noise(h, w, octaves=4, persistence=0.5):
-            """Generate fractal/Perlin-like noise from multiple octaves."""
+        # === SEAMLESS FRACTAL NOISE (tileable) ===
+        def seamless_fractal_noise(h, w, octaves=4, persistence=0.5):
+            """Generate seamless tileable fractal noise."""
             noise = np.zeros((h, w), dtype=np.float32)
             amplitude = 1.0
-            freq = 1
-            for _ in range(octaves):
-                layer = np.random.random((h // freq + 1, w // freq + 1)).astype(np.float32)
-                # Upscale with interpolation
-                from scipy.ndimage import zoom
-                layer = zoom(layer, (freq * h / layer.shape[0], freq * w / layer.shape[1]), order=1)
-                layer = layer[:h, :w]
+            for octave in range(octaves):
+                freq = 2 ** octave
+                # Create seamless base layer using modular coordinates
+                layer = np.zeros((h, w), dtype=np.float32)
+                # Generate small tileable seed
+                seed_h, seed_w = max(2, h // freq), max(2, w // freq)
+                seed = np.random.random((seed_h, seed_w)).astype(np.float32)
+                # Tile and interpolate
+                for y in range(h):
+                    for x in range(w):
+                        # Bilinear interpolation with wrapping
+                        sy = (y / h) * seed_h
+                        sx = (x / w) * seed_w
+                        y0, x0 = int(sy) % seed_h, int(sx) % seed_w
+                        y1, x1 = (y0 + 1) % seed_h, (x0 + 1) % seed_w
+                        fy, fx = sy - int(sy), sx - int(sx)
+                        layer[y, x] = (seed[y0, x0] * (1-fx) * (1-fy) +
+                                      seed[y0, x1] * fx * (1-fy) +
+                                      seed[y1, x0] * (1-fx) * fy +
+                                      seed[y1, x1] * fx * fy)
                 noise += layer * amplitude
                 amplitude *= persistence
-                freq *= 2
-            return (noise - noise.min()) / (noise.max() - noise.min())
+            return (noise - noise.min()) / (noise.max() - noise.min() + 1e-6)
 
-        organic_noise = fractal_noise(height, width, octaves=5, persistence=0.6)
+        organic_noise = seamless_fractal_noise(height, width, octaves=5, persistence=0.6)
 
-        # === BRUSHED METAL BASE ===
-        base_noise = np.random.randint(0, 30, size=(height, width)).astype(np.float32)
-        metal_streaks = uniform_filter1d(base_noise, size=60, axis=1, mode='wrap')
+        # === BRUSHED METAL BASE (seamless horizontal streaks) ===
+        # Use wrap mode for seamless tiling
+        base_noise = np.random.randint(0, 40, size=(height, width)).astype(np.float32)
+        metal_streaks = uniform_filter1d(base_noise, size=80, axis=1, mode='wrap')
+        # Add finer detail streaks
+        fine_streaks = uniform_filter1d(np.random.randint(0, 25, size=(height, width)).astype(np.float32),
+                                        size=30, axis=1, mode='wrap')
+        metal_streaks = metal_streaks * 0.7 + fine_streaks * 0.3
 
-        # === DEEP PITTING / CORROSION HOLES ===
-        pits = np.random.random((height, width))
-        pits = gaussian_filter(pits, sigma=2)
-        pits = (pits > 0.85).astype(np.float32)  # Sparse deep pits
-        pits = gaussian_filter(pits, sigma=1.5) * 40  # Soft dark spots
+        # === SPECULAR HIGHLIGHTS for brushed metal ===
+        highlight_noise = np.random.random((height, width))
+        highlights = uniform_filter1d(highlight_noise, size=100, axis=1, mode='wrap')
+        highlights = (highlights > 0.7).astype(np.float32) * 20  # Bright streaks
+
+        # === DEEP PITTING / CORROSION HOLES (seamless) ===
+        pits = seamless_fractal_noise(height, width, octaves=2, persistence=0.3)
+        pits = (pits > 0.85).astype(np.float32)
+        pits = gaussian_filter(pits, sigma=1.5, mode='wrap') * 40
 
         # === RUST PATCHES - organic shapes from fractal noise ===
-        rust_threshold = 0.45 + organic_noise * 0.25  # Variable threshold
+        rust_threshold = 0.45 + organic_noise * 0.25
         rust_blobs = (organic_noise > rust_threshold).astype(np.float32)
-        rust_blobs = gaussian_filter(rust_blobs, sigma=4)  # Soft edges
+        rust_blobs = gaussian_filter(rust_blobs, sigma=4, mode='wrap')
 
         # === PAINT PEELING EDGES - where rust meets metal ===
-        rust_edges = gaussian_filter(rust_blobs, sigma=2)
-        paint_peel = np.abs(rust_edges - 0.5) < 0.15  # Edge detection
+        rust_edges = gaussian_filter(rust_blobs, sigma=2, mode='wrap')
+        paint_peel = np.abs(rust_edges - 0.5) < 0.15
         paint_peel = paint_peel.astype(np.float32) * 0.7
 
-        # === OXIDATION STAINS - drip patterns ===
-        stain_seeds = np.random.random((height, width)) > 0.997
+        # === OXIDATION STAINS - drip patterns (seamless vertically) ===
+        stain_seeds = seamless_fractal_noise(height, width, octaves=1, persistence=0.5) > 0.95
         stain_pattern = np.zeros((height, width), dtype=np.float32)
         for y in range(1, height):
             stain_pattern[y] = stain_pattern[y-1] * 0.92 + stain_seeds[y] * 0.8
-        stain_pattern = gaussian_filter(stain_pattern, sigma=(1, 4))
+        # Wrap stain pattern for seamlessness
+        stain_pattern = (stain_pattern + np.roll(stain_pattern, height//2, axis=0)) * 0.5
+        stain_pattern = gaussian_filter(stain_pattern, sigma=(1, 4), mode='wrap')
 
-        # === SCRATCHES AND WEAR ===
-        scratches = np.random.random((height, width))
-        scratches = gaussian_filter(scratches, sigma=(0.5, 15))  # Horizontal scratches
+        # === SCRATCHES AND WEAR (seamless) ===
+        scratches = seamless_fractal_noise(height, width, octaves=2, persistence=0.4)
+        scratches = uniform_filter1d(scratches, size=20, axis=1, mode='wrap')
         scratches = (scratches > 0.75).astype(np.float32) * 15
 
         # Combine rust layers with organic variation
@@ -232,11 +255,11 @@ class RustGrungeStyle(BaseStyle):
         # Create RGB channels
         img = np.zeros((height, width, 4), dtype=np.uint8)
 
-        # Base metal color (dark gray-brown) with organic variation
+        # Base metal color (dark gray-brown) with brushed metal variation
         metal_var = organic_noise * 15
-        metal_r = np.clip(35 + metal_streaks + metal_var - pits, 18, 60).astype(np.uint8)
-        metal_g = np.clip(32 + metal_streaks * 0.9 + metal_var * 0.8 - pits, 15, 55).astype(np.uint8)
-        metal_b = np.clip(30 + metal_streaks * 0.8 + metal_var * 0.6 - pits, 12, 48).astype(np.uint8)
+        metal_r = np.clip(38 + metal_streaks + metal_var + highlights - pits, 20, 75).astype(np.uint8)
+        metal_g = np.clip(35 + metal_streaks * 0.9 + metal_var * 0.8 + highlights * 0.9 - pits, 18, 68).astype(np.uint8)
+        metal_b = np.clip(32 + metal_streaks * 0.8 + metal_var * 0.6 + highlights * 0.8 - pits, 15, 58).astype(np.uint8)
 
         # Rust color with organic variation (orange-brown, more varied)
         rust_var = organic_noise * 40
