@@ -41,6 +41,8 @@ class MahoganyWoodStyle(BaseStyle):
     font = "Palatino"  # Classic serif font for wood aesthetic
 
     _wood_cache = None
+    _pine_cache = None
+    _blue_noise_cache = None
 
     # Warm wood theme colors
     accent = QColor(210, 150, 70)  # Amber/gold
@@ -224,6 +226,81 @@ class MahoganyWoodStyle(BaseStyle):
         qimg = QImage(img.data, width, height, width * 4, QImage.Format.Format_RGBA8888).copy()
         MahoganyWoodStyle._wood_cache = QPixmap.fromImage(qimg)
         return MahoganyWoodStyle._wood_cache
+
+    def get_pine_texture(self, width=128, height=32):
+        """Generate pine wood horizontal grain texture for buttons - yellowy, smaller grain."""
+        if MahoganyWoodStyle._pine_cache is not None:
+            cached_w, cached_h = MahoganyWoodStyle._pine_cache.width(), MahoganyWoodStyle._pine_cache.height()
+            if cached_w >= width and cached_h >= height:
+                return MahoganyWoodStyle._pine_cache
+
+        from scipy.ndimage import gaussian_filter
+
+        np.random.seed(3141)
+        img = np.zeros((height, width, 4), dtype=np.uint8)
+
+        # Pine wood colors - yellowy/tan base
+        base_r, base_g, base_b = 180, 140, 85
+
+        for y in range(height):
+            # Horizontal grain lines - tight and frequent
+            grain_phase = np.sin(y * 0.8) * 0.25 + np.sin(y * 2.1 + 0.5) * 0.15
+            grain_intensity = 0.6 + grain_phase
+
+            for x in range(width):
+                # Subtle vertical waviness
+                wave = np.sin(x * 0.03 + y * 0.15) * 3
+                grain_line = np.sin((y + wave) * 0.6) * 0.3 + 0.6
+
+                # Fine noise for natural texture
+                noise = np.random.random() * 0.12
+
+                grain = grain_line * grain_intensity + noise
+                variation = 0.75 + grain * 0.5
+
+                img[y, x, 0] = int(np.clip(base_r * variation, 120, 220))
+                img[y, x, 1] = int(np.clip(base_g * variation, 95, 175))
+                img[y, x, 2] = int(np.clip(base_b * variation, 55, 115))
+                img[y, x, 3] = 255
+
+        # Light smoothing
+        for c in range(3):
+            img[:, :, c] = gaussian_filter(img[:, :, c].astype(float), sigma=0.5).astype(np.uint8)
+
+        qimg = QImage(img.data, width, height, width * 4, QImage.Format.Format_RGBA8888).copy()
+        MahoganyWoodStyle._pine_cache = QPixmap.fromImage(qimg)
+        return MahoganyWoodStyle._pine_cache
+
+    def get_blue_noise(self, width=64, height=64):
+        """Generate blue noise texture for gritty/tactile feel on text areas."""
+        if MahoganyWoodStyle._blue_noise_cache is not None:
+            cached_w, cached_h = MahoganyWoodStyle._blue_noise_cache.width(), MahoganyWoodStyle._blue_noise_cache.height()
+            if cached_w >= width and cached_h >= height:
+                return MahoganyWoodStyle._blue_noise_cache
+
+        from scipy.ndimage import gaussian_filter
+
+        np.random.seed(2718)
+        # Generate white noise
+        noise = np.random.random((height, width))
+
+        # High-pass filter to create blue noise effect (subtract blurred from original)
+        blurred = gaussian_filter(noise, sigma=1.5)
+        blue_noise = noise - blurred
+        blue_noise = (blue_noise - blue_noise.min()) / (blue_noise.max() - blue_noise.min())
+
+        # Create grayscale image with alpha for overlay
+        img = np.zeros((height, width, 4), dtype=np.uint8)
+        # Neutral gray noise that can be blended
+        gray_val = (blue_noise * 60 + 30).astype(np.uint8)  # Range ~30-90
+        img[:, :, 0] = gray_val
+        img[:, :, 1] = gray_val
+        img[:, :, 2] = gray_val
+        img[:, :, 3] = 35  # Subtle alpha
+
+        qimg = QImage(img.data, width, height, width * 4, QImage.Format.Format_RGBA8888).copy()
+        MahoganyWoodStyle._blue_noise_cache = QPixmap.fromImage(qimg)
+        return MahoganyWoodStyle._blue_noise_cache
 
     def _draw_vignette(self, painter, rect, width, height, radius=12):
         """Warm vignette - darker at edges for depth."""
