@@ -1,0 +1,42 @@
+Line Number,File,Value Type,Hardcoded Value,Count in File,Current Usage,Recommended Constant,Style System Already Has?,Total Instances to Update
+542,voice_thing.py,font-size,13px,1,setStyleSheet for simple_mode_label,LABEL_FONT_SIZE = 13,NO,1
+650,voice_thing.py,color + font-size,rgba(255,255,255,0.9) + 13px,1,hardcoded message style,STYLE.message_css() method,NO,1
+670,voice_thing.py,font-size,11px (mono),3,QTextEdit output console,MONO_FONT_SIZE = 11 or create CONSOLE_CSS,NO,3
+820,voice_thing.py,font-size,11px (transcription),1,transcription row base style,TRANSCRIPTION_FONT_SIZE = 11,NO,1
+2266,voice_thing.py,font-size,11px (panel),1,output panel text,Reuse MONO_FONT_SIZE,NO,1
+320,voice_thing.py,border-radius,6px (button),1,TrafficLightButton stylesheet,BUTTON_RADIUS_SMALL = 6 or self.corner_radius_small,NO,1
+583,voice_thing.py,border-radius + color,4px + rgba(60,60,60,0.8),1,pet icon label background,ICON_LABEL_RADIUS = 4 + ICON_LABEL_BG,NO,1
+762,voice_thing.py,border-radius,4px (transcription button),1,transcription row button,transcription_row_btn_radius = 4,NO,1
+991,voice_thing.py,border-radius,8px (panel),1,transcription panel container,transcription_panel_radius = 8,NO,1
+2476,voice_thing.py,border-radius + colors,4px + #333 + white + #555,1,app-level tooltip styling,TOOLTIP_CSS method (has 4 hardcoded values!),NO,1
+583,voice_thing.py,color,rgba(60,60,60,0.8),1,icon label background,ICON_LABEL_BG = "rgba(60,60,60,0.8)",NO,1
+650,voice_thing.py,color,rgba(255,255,255,0.9),1,message text color,WHITE_90 = "rgba(255,255,255,0.90)" or use WHITE_40,NO (has WHITE_40),1
+729,voice_thing.py,color (error state),rgba(180,60,60,0.4),2,error/red highlight background,RED_HIGHLIGHT_BG = "rgba(180,60,60,0.4)",NO,2
+729,voice_thing.py,color (success state),rgba(60,140,60,0.4),2,success/green highlight background,GREEN_HIGHLIGHT_BG = "rgba(60,140,60,0.4)",NO,2
+948,voice_thing.py,color,rgba(255,255,255,0.1),1,transcription item border,WHITE_8 constant (value is 0.08 not 0.1),YES (WHITE_8),1
+1543,voice_thing.py,color,rgb(255 95 87),1,traffic light close button base,TRAFFIC_LIGHT_CLOSE,NO,1
+1543,voice_thing.py,color,rgb(255 120 110),1,traffic light close button hover,TRAFFIC_LIGHT_CLOSE_HOVER,NO,1
+1547,voice_thing.py,color,rgb(255 189 46),1,traffic light minimize button base,TRAFFIC_LIGHT_MINIMIZE,NO,1
+1547,voice_thing.py,color,rgb(255 210 80),1,traffic light minimize button hover,TRAFFIC_LIGHT_MINIMIZE_HOVER,NO,1
+547,voice_thing.py,css inline,"QCheckBox { color: white; }",1,simple mode checkbox style,Create reusable CHECKBOX_CSS,NO,1
+592,voice_thing.py,css inline,"QCheckBox { color: white; }",1,pet checkbox style (inside loop!),Create reusable CHECKBOX_CSS,NO,1
+562,voice_thing.py,css (selected),f"QPushButton {{ border: 2px solid {CYAN_CSS}; }}",1,selected button in theme list,Create BUTTON_SELECTED_CSS(color),NO,1
+1083-1085,voice_thing.py,QColor gradient,QColor(20,35,50) + (15,28,42) + (10,22,35),1,dark panel gradient 3-stop,Create as style constant,NO,3
+1092-1093,voice_thing.py,QColor shadow,QColor(0,0,0,120) + (0,0,0,0),1,shadow gradient,Create as style constant,NO,2
+1098-1104,voice_thing.py,QColor pen,QColor(80,120,160,80) + (30,50,70),1,line drawing colors,Create as style constants,NO,2
+1108-1120,voice_thing.py,QColor pen/color,QColor(60,180,220,25) + accent variants,1,line rendering,Create as style constants,NO,3
+1245-1261,voice_thing.py,QColor pen,QColor(20,50,100,...),2,vector drawing,Create as style constants,NO,2
+1284-1287,voice_thing.py,QColor gradient,QColor(140,180,220) + 3 more light shades,1,light panel gradient (Aero style),Create as style constant,NO,4
+1294-1296,voice_thing.py,QColor gradient,QColor(255,255,255,120/40/0),1,highlight gradient,Create as style constant,NO,3
+1309-1310,voice_thing.py,QColor gradient,QColor(0,0,0,50/100) + (0,0,0,0),1,fade gradient conditional,Create as style constant,NO,2
+1317-1321,voice_thing.py,QColor pen,QColor(20,50,100) + (20,60,120,150),1,border drawing,Create as style constants,NO,2
+1328-1329,voice_thing.py,QColor gradient,QColor(32,36,46,180) + (26,30,40,180),1,panel gradient dark,Create as style constant,NO,2
+1335-1353,voice_thing.py,QColor pen/drawing,QColor(100,200,255,12) + (50,55,65,150),2,glow and border effects,Create as style constants,NO,2
+1360-1363,voice_thing.py,QColor gradient,QColor(200,220,240,230) + 3 more light shades,1,light panel gradient Frutiger,Create as style constant,NO,4
+1370-1372,voice_thing.py,QColor gradient,QColor(255,255,255,150/50/0),1,highlight gradient 2,Create as style constant,NO,3
+1377-1388,voice_thing.py,QColor pen,QColor(6,137,228,20) + (136,136,136) + (6,137,228,60),1,border and glow colors,Create as style constants,NO,3
+1394-1404,voice_thing.py,QColor,QColor(26,26,26) + (0,0,0,30) + (0,255,0,25),2,dark brush and colored pen,Create as style constants,NO,3
+1414-1423,voice_thing.py,QColor,QColor(0,0,0) + (80,80,80) + (0,255,0,40),1,pen colors for Y2K,Create as style constants,NO,3
+1428-1455,voice_thing.py,QColor gradient + pens,QColor(48,3,80) base + vapor grad + pens,1,Vaporwave style colors,Create as style constants,NO,8
+1461-1488,voice_thing.py,QColor,QColor(0,0,0) + (0,0,0) + (128,128,128) + (255,255,255) + (223,223,223) + (0,64,0,60),1,Win95 style colors,Create as style constants,NO,6
+2476,voice_thing.py,color (tooltip),#333 + white + #555,1,global tooltip CSS,TOOLTIP_CSS with constants,NO (has WHITE),3
