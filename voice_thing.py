@@ -48,7 +48,7 @@ import sounddevice as sd
 from AppKit import NSWorkspace, NSApplicationActivateIgnoringOtherApps
 from pynput import keyboard
 from pynput.keyboard import Controller as KeyboardController, Key
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QSize, QPointF, QRectF, QPropertyAnimation, QEasingCurve, pyqtProperty
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QSize, QPointF, QRectF, QPropertyAnimation, QEasingCurve, pyqtProperty, QEvent
 from PyQt6.QtGui import QPainter, QColor, QPen, QIcon, QFont, QFontDatabase, QPolygonF, QLinearGradient, QBrush, QPainterPath, QPixmap
 from PyQt6.QtSvg import QSvgRenderer
 from PyQt6.QtWidgets import (
@@ -138,23 +138,6 @@ def make_close_btn(text="Esc  Close", on_click=None):
 
 # LLM post-processing settings
 LLM_MODEL = "OLLAMA:qwen2.5:7b"
-
-# # Original prompt (commented out):
-# LLM_PREFIX = (
-#     "The following text is a voice transcription, starting on the next line onward. "
-#     "Your job is to take that voice transcription and make it coherent - or potentially "
-#     "don't touch it. We touch it if there is rambling involved - if the user backtracks "
-#     "and says \"no wait actually\" etc - but leave it alone if it's coherent as is. "
-#     "Use bullet points only when the user is clearly dictating a list of distinct items, steps, or tasks. "
-#     "Regular sentences and prose should never be bullet points. "
-#     "Your output should STRICTLY be the formatted text, with no chitchat or conversation "
-#     "from your side. No escaping the output - you return it raw. If the user has any "
-#     "instructions for how to format his text, follow them - but make sure he's talking to "
-#     f"YOU - this will be done exclusively by referring to you by your name \"{APP_NAME}\" - "
-#     "so saying \"make this into a bullet point list\" for example does NOT mean they are "
-#     f"talking to you, but \"{APP_NAME}, format this into a bullet point list\" does. "
-#     "Ok here is the voice transcription:\n"
-# )
 
 LLM_PREFIX = (
     "Task: Clean up voice transcript.\n\n"
@@ -273,7 +256,7 @@ ACTIONS = [
     ("cancel", "X", "cancel", "Cancel recording", None),
     ("minimize", "Esc", None, "Minimize window", None),
     ("small_mode", "E", None, "Toggle small mode", None),
-    ("simple_mode", "I", None, "Toggle simple mode (hide advanced)", None),
+    ("simple_mode", "W", None, "Toggle simple mode (hide advanced)", None),
     ("copy", "C", "copy", "Copy last transcription", "Copy Last Transcription"),
     ("load", "L", "disc", "Load audio file", "Load Audio File..."),
     ("folder", "F", "folder", "Open recordings folder", "Open Recordings Folder"),
@@ -521,6 +504,7 @@ class PrefsDialog(DraggableDialog):
     style_changed = pyqtSignal(str)  # Emits style name when changed
     pets_changed = pyqtSignal(list)  # Emits list of PetType when changed
     simple_mode_changed = pyqtSignal(bool)  # Emits when simple mode toggled
+    style_preview = pyqtSignal(str)  # Emits style name for live preview on hover
 
     def __init__(self, current_style, current_pet_types, simple_mode=False, parent=None):
         super().__init__(parent)
@@ -528,6 +512,8 @@ class PrefsDialog(DraggableDialog):
         self.selected_pets = list(current_pet_types) if current_pet_types else []
         self.pet_checkboxes = {}
         self.simple_mode = simple_mode
+        self._original_style = current_style
+        self._style_buttons = {}  # Map button -> style_name
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(15, 15, 15, 15)
@@ -538,7 +524,7 @@ class PrefsDialog(DraggableDialog):
         # Simple Mode section
         layout.addWidget(make_section("Display"))
         simple_mode_row = QHBoxLayout()
-        simple_mode_label = QLabel("Simple Mode (I)")
+        simple_mode_label = QLabel("Simple Mode (W)")
         simple_mode_label.setStyleSheet(f"QLabel {{ color: {TEXT_SECONDARY}; font-size: 13px; }}")
         self.simple_mode_checkbox = QCheckBox()
         self.simple_mode_checkbox.setChecked(simple_mode)
@@ -561,6 +547,9 @@ class PrefsDialog(DraggableDialog):
             if style_name == current_style:
                 btn.setStyleSheet(get_btn_css() + f"QPushButton {{ border: 2px solid {CYAN_CSS}; }}")
             btn.clicked.connect(lambda checked, s=style_name: self._select_style(s))
+            # Install event filter for hover preview
+            btn.installEventFilter(self)
+            self._style_buttons[btn] = style_name
             layout.addWidget(btn)
 
         # Pet section - checkboxes for multi-select
@@ -617,6 +606,17 @@ class PrefsDialog(DraggableDialog):
         else:
             if pet_type in self.selected_pets:
                 self.selected_pets.remove(pet_type)
+
+    def eventFilter(self, obj, event):
+        """Handle hover events on style buttons for live preview."""
+        if obj in self._style_buttons:
+            if event.type() == QEvent.Type.Enter:
+                style_name = self._style_buttons[obj]
+                self.style_preview.emit(style_name)
+            elif event.type() == QEvent.Type.Leave:
+                # Restore original style on hover leave
+                self.style_preview.emit(self._original_style)
+        return super().eventFilter(obj, event)
 
     def keyPressEvent(self, e):
         key = e.key()
@@ -682,7 +682,7 @@ class TextPanel(QTextEdit):
     def keyPressEvent(self, e):
         # Pass shortcut keys to parent window
         if e.key() in (Qt.Key.Key_Space, Qt.Key.Key_Escape, Qt.Key.Key_X, Qt.Key.Key_C, Qt.Key.Key_L, Qt.Key.Key_F,
-                       Qt.Key.Key_S, Qt.Key.Key_V, Qt.Key.Key_R, Qt.Key.Key_E, Qt.Key.Key_O, Qt.Key.Key_T, Qt.Key.Key_M, Qt.Key.Key_Question):
+                       Qt.Key.Key_S, Qt.Key.Key_V, Qt.Key.Key_R, Qt.Key.Key_E, Qt.Key.Key_W, Qt.Key.Key_O, Qt.Key.Key_T, Qt.Key.Key_M, Qt.Key.Key_Question):
             self.window().keyPressEvent(e)
         else:
             super().keyPressEvent(e)
@@ -1935,6 +1935,8 @@ class VoiceThingWindow(QWidget):
             self.toggle_llm()
         elif no_mods and key == Qt.Key.Key_E:
             self.toggle_small_mode()
+        elif no_mods and key == Qt.Key.Key_W:
+            self.toggle_simple_mode()
         elif no_mods and key == Qt.Key.Key_O:
             self._switch_tab(0)
         elif no_mods and key == Qt.Key.Key_T:
@@ -2161,6 +2163,7 @@ class VoiceThingWindow(QWidget):
         """Show preferences dialog."""
         dialog = PrefsDialog(STYLE.name, self.current_pet_types, self.simple_mode, self)
         dialog.simple_mode_changed.connect(self._set_simple_mode)
+        dialog.style_preview.connect(self._preview_style)
         dialog.center_on_parent()
         if dialog.exec():
             if dialog.selected_style and dialog.selected_style != STYLE.name:
@@ -2224,6 +2227,10 @@ class VoiceThingWindow(QWidget):
         }
         with open(SETTINGS_FILE, 'w') as f:
             json.dump(settings, f, indent=2)
+
+    def _preview_style(self, style_name):
+        """Preview a style temporarily (for hover preview in prefs dialog)."""
+        self._change_style(style_name)
 
     def _change_style(self, style_name):
         """Change the UI style immediately."""
