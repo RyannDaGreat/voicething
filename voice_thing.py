@@ -1968,8 +1968,9 @@ class VoiceThingWindow(QWidget):
         h, w = self.height(), self.width()
 
         # Height thresholds for progressive element hiding
-        show_output = h >= 250
-        show_tabs = h >= 220
+        # Order: tabs hide first (highest threshold), then text area, then buttons
+        show_tabs = h >= 250
+        show_output = h >= 220
         show_buttons = h >= 180
         show_waveform = h >= 120
         is_small = h < 120
@@ -1986,16 +1987,20 @@ class VoiceThingWindow(QWidget):
         self.waveform.setVisible(show_waveform)
         self.status_spacer.setVisible(show_buttons)
 
-        # --- Button visibility (simple mode hides advanced buttons) ---
-        # Core buttons: record, cancel (always visible when button row visible)
-        # Advanced buttons: hidden in simple mode
-        advanced_btns = [self.eye_btn, self.llm_btn, self.model_btn,
-                        self.folder_btn, self.load_btn, self.copy_btn, self.sound_btn]
-        for btn in advanced_btns:
-            btn.setVisible(not self.simple_mode and show_buttons)
+        # --- Button visibility (ALL visibility decisions happen here) ---
+        # Essential buttons: record, cancel, prefs, help (always when btn row visible)
+        # Advanced buttons: hidden in simple mode OR minimal mode
+        essential = {self.record_btn, self.cancel_btn, self.prefs_btn, self.help_btn}
+        advanced = [self.eye_btn, self.llm_btn, self.model_btn,
+                   self.folder_btn, self.sound_btn, self.copy_btn, self.load_btn]
 
-        # --- Button text/icon mode based on width ---
-        self._update_button_mode(icon_only, minimal_buttons)
+        for btn in essential:
+            btn.setVisible(show_buttons)
+        for btn in advanced:
+            btn.setVisible(show_buttons and not self.simple_mode and not minimal_buttons)
+
+        # --- Button text mode (ONLY text, not visibility) ---
+        self._update_button_mode(icon_only)
 
         # --- Small mode appearance ---
         font_size = 10 if is_small else 14
@@ -2024,28 +2029,19 @@ class VoiceThingWindow(QWidget):
         self.load_btn.setEnabled(not recording and not transcribing)
         self.model_btn.setEnabled(not recording and not transcribing)  # Disable during recording and transcription
 
-    def _update_button_mode(self, icon_only, minimal_buttons):
-        """Update button display: text+icon, icon-only, or minimal set.
+    def _update_button_mode(self, icon_only):
+        """Update button text display: text+icon or icon-only.
 
-        Note: This only handles TEXT and MINIMAL MODE visibility.
-        Simple mode visibility is handled by _update_ui before this is called.
+        Note: Visibility is handled entirely by _update_ui. This ONLY sets text.
         """
-        # All buttons with their original text labels
-        all_btns = [
+        labels = [
             (self.record_btn, "Space"), (self.cancel_btn, "X"), (self.copy_btn, "C"),
             (self.load_btn, "L"), (self.folder_btn, "F"), (self.sound_btn, "S"),
             (self.eye_btn, "V"), (self.llm_btn, "R"), (self.model_btn, "M"),
             (self.prefs_btn, "P"), (self.help_btn, "?"),
         ]
-        # Essential buttons for minimal mode: record, cancel, copy, load
-        essential_btns = {self.record_btn, self.cancel_btn, self.copy_btn, self.load_btn}
-        for btn, label in all_btns:
-            # Set text: empty for icon-only, label for text+icon
+        for btn, label in labels:
             btn.setText("" if icon_only else label)
-            # Minimal mode: hide non-essential buttons (overrides simple mode)
-            if minimal_buttons and btn not in essential_btns:
-                btn.setVisible(False)
-            # Otherwise: don't touch visibility - _update_ui already set it correctly
 
     def toggle_recording(self):
         if self.state == "idle":
@@ -2062,6 +2058,7 @@ class VoiceThingWindow(QWidget):
         self._set_state("idle", "Cancelled")
         self.audio_chunks = []
         self.waveform.set_samples(np.array([]))
+        self.pet_container.set_listening(False)  # Stop pet animation
         self._chime([3, -1], t=0.06)  # Minor: cancel
         self.hide_signal.emit()
 
@@ -2072,13 +2069,32 @@ class VoiceThingWindow(QWidget):
         self.timer_label.set_opacity(opacity)
         self._update_buttons()
 
-    def toggle_auto_hide(self):
-        self.auto_hide = not self.auto_hide
-        # Eye open = stays visible (no auto-hide), eye slashed = auto-hide enabled
-        self.eye_btn.setChecked(self.auto_hide)
-        icon_name = "eye-off" if self.auto_hide else "eye"
+    # --- Toggle button setters (single source of truth for state sync) ---
+    def _set_auto_hide(self, enabled, save=True):
+        self.auto_hide = enabled
+        self.eye_btn.setChecked(enabled)
+        icon_name = "eye-off" if enabled else "eye"
         self._update_checkable_btn_icon(self.eye_btn, icon_name)
-        self._save_settings()
+        if save:
+            self._save_settings()
+
+    def _set_sound_enabled(self, enabled, save=True):
+        self.sound_enabled = enabled
+        self.sound_btn.setChecked(enabled)
+        icon_name = "volume" if enabled else "volume-off"
+        self._update_checkable_btn_icon(self.sound_btn, icon_name)
+        if save:
+            self._save_settings()
+
+    def _set_llm_enabled(self, enabled, save=True):
+        self.llm_enabled = enabled
+        self.llm_btn.setChecked(enabled)
+        self._update_checkable_btn_icon(self.llm_btn)
+        if save:
+            self._save_settings()
+
+    def toggle_auto_hide(self):
+        self._set_auto_hide(not self.auto_hide)
 
     def toggle_small_mode(self):
         """Toggle between small and normal window size. Progressive collapse handles the rest."""
@@ -2102,17 +2118,10 @@ class VoiceThingWindow(QWidget):
         self._save_settings()
 
     def toggle_sound(self):
-        self.sound_enabled = not self.sound_enabled
-        self.sound_btn.setChecked(self.sound_enabled)
-        icon_name = "volume" if self.sound_enabled else "volume-off"
-        self._update_checkable_btn_icon(self.sound_btn, icon_name)
-        self._save_settings()
+        self._set_sound_enabled(not self.sound_enabled)
 
     def toggle_llm(self):
-        self.llm_enabled = not self.llm_enabled
-        self.llm_btn.setChecked(self.llm_enabled)
-        self._update_checkable_btn_icon(self.llm_btn)
-        self._save_settings()
+        self._set_llm_enabled(not self.llm_enabled)
 
     def _chime(self, *args, **kwargs):
         """Play chime only if sound is enabled."""
@@ -2138,9 +2147,7 @@ class VoiceThingWindow(QWidget):
     def _on_permission_error(self):
         """Handle accessibility permission error."""
         self.permission_error = True
-        self.auto_hide = False  # Disable auto-hide since global shortcuts won't work
-        self.eye_btn.setChecked(False)
-        self._update_checkable_btn_icon(self.eye_btn, "eye")
+        self._set_auto_hide(False, save=False)  # Disable auto-hide since global shortcuts won't work
         self.warning_btn.show()
 
     def show_model_dialog(self):
@@ -2179,19 +2186,11 @@ class VoiceThingWindow(QWidget):
         with open(SETTINGS_FILE, 'r') as f:
             settings = json.load(f)
         if 'auto_hide' in settings:
-            self.auto_hide = settings['auto_hide']
-            self.eye_btn.setChecked(self.auto_hide)
-            icon_name = "eye-off" if self.auto_hide else "eye"
-            self._update_checkable_btn_icon(self.eye_btn, icon_name)
+            self._set_auto_hide(settings['auto_hide'], save=False)
         if 'sound_enabled' in settings:
-            self.sound_enabled = settings['sound_enabled']
-            self.sound_btn.setChecked(self.sound_enabled)
-            icon_name = "volume" if self.sound_enabled else "volume-off"
-            self._update_checkable_btn_icon(self.sound_btn, icon_name)
+            self._set_sound_enabled(settings['sound_enabled'], save=False)
         if 'llm_enabled' in settings:
-            self.llm_enabled = settings['llm_enabled']
-            self.llm_btn.setChecked(self.llm_enabled)
-            self._update_checkable_btn_icon(self.llm_btn)
+            self._set_llm_enabled(settings['llm_enabled'], save=False)
         if 'simple_mode' in settings and settings['simple_mode']:
             self.simple_mode = False  # Start as False so toggle works
             self.toggle_simple_mode()  # Toggle to True and apply visibility
@@ -2268,8 +2267,9 @@ class VoiceThingWindow(QWidget):
         # Refresh panels
         self.output_panel.setStyleSheet(f"QTextEdit {{ {PANEL_BG_FLAT_CSS} color: {TEXT_SECONDARY}; font-size: 11px; }} {SCROLLBAR_CSS}")
         self.transcriptions_panel._apply_style()
-        # Refresh status label
-        self.status_label.setStyleSheet(title_style(14))
+        # Refresh status label (font size matches _update_ui logic)
+        font_size = 10 if self.height() < 120 else 14
+        self.status_label.setStyleSheet(title_style(font_size))
         # Refresh waveform glow
         self.waveform._update_glow()
         # Force repaint for background, timer, waveform
