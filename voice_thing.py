@@ -539,18 +539,26 @@ class PrefsDialog(DraggableDialog):
         # Theme section
         layout.addWidget(make_section("Theme"))
         style_keys = list(STYLES.keys())
+        # Container for theme buttons with no spacing (contiguous hitboxes)
+        theme_container = QWidget()
+        theme_layout = QVBoxLayout(theme_container)
+        theme_layout.setContentsMargins(0, 0, 0, 0)
+        theme_layout.setSpacing(0)  # No gaps for smooth mouse sliding
         for i, style_name in enumerate(style_keys):
             key = str(i + 1)
             display_name = style_name.replace("_", " ").title()
             btn = QPushButton(f"{key}  {display_name}")
-            btn.setStyleSheet(get_btn_css())
+            # Add visual margin via padding, but keep hitbox contiguous
+            base_css = get_btn_css().replace("padding: 3px 8px;", "padding: 5px 8px; margin: 0px;")
+            btn.setStyleSheet(base_css)
             if style_name == current_style:
-                btn.setStyleSheet(get_btn_css() + f"QPushButton {{ border: 2px solid {CYAN_CSS}; }}")
+                btn.setStyleSheet(base_css + f"QPushButton {{ border: 2px solid {CYAN_CSS}; }}")
             btn.clicked.connect(lambda checked, s=style_name: self._select_style(s))
             # Install event filter for hover preview
             btn.installEventFilter(self)
             self._style_buttons[btn] = style_name
-            layout.addWidget(btn)
+            theme_layout.addWidget(btn)
+        layout.addWidget(theme_container)
 
         # Pet section - checkboxes for multi-select
         layout.addWidget(make_section("Pet Companions"))
