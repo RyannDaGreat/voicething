@@ -1526,6 +1526,7 @@ class VoiceThingWindow(QWidget):
         self.sound_enabled = True  # Whether to play chimes
         self.llm_enabled = False  # Whether to use LLM post-processing
         self.current_model = WHISPER_MODEL  # Current Whisper model
+        self.custom_words = []  # Custom vocabulary for Whisper to recognize
 
         self.setWindowTitle(APP_NAME)
         self.setWindowFlags(
@@ -2223,6 +2224,8 @@ class VoiceThingWindow(QWidget):
                     self.current_pet_types = [pet_type]
                     self.pet_container.set_pets([pet_type])
                     break
+        if 'custom_words' in settings:
+            self.custom_words = settings['custom_words']
 
     def _save_settings(self):
         """Save settings to JSON file."""
@@ -2232,6 +2235,7 @@ class VoiceThingWindow(QWidget):
             'llm_enabled': self.llm_enabled,
             'simple_mode': self.simple_mode,
             'pet_types': [pt.value for pt in self.current_pet_types],
+            'custom_words': self.custom_words,
         }
         with open(SETTINGS_FILE, 'w') as f:
             json.dump(settings, f, indent=2)
@@ -2351,8 +2355,10 @@ class VoiceThingWindow(QWidget):
 
     def _transcribe_file_thread(self, path):
         print(f"Transcribing file: {path}")
+        initial_prompt = ", ".join(self.custom_words) if self.custom_words else None
         result = rp.transcribe_audio_file_via_whisper(
-            path, model=self.current_model, show_progress=True
+            path, model=self.current_model, show_progress=True,
+            initial_prompt=initial_prompt, carry_initial_prompt=True
         )
         self._handle_transcription_result(result.text)
         self._chime([2], [6], [9], [14], t=0.08)  # D key: transcription done
@@ -2456,8 +2462,10 @@ class VoiceThingWindow(QWidget):
 
         scipy.io.wavfile.write(wav_path, SAMPLE_RATE, (audio * 32767).astype(np.int16))
         self.last_audio_path = wav_path
+        initial_prompt = ", ".join(self.custom_words) if self.custom_words else None
         result = rp.transcribe_audio_file_via_whisper(
-            wav_path, model=self.current_model, show_progress=True
+            wav_path, model=self.current_model, show_progress=True,
+            initial_prompt=initial_prompt, carry_initial_prompt=True
         )
         self._handle_transcription_result(result.text, txt_path)
         self._chime([2], [6], [9], [14], t=0.08)  # D key: transcription done
