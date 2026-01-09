@@ -246,7 +246,8 @@ WHISPER_MODELS = [
     ("B", "base", "Fast, basic accuracy (~1GB VRAM)"),
     ("S", "small", "Balanced speed/accuracy (~2GB VRAM)"),
     ("M", "medium", "Good accuracy, slower (~5GB VRAM)"),
-    ("L", "large-v3", "Best accuracy, slowest (~10GB VRAM)"),
+    ("L", "large", "High accuracy (~10GB VRAM)"),
+    ("3", "large-v3", "Best accuracy, slowest (~10GB VRAM)"),
 ]
 
 # Action definitions: (id, key, icon_name, description, menu_text or None)
@@ -256,7 +257,8 @@ ACTIONS = [
     ("cancel", "X", "cancel", "Cancel recording", None),
     ("minimize", "Esc", None, "Minimize window", None),
     ("small_mode", "E", None, "Toggle small mode", None),
-    ("simple_mode", "W", None, "Toggle simple mode (hide advanced)", None),
+    ("simple_mode", "W", "plus", "Toggle simple mode (hide advanced)", None),
+    ("retranscribe", "Z", "retranscribe", "Retranscribe latest with current model", None),
     ("copy", "C", "copy", "Copy last transcription", "Copy Last Transcription"),
     ("load", "L", "disc", "Load audio file", "Load Audio File..."),
     ("folder", "F", "folder", "Open recordings folder", "Open Recordings Folder"),
@@ -489,7 +491,7 @@ class ModelDialog(DraggableDialog):
     def keyPressEvent(self, e):
         key = e.key()
         key_map = {Qt.Key.Key_T: "tiny", Qt.Key.Key_B: "base", Qt.Key.Key_S: "small",
-                   Qt.Key.Key_M: "medium", Qt.Key.Key_L: "large-v3"}
+                   Qt.Key.Key_M: "medium", Qt.Key.Key_L: "large", Qt.Key.Key_3: "large-v3"}
         if key in key_map:
             self._select(key_map[key])
         elif key == Qt.Key.Key_Escape:
@@ -514,6 +516,7 @@ class PrefsDialog(DraggableDialog):
         self.simple_mode = simple_mode
         self._original_style = current_style
         self._style_buttons = {}  # Map button -> style_name
+        self._current_preview = current_style  # Track current preview to avoid redundant updates
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(15, 15, 15, 15)
@@ -620,10 +623,14 @@ class PrefsDialog(DraggableDialog):
         if obj in self._style_buttons:
             if event.type() == QEvent.Type.Enter:
                 style_name = self._style_buttons[obj]
-                self.style_preview.emit(style_name)
+                if style_name != self._current_preview:
+                    self._current_preview = style_name
+                    self.style_preview.emit(style_name)
             elif event.type() == QEvent.Type.Leave:
                 # Restore original style on hover leave
-                self.style_preview.emit(self._original_style)
+                if self._original_style != self._current_preview:
+                    self._current_preview = self._original_style
+                    self.style_preview.emit(self._original_style)
         return super().eventFilter(obj, event)
 
     def keyPressEvent(self, e):
@@ -923,9 +930,10 @@ class TranscriptionItem(QFrame):
     copy_clicked = pyqtSignal(str)
     deramble_clicked = pyqtSignal(int, str)  # (index, raw_text)
 
-    def __init__(self, raw_text, processed_text, index, parent=None):
+    def __init__(self, raw_text, processed_text, index, audio_path=None, parent=None):
         super().__init__(parent)
         self.index = index
+        self.audio_path = audio_path
         self.diff_rows = []  # Rows that need coordinated highlighting
         self.first_row = None
 
@@ -1006,10 +1014,10 @@ class TranscriptionList(QScrollArea):
             if item and item.widget():
                 item.widget().update_style()
 
-    def add_transcription(self, raw_text, processed_text):
+    def add_transcription(self, raw_text, processed_text, audio_path=None):
         index = self.item_count
         self.item_count += 1
-        item = TranscriptionItem(raw_text, processed_text, index)
+        item = TranscriptionItem(raw_text, processed_text, index, audio_path=audio_path)
         item.copy_clicked.connect(self.copy_requested.emit)
         item.deramble_clicked.connect(self.deramble_requested.emit)
         # Insert before the stretch
@@ -1018,14 +1026,17 @@ class TranscriptionList(QScrollArea):
         QTimer.singleShot(10, lambda: self.verticalScrollBar().setValue(
             self.verticalScrollBar().maximum()))
 
-    def update_transcription(self, index, raw_text, processed_text):
+    def update_transcription(self, index, raw_text, processed_text, audio_path=None):
         """Replace transcription at index with updated raw+processed version."""
         # Find the widget at this index (widgets are in order, stretch is last)
         if index < self._layout.count() - 1:
             old_item = self._layout.takeAt(index)
             if old_item and old_item.widget():
+                # Preserve audio_path from old item if not provided
+                if audio_path is None:
+                    audio_path = getattr(old_item.widget(), 'audio_path', None)
                 old_item.widget().deleteLater()
-            new_item = TranscriptionItem(raw_text, processed_text, index)
+            new_item = TranscriptionItem(raw_text, processed_text, index, audio_path=audio_path)
             new_item.copy_clicked.connect(self.copy_requested.emit)
             new_item.deramble_clicked.connect(self.deramble_requested.emit)
             self._layout.insertWidget(index, new_item)
@@ -1502,7 +1513,7 @@ class VoiceThingWindow(QWidget):
     toggle_signal = pyqtSignal()
     focus_signal = pyqtSignal()
     paste_signal = pyqtSignal(str)
-    add_transcription_signal = pyqtSignal(str, str)  # (raw_text, processed_text or "")
+    add_transcription_signal = pyqtSignal(str, str, str)  # (raw_text, processed_text, audio_path)
     update_transcription_signal = pyqtSignal(int, str, str)  # (index, raw_text, processed_text)
     permission_error_signal = pyqtSignal()
 
@@ -1519,7 +1530,7 @@ class VoiceThingWindow(QWidget):
         self.first_show = True
         self.last_audio_path = None
         self.last_transcription = None
-        self.transcriptions = []  # List of transcription strings
+        self.transcriptions = []  # List of (raw_text, processed_text, audio_path) tuples
         self.permission_error = False  # True if accessibility permission denied
         self.auto_hide = False  # Whether to auto-hide after transcription
         self._prev_app = None  # For restoring focus when toggling window
@@ -1615,6 +1626,12 @@ class VoiceThingWindow(QWidget):
         self.record_btn.setEnabled(True)
         self.cancel_btn = make_btn("X", "cancel", self.cancel_recording)
         self.cancel_btn.setToolTip("Cancel recording")
+        self.retranscribe_btn = make_btn("Z", "retranscribe", self.retranscribe_latest)
+        self.retranscribe_btn.setToolTip("Retranscribe latest with current model")
+        self.simple_btn = make_btn("W", "plus", self.toggle_simple_mode)
+        self.simple_btn.setToolTip("Toggle simple mode")
+        self.simple_btn.setCheckable(True)
+        self.simple_btn.setEnabled(True)
         self.copy_btn = make_btn("C", "copy", self.copy_transcription)
         self.copy_btn.setToolTip("Copy last transcription to clipboard")
         self.load_btn = make_btn("L", "disc", self.load_audio_file)
@@ -1650,6 +1667,7 @@ class VoiceThingWindow(QWidget):
         # Key-to-button mapping for visual feedback
         self.key_buttons = {
             Qt.Key.Key_Space: self.record_btn, Qt.Key.Key_X: self.cancel_btn,
+            Qt.Key.Key_Z: self.retranscribe_btn, Qt.Key.Key_W: self.simple_btn,
             Qt.Key.Key_C: self.copy_btn, Qt.Key.Key_L: self.load_btn,
             Qt.Key.Key_F: self.folder_btn, Qt.Key.Key_S: self.sound_btn,
             Qt.Key.Key_V: self.eye_btn, Qt.Key.Key_R: self.llm_btn,
@@ -1735,6 +1753,7 @@ class VoiceThingWindow(QWidget):
             "minimize": self.hide,
             "small_mode": self.toggle_small_mode,
             "simple_mode": self.toggle_simple_mode,
+            "retranscribe": self.retranscribe_latest,
             "copy": self.copy_transcription,
             "load": self.load_audio_file,
             "folder": self.open_folder,
@@ -1811,13 +1830,18 @@ class VoiceThingWindow(QWidget):
             btn.setDown(True)
             QTimer.singleShot(100, lambda: btn.setDown(False))
 
-    def _add_transcription(self, raw_text, processed_text):
-        self.transcriptions.append((raw_text, processed_text))
-        self.transcriptions_panel.add_transcription(raw_text, processed_text)
+    def _add_transcription(self, raw_text, processed_text, audio_path):
+        self.transcriptions.append((raw_text, processed_text, audio_path))
+        self.transcriptions_panel.add_transcription(raw_text, processed_text, audio_path)
         self._switch_tab(1)
+        # Update retranscribe button enabled state
+        self.retranscribe_btn.setEnabled(audio_path is not None)
 
     def _update_transcription(self, index, raw_text, processed_text):
-        self.transcriptions[index] = (raw_text, processed_text)
+        # Preserve audio_path from existing transcription
+        if index < len(self.transcriptions):
+            audio_path = self.transcriptions[index][2] if len(self.transcriptions[index]) > 2 else None
+            self.transcriptions[index] = (raw_text, processed_text, audio_path)
         self.transcriptions_panel.update_transcription(index, raw_text, processed_text)
 
     def _copy_to_clipboard(self, text):
@@ -1831,6 +1855,26 @@ class VoiceThingWindow(QWidget):
             processed = self._run_llm(raw_text)
             self.update_transcription_signal.emit(index, raw_text, processed)
         threading.Thread(target=do_deramble, daemon=True).start()
+
+    def retranscribe_latest(self):
+        """Retranscribe the most recent audio file with the current model.
+
+        Copies the audio to a new timestamped file and runs through normal transcribe path.
+        """
+        if self.state != "idle":
+            self._chime([0, -3], t=0.08)
+            return
+        # Find latest transcription with audio_path
+        audio_path = None
+        for i in range(len(self.transcriptions) - 1, -1, -1):
+            if len(self.transcriptions[i]) > 2 and self.transcriptions[i][2]:
+                audio_path = self.transcriptions[i][2]
+                break
+        if not audio_path or not os.path.exists(audio_path):
+            self._chime([0, -3], t=0.08)
+            return
+        # Copy to new file and transcribe through normal path
+        self._transcribe_file(audio_path)
 
     def _do_paste(self, text):
         self._copy_to_clipboard(text)
@@ -1946,6 +1990,8 @@ class VoiceThingWindow(QWidget):
             self.toggle_small_mode()
         elif no_mods and key == Qt.Key.Key_W:
             self.toggle_simple_mode()
+        elif no_mods and key == Qt.Key.Key_Z:
+            self.retranscribe_latest()
         elif no_mods and key == Qt.Key.Key_O:
             self._switch_tab(0)
         elif no_mods and key == Qt.Key.Key_T:
@@ -1999,16 +2045,20 @@ class VoiceThingWindow(QWidget):
         self.status_spacer.setVisible(show_buttons)
 
         # --- Button visibility (ALL visibility decisions happen here) ---
-        # Essential buttons: record, cancel, prefs, help (always when btn row visible)
+        # Essential buttons: record, cancel, simple, prefs, help (always when btn row visible)
         # Advanced buttons: hidden in simple mode OR minimal mode
-        essential = {self.record_btn, self.cancel_btn, self.prefs_btn, self.help_btn}
-        advanced = [self.eye_btn, self.llm_btn, self.model_btn,
+        essential = {self.record_btn, self.cancel_btn, self.simple_btn, self.prefs_btn, self.help_btn}
+        advanced = [self.retranscribe_btn, self.eye_btn, self.llm_btn, self.model_btn,
                    self.folder_btn, self.sound_btn, self.copy_btn, self.load_btn]
 
         for btn in essential:
             btn.setVisible(show_buttons)
         for btn in advanced:
             btn.setVisible(show_buttons and not self.simple_mode and not minimal_buttons)
+
+        # Update simple mode button icon and checked state
+        self.simple_btn.setChecked(self.simple_mode)
+        self._update_checkable_btn_icon(self.simple_btn, "minus" if self.simple_mode else "plus")
 
         # --- Button text mode (ONLY text, not visibility) ---
         self._update_button_mode(icon_only)
@@ -2038,21 +2088,34 @@ class VoiceThingWindow(QWidget):
         self.copy_btn.setEnabled(self.last_transcription is not None)
         self.folder_btn.setEnabled(True)
         self.load_btn.setEnabled(not recording and not transcribing)
-        self.model_btn.setEnabled(not recording and not transcribing)  # Disable during recording and transcription
+        self.model_btn.setEnabled(not recording and not transcribing)
+        # Retranscribe enabled only when idle and we have transcriptions with audio
+        has_audio = any(len(t) > 2 and t[2] for t in self.transcriptions) if self.transcriptions else False
+        self.retranscribe_btn.setEnabled(not recording and not transcribing and has_audio)
 
     def _update_button_mode(self, icon_only):
         """Update button text display: text+icon or icon-only.
 
         Note: Visibility is handled entirely by _update_ui. This ONLY sets text.
+        In simple mode, show descriptive labels instead of key shortcuts.
         """
-        labels = [
-            (self.record_btn, "Space"), (self.cancel_btn, "X"), (self.copy_btn, "C"),
-            (self.load_btn, "L"), (self.folder_btn, "F"), (self.sound_btn, "S"),
-            (self.eye_btn, "V"), (self.llm_btn, "R"), (self.model_btn, "M"),
-            (self.prefs_btn, "P"), (self.help_btn, "?"),
-        ]
+        # Normal mode: show key shortcuts (or nothing if icon_only)
+        # Simple mode: show descriptive one-word labels
+        if self.simple_mode:
+            labels = [
+                (self.record_btn, "Record"), (self.cancel_btn, "Cancel"),
+                (self.simple_btn, "More"), (self.prefs_btn, "Prefs"), (self.help_btn, "Help"),
+            ]
+        else:
+            labels = [
+                (self.record_btn, "Space"), (self.cancel_btn, "X"),
+                (self.retranscribe_btn, "Z"), (self.simple_btn, "W"),
+                (self.copy_btn, "C"), (self.load_btn, "L"), (self.folder_btn, "F"),
+                (self.sound_btn, "S"), (self.eye_btn, "V"), (self.llm_btn, "R"),
+                (self.model_btn, "M"), (self.prefs_btn, "P"), (self.help_btn, "?"),
+            ]
         for btn, label in labels:
-            btn.setText("" if icon_only else label)
+            btn.setText("" if icon_only and not self.simple_mode else label)
 
     def toggle_recording(self):
         if self.state == "idle":
@@ -2275,9 +2338,9 @@ class VoiceThingWindow(QWidget):
         """Refresh all widget styles after a style change."""
         btn_css = get_btn_css()
         # Refresh all buttons
-        for btn in [self.record_btn, self.cancel_btn, self.copy_btn, self.load_btn,
-                    self.folder_btn, self.sound_btn, self.eye_btn, self.llm_btn,
-                    self.model_btn, self.prefs_btn, self.help_btn]:
+        for btn in [self.record_btn, self.cancel_btn, self.retranscribe_btn, self.simple_btn,
+                    self.copy_btn, self.load_btn, self.folder_btn, self.sound_btn,
+                    self.eye_btn, self.llm_btn, self.model_btn, self.prefs_btn, self.help_btn]:
             btn.setStyleSheet(btn_css)
         # Refresh tab buttons
         self.output_tab.setStyleSheet(get_tab_css())
@@ -2360,7 +2423,7 @@ class VoiceThingWindow(QWidget):
             path, model=self.current_model, show_progress=True,
             initial_prompt=initial_prompt, carry_initial_prompt=True
         )
-        self._handle_transcription_result(result.text)
+        self._handle_transcription_result(result.text, audio_path=path)
         self._chime([2], [6], [9], [14], t=0.08)  # D key: transcription done
         self._finish()
 
@@ -2418,7 +2481,7 @@ class VoiceThingWindow(QWidget):
             return text, ""
         return text, self._run_llm(text)
 
-    def _handle_transcription_result(self, text, txt_path=None):
+    def _handle_transcription_result(self, text, txt_path=None, audio_path=None):
         """Process transcription result: LLM, save, paste, add to list."""
         raw_text = "" if is_blacklisted(text) else text
         print(f"Result: {raw_text!r}")
@@ -2428,7 +2491,7 @@ class VoiceThingWindow(QWidget):
         if self.llm_enabled:
             # Show raw immediately, then update when LLM finishes
             index = len(self.transcriptions)
-            self.add_transcription_signal.emit(raw_text, "")
+            self.add_transcription_signal.emit(raw_text, "", audio_path or "")
             self.last_transcription = raw_text
             self.paste_signal.emit(raw_text)
 
@@ -2446,7 +2509,7 @@ class VoiceThingWindow(QWidget):
                     f.write(raw_text)
             self.last_transcription = raw_text
             self.paste_signal.emit(raw_text)
-            self.add_transcription_signal.emit(raw_text, "")
+            self.add_transcription_signal.emit(raw_text, "", audio_path or "")
 
     def _transcribe(self, audio):
         if len(audio) == 0:
@@ -2467,7 +2530,7 @@ class VoiceThingWindow(QWidget):
             wav_path, model=self.current_model, show_progress=True,
             initial_prompt=initial_prompt, carry_initial_prompt=True
         )
-        self._handle_transcription_result(result.text, txt_path)
+        self._handle_transcription_result(result.text, txt_path, audio_path=wav_path)
         self._chime([2], [6], [9], [14], t=0.08)  # D key: transcription done
         self._finish()
 
