@@ -440,6 +440,8 @@ class HelpDialog(DraggableDialog):
             "• Access from menu bar (top right of Mac)\n"
             "• Drag & drop audio files to transcribe\n"
             "• ⌘Q to quit\n\n"
+            f"Wake word (J): Say \"{WAKE_WORD_MODEL}\" to start recording hands-free! "
+            "The app captures 2 seconds before you say the wake word so you don't lose any words.\n\n"
             "100% keyboard-driven - no mouse needed! (hover buttons to see shortcuts)\n\n"
             "Small mode (E or green button): Compact view with just status and timer - "
             "great for keeping visible while using keyboard shortcuts.\n\n"

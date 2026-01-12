@@ -2,9 +2,10 @@
   "auto_hide": false,
   "sound_enabled": true,
   "llm_enabled": false,
+  "wake_word_enabled": true,
   "simple_mode": false,
-  "pet_types": [
-    "lpc_dog_white"
-  ],
-  "custom_words": []
+  "pet_types": [],
+  "custom_words": [],
+  "whisper_model": "large-v3",
+  "theme": "macos_2005"
 }
