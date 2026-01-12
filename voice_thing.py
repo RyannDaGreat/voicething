@@ -537,20 +537,6 @@ class PrefsDialog(DraggableDialog):
         layout.addWidget(make_title("Preferences"))
 
         # Simple Mode section
-        layout.addWidget(make_section("Display"))
-        simple_mode_row = QHBoxLayout()
-        simple_mode_label = QLabel("Simple Mode (W)")
-        simple_mode_label.setStyleSheet(f"QLabel {{ color: {TEXT_SECONDARY}; font-size: 13px; }}")
-        self.simple_mode_checkbox = QCheckBox()
-        self.simple_mode_checkbox.setChecked(simple_mode)
-        self.simple_mode_checkbox.setToolTip("Hide advanced buttons and show only transcriptions")
-        self.simple_mode_checkbox.stateChanged.connect(self._toggle_simple_mode)
-        self.simple_mode_checkbox.setStyleSheet("QCheckBox { color: white; }")
-        simple_mode_row.addWidget(simple_mode_label)
-        simple_mode_row.addStretch()
-        simple_mode_row.addWidget(self.simple_mode_checkbox)
-        layout.addLayout(simple_mode_row)
-
         # Theme section
         layout.addWidget(make_section("Theme"))
         style_keys = list(STYLES.keys())
@@ -617,10 +603,6 @@ class PrefsDialog(DraggableDialog):
     def _select_style(self, style_name):
         self.selected_style = style_name
         self.accept()
-
-    def _toggle_simple_mode(self, state):
-        self.simple_mode = state == Qt.CheckState.Checked.value
-        self.simple_mode_changed.emit(self.simple_mode)
 
     def _toggle_pet(self, pet_type, state):
         if state == Qt.CheckState.Checked.value:
@@ -2565,7 +2547,6 @@ class VoiceThingWindow(QWidget):
                 initial_prompt=initial_prompt, carry_initial_prompt=True
             )
             self._handle_transcription_result(result.text, audio_path=path)
-            self._chime([2], [6], [9], [14], t=0.08)  # D key: transcription done
         except Exception as e:
             print(f"Transcription error: {e}")
             raise
@@ -2683,7 +2664,6 @@ class VoiceThingWindow(QWidget):
                 initial_prompt=initial_prompt, carry_initial_prompt=True
             )
             self._handle_transcription_result(result.text, txt_path, audio_path=wav_path)
-            self._chime([2], [6], [9], [14], t=0.08)  # D key: transcription done
         except Exception as e:
             print(f"Transcription error: {e}")
             raise
@@ -2692,6 +2672,7 @@ class VoiceThingWindow(QWidget):
 
     def _finish(self):
         self._cleanup()
+        self._chime([2], [6], [9], [14], t=0.08)  # Transcription done chime
         self._set_state("idle")
         self._resume_wake_word_listener()
         self.hide_signal.emit()
