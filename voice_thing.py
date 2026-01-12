@@ -118,27 +118,27 @@ WAKE_WORD_FRAME_SAMPLES = 1280  # 80ms chunks for OpenWakeWord (16kHz * 0.08)
 # Format: {name: path} - most use v2, some only have v1
 _COMMUNITY_WAKE_WORD_BASE = "https://raw.githubusercontent.com/RyannDaGreat/home-assistant-wakewords-collection/main/en"
 COMMUNITY_WAKE_WORDS = {
-    "computer":        "computer/computer_v2.tflite",
-    "ok_computer":     "ok_computer/ok_computer_v2.tflite",
-    "glados":          "glados/glados_v2.tflite",
-    "hey_marvin":      "hey_Marvin/hey_marvin_v2.tflite",
-    "hey_luna":        "Hey Luna/hey_luna.tflite",
-    "dumbledore":      "Dumbledore/dumbledore_v2.tflite",
-    "darth_vader":     "darth_vader/darth_vader_v2.tflite",
-    "tars":            "TARS/tars_v2.tflite",
-    "alfred":          "alfred/alfred_v2.tflite",
-    "hey_gerty":       "hey_GERTY/hey_gerty.tflite",
-    "jarvis":          "jarvis/jarvis_v2.tflite",
-    "ok_jarvis":       "ok_jarvis/ok_jarvis_v2.tflite",
-    "hey_friday":      "hey_friday/hey_friday_v2.tflite",
-    "hal":             "hal/hal_v2.tflite",
-    "skynet":          "skynet/skynet_v2.tflite",
-    "terminator":      "terminator/terminator_v2.tflite",
-    "home_assistant":  "home_assistant/home_assistant_v2.tflite",
+    "computer":        "computer/computer_v2.onnx",
+    "ok_computer":     "ok_computer/ok_computer_v2.onnx",
+    "glados":          "glados/glados_v2.onnx",
+    "hey_marvin":      "hey_Marvin/hey_marvin_v2.onnx",
+    "hey_luna":        "Hey Luna/hey_luna.onnx",
+    "dumbledore":      "Dumbledore/dumbledore_v2.onnx",
+    "darth_vader":     "darth_vader/darth_vader_v2.onnx",
+    "tars":            "TARS/tars_v2.onnx",
+    "alfred":          "alfred/alfred_v2.onnx",
+    "hey_gerty":       "hey_GERTY/hey_gerty.onnx",
+    "jarvis":          "jarvis/jarvis_v2.onnx",
+    "ok_jarvis":       "ok_jarvis/ok_jarvis_v2.onnx",
+    "hey_friday":      "hey_friday/hey_friday_v2.onnx",
+    "hal":             "hal/hal_v2.onnx",
+    "skynet":          "skynet/skynet_v2.onnx",
+    "terminator":      "terminator/terminator_v2.onnx",
+    "home_assistant":  "home_assistant/home_assistant_v2.onnx",
 }
 
 def download_community_wake_word(name):
-    """Download a community wake word model. Returns path to downloaded .tflite file."""
+    """Download a community wake word model. Returns path to downloaded .onnx file."""
     if name not in COMMUNITY_WAKE_WORDS:
         raise ValueError(f"Unknown community wake word: {name}. Options: {list(COMMUNITY_WAKE_WORDS.keys())}")
     url = f"{_COMMUNITY_WAKE_WORD_BASE}/{COMMUNITY_WAKE_WORDS[name]}"
@@ -2290,15 +2290,12 @@ class VoiceThingWindow(QWidget):
             # Check if it's a community model (needs download) or official model
             if WAKE_WORD_MODEL in COMMUNITY_WAKE_WORDS:
                 model_path = download_community_wake_word(WAKE_WORD_MODEL)
-                self.wake_word_model = Model(
-                    wakeword_models=[model_path],
-                    inference_framework='tflite'
-                )
             else:
-                self.wake_word_model = Model(
-                    wakeword_models=[WAKE_WORD_MODEL],
-                    inference_framework='onnx'
-                )
+                model_path = WAKE_WORD_MODEL
+            self.wake_word_model = Model(
+                wakeword_models=[model_path],
+                inference_framework='onnx'
+            )
             print(f"Wake word model loaded: {WAKE_WORD_MODEL}")
             return True
         except Exception as e:
