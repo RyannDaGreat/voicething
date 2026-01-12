@@ -1,6 +1,7 @@
 #!/usr/bin/env /opt/homebrew/opt/python@3.10/bin/python3.10
 """Voice transcription: double-tap Option to record, transcribe, and type."""
 
+import collections
 import difflib
 import json
 import math
@@ -12,10 +13,14 @@ import sys
 import tempfile
 import threading
 import time
+import warnings
 from datetime import datetime
 
 import numpy as np
 import rp
+
+# Suppress ONNX warnings for wake word model
+warnings.filterwarnings('ignore', category=UserWarning, module='onnxruntime')
 
 
 class TeeOutput:
@@ -83,6 +88,12 @@ BLOCKSIZE = 256
 WHISPER_MODEL = "large-v3"
 TRAY_ICON_SIZE = 44  # Menu bar icon size (2x for retina)
 WAVEFORM_DURATION_SECONDS = 10  # Duration of audio shown in waveform display
+
+# Wake word detection settings
+WAKE_WORD_MODEL = "hey_jarvis_v0.1"  # Pre-trained model (say "hey jarvis")
+WAKE_WORD_THRESHOLD = 0.5  # Detection confidence threshold
+WAKE_WORD_BUFFER_SECONDS = 2  # Seconds of audio to capture before wake word
+WAKE_WORD_FRAME_SAMPLES = 1280  # 80ms chunks for OpenWakeWord (16kHz * 0.08)
 
 # Import style system - all UI styling comes from here
 import sys, os
@@ -265,6 +276,7 @@ ACTIONS = [
     ("sound", "S", "volume", "Toggle sound effects", None),
     ("auto_hide", "V", "eye", "Toggle auto-minimize", None),
     ("llm", "R", "robot", "Toggle LLM post-processing", None),
+    ("wake_word", "J", "mic", "Toggle wake word (say 'hey jarvis')", None),
     ("model", "M", "mic", "Change Whisper model", None),
     ("prefs", "P", "settings", "Preferences", None),
     ("help", "?", "book", "Show help", "Help"),
@@ -1516,6 +1528,7 @@ class VoiceThingWindow(QWidget):
     add_transcription_signal = pyqtSignal(str, str, str)  # (raw_text, processed_text, audio_path)
     update_transcription_signal = pyqtSignal(int, str, str)  # (index, raw_text, processed_text)
     permission_error_signal = pyqtSignal()
+    wake_word_signal = pyqtSignal(object)  # pre_buffer numpy array
 
     def __init__(self):
         super().__init__()
@@ -1538,6 +1551,10 @@ class VoiceThingWindow(QWidget):
         self.llm_enabled = False  # Whether to use LLM post-processing
         self.current_model = WHISPER_MODEL  # Current Whisper model
         self.custom_words = []  # Custom vocabulary for Whisper to recognize
+        self.wake_word_enabled = False  # Whether wake word detection is active
+        self.wake_word_stream = None  # Always-on audio stream for wake word
+        self.wake_word_model = None  # OpenWakeWord model (lazy loaded)
+        self.wake_word_buffer = collections.deque(maxlen=SAMPLE_RATE * WAKE_WORD_BUFFER_SECONDS)
 
         self.setWindowTitle(APP_NAME)
         self.setWindowFlags(
@@ -1653,6 +1670,10 @@ class VoiceThingWindow(QWidget):
         self.llm_btn.setToolTip("Toggle LLM post-processing")
         self.llm_btn.setCheckable(True)
         self.llm_btn.setEnabled(True)
+        self.wake_word_btn = make_btn("J", "ear", self.toggle_wake_word)
+        self.wake_word_btn.setToolTip("Toggle wake word (say 'hey jarvis')")
+        self.wake_word_btn.setCheckable(True)
+        self.wake_word_btn.setEnabled(True)
         self.model_btn = make_btn("M", "mic", self.show_model_dialog)
         self.model_btn.setToolTip("Change Whisper model")
         self.model_btn.setEnabled(True)
@@ -1671,7 +1692,7 @@ class VoiceThingWindow(QWidget):
             Qt.Key.Key_C: self.copy_btn, Qt.Key.Key_L: self.load_btn,
             Qt.Key.Key_F: self.folder_btn, Qt.Key.Key_S: self.sound_btn,
             Qt.Key.Key_V: self.eye_btn, Qt.Key.Key_R: self.llm_btn,
-            Qt.Key.Key_M: self.model_btn, Qt.Key.Key_P: self.prefs_btn,
+            Qt.Key.Key_J: self.wake_word_btn, Qt.Key.Key_M: self.model_btn, Qt.Key.Key_P: self.prefs_btn,
             Qt.Key.Key_Question: self.help_btn,
         }
 
@@ -1734,6 +1755,7 @@ class VoiceThingWindow(QWidget):
         self.add_transcription_signal.connect(self._add_transcription)
         self.update_transcription_signal.connect(self._update_transcription)
         self.permission_error_signal.connect(self._on_permission_error)
+        self.wake_word_signal.connect(lambda buf: self.start_recording(pre_buffer=buf))
 
         self.update_timer = QTimer()
         self.update_timer.timeout.connect(self._update_display)
@@ -1760,6 +1782,7 @@ class VoiceThingWindow(QWidget):
             "sound": self.toggle_sound,
             "auto_hide": self.toggle_auto_hide,
             "llm": self.toggle_llm,
+            "wake_word": self.toggle_wake_word,
             "model": self.show_model_dialog,
             "help": self.show_help,
         }
@@ -1986,6 +2009,8 @@ class VoiceThingWindow(QWidget):
             self.toggle_auto_hide()
         elif no_mods and key == Qt.Key.Key_R:
             self.toggle_llm()
+        elif no_mods and key == Qt.Key.Key_J:
+            self.toggle_wake_word()
         elif no_mods and key == Qt.Key.Key_E:
             self.toggle_small_mode()
         elif no_mods and key == Qt.Key.Key_W:
@@ -2048,8 +2073,8 @@ class VoiceThingWindow(QWidget):
         # Essential buttons: record, cancel, simple, prefs, help (always when btn row visible)
         # Advanced buttons: hidden in simple mode OR minimal mode
         essential = {self.record_btn, self.cancel_btn, self.simple_btn, self.prefs_btn, self.help_btn}
-        advanced = [self.retranscribe_btn, self.eye_btn, self.llm_btn, self.model_btn,
-                   self.folder_btn, self.sound_btn, self.copy_btn, self.load_btn]
+        advanced = [self.retranscribe_btn, self.eye_btn, self.llm_btn, self.wake_word_btn,
+                   self.model_btn, self.folder_btn, self.sound_btn, self.copy_btn, self.load_btn]
 
         for btn in essential:
             btn.setVisible(show_buttons)
@@ -2112,7 +2137,7 @@ class VoiceThingWindow(QWidget):
                 (self.retranscribe_btn, "Z"), (self.simple_btn, "W"),
                 (self.copy_btn, "C"), (self.load_btn, "L"), (self.folder_btn, "F"),
                 (self.sound_btn, "S"), (self.eye_btn, "V"), (self.llm_btn, "R"),
-                (self.model_btn, "M"), (self.prefs_btn, "P"), (self.help_btn, "?"),
+                (self.wake_word_btn, "J"), (self.model_btn, "M"), (self.prefs_btn, "P"), (self.help_btn, "?"),
             ]
         for btn, label in labels:
             btn.setText("" if icon_only and not self.simple_mode else label)
@@ -2129,15 +2154,23 @@ class VoiceThingWindow(QWidget):
         if self.state != "recording":
             return
         self._cleanup()
-        self._set_state("idle", "Cancelled")
+        self._set_state("idle")
         self.audio_chunks = []
         self.waveform.set_samples(np.array([]))
         self.pet_container.set_listening(False)  # Stop pet animation
         self._chime([3, -1], t=0.06)  # Minor: cancel
+        self._resume_wake_word_listener()
         self.hide_signal.emit()
 
-    def _set_state(self, state, status):
+    def _get_idle_status(self):
+        """Get the appropriate idle status message based on wake word setting."""
+        return "Say 'hey jarvis'" if self.wake_word_enabled else "Double-tap ⌥"
+
+    def _set_state(self, state, status=None):
+        """Set app state. If status is None and state is 'idle', uses appropriate idle message."""
         self.state = state
+        if status is None and state == "idle":
+            status = self._get_idle_status()
         self.status_label.setText(status)
         opacity = 0.9 if state == "recording" else 0.3
         self.timer_label.set_opacity(opacity)
@@ -2196,6 +2229,108 @@ class VoiceThingWindow(QWidget):
 
     def toggle_llm(self):
         self._set_llm_enabled(not self.llm_enabled)
+
+    def toggle_wake_word(self):
+        self._set_wake_word_enabled(not self.wake_word_enabled)
+
+    def _set_wake_word_enabled(self, enabled, save=True):
+        self.wake_word_enabled = enabled
+        self.wake_word_btn.setChecked(enabled)
+        self._update_checkable_btn_icon(self.wake_word_btn)
+        if enabled:
+            self._start_wake_word_listener()
+        else:
+            self._stop_wake_word_listener()
+        print(f"Wake word detection {'ON' if enabled else 'OFF'}")
+        # Update status label if idle
+        if self.state == "idle":
+            self.status_label.setText(self._get_idle_status())
+        if save:
+            self._save_settings()
+
+    def _load_wake_word_model(self):
+        """Lazy load OpenWakeWord model."""
+        if self.wake_word_model is not None:
+            return True
+        try:
+            from openwakeword.model import Model
+            self.wake_word_model = Model(
+                wakeword_models=[WAKE_WORD_MODEL],
+                inference_framework='onnx'
+            )
+            print(f"Wake word model loaded: {WAKE_WORD_MODEL}")
+            return True
+        except Exception as e:
+            print(f"Failed to load wake word model: {e}")
+            return False
+
+    def _start_wake_word_listener(self):
+        """Start always-on audio stream for wake word detection."""
+        if self.wake_word_stream is not None:
+            return  # Already running
+        if not self._load_wake_word_model():
+            self.wake_word_enabled = False
+            return
+
+        self.wake_word_buffer.clear()
+
+        def wake_word_callback(indata, frames, time_info, status):
+            if self.state == "recording":
+                return  # Don't process while recording
+
+            # Convert to int16 for OpenWakeWord
+            audio = (indata[:, 0] * 32767).astype(np.int16)
+
+            # Always add to rolling buffer
+            self.wake_word_buffer.extend(audio)
+
+            # Check for wake word
+            prediction = self.wake_word_model.predict(audio)
+            for model_name, score in prediction.items():
+                if score > WAKE_WORD_THRESHOLD:
+                    print(f"Wake word detected: {model_name} ({score:.2f})")
+                    # Trigger recording with pre-buffered audio
+                    self._on_wake_word_detected()
+                    break
+
+        self.wake_word_stream = sd.InputStream(
+            samplerate=SAMPLE_RATE,
+            channels=1,
+            dtype=np.float32,
+            callback=wake_word_callback,
+            blocksize=WAKE_WORD_FRAME_SAMPLES,
+        )
+        self.wake_word_stream.start()
+        print("Wake word listener started (say 'hey jarvis')")
+
+    def _stop_wake_word_listener(self):
+        """Stop the wake word audio stream."""
+        if self.wake_word_stream is not None:
+            self.wake_word_stream.stop()
+            self.wake_word_stream.close()
+            self.wake_word_stream = None
+            print("Wake word listener stopped")
+
+    def _pause_wake_word_listener(self):
+        """Temporarily pause wake word listener (e.g., during recording)."""
+        if self.wake_word_stream is not None:
+            self.wake_word_stream.stop()
+            self.wake_word_stream.close()
+            self.wake_word_stream = None
+
+    def _resume_wake_word_listener(self):
+        """Resume wake word listener if enabled."""
+        if self.wake_word_enabled and self.wake_word_stream is None:
+            self._start_wake_word_listener()
+
+    def _on_wake_word_detected(self):
+        """Called when wake word is detected - start recording with pre-buffer."""
+        if self.state != "idle":
+            return
+        # Capture the pre-buffered audio (convert int16 back to float32)
+        pre_buffer = np.array(self.wake_word_buffer, dtype=np.float32) / 32767.0
+        # Use signal to call start_recording on main thread with pre_buffer
+        self.wake_word_signal.emit(pre_buffer)
 
     def _chime(self, *args, **kwargs):
         """Play chime only if sound is enabled."""
@@ -2266,6 +2401,8 @@ class VoiceThingWindow(QWidget):
             self._set_sound_enabled(settings['sound_enabled'], save=False)
         if 'llm_enabled' in settings:
             self._set_llm_enabled(settings['llm_enabled'], save=False)
+        if 'wake_word_enabled' in settings:
+            self._set_wake_word_enabled(settings['wake_word_enabled'], save=False)
         if 'simple_mode' in settings and settings['simple_mode']:
             self.simple_mode = False  # Start as False so toggle works
             self.toggle_simple_mode()  # Toggle to True and apply visibility
@@ -2296,6 +2433,7 @@ class VoiceThingWindow(QWidget):
             'auto_hide': self.auto_hide,
             'sound_enabled': self.sound_enabled,
             'llm_enabled': self.llm_enabled,
+            'wake_word_enabled': self.wake_word_enabled,
             'simple_mode': self.simple_mode,
             'pet_types': [pt.value for pt in self.current_pet_types],
             'custom_words': self.custom_words,
@@ -2340,7 +2478,7 @@ class VoiceThingWindow(QWidget):
         # Refresh all buttons
         for btn in [self.record_btn, self.cancel_btn, self.retranscribe_btn, self.simple_btn,
                     self.copy_btn, self.load_btn, self.folder_btn, self.sound_btn,
-                    self.eye_btn, self.llm_btn, self.model_btn, self.prefs_btn, self.help_btn]:
+                    self.eye_btn, self.llm_btn, self.wake_word_btn, self.model_btn, self.prefs_btn, self.help_btn]:
             btn.setStyleSheet(btn_css)
         # Refresh tab buttons
         self.output_tab.setStyleSheet(get_tab_css())
@@ -2383,7 +2521,7 @@ class VoiceThingWindow(QWidget):
 
             waiting_timer[0] = False
             self._chime([5, 9, 12], [17], t=0.15)  # F key: model loaded
-            self._set_state("idle", "Double-tap ⌥")
+            self._set_state("idle")
 
         threading.Thread(target=load, daemon=True).start()
 
@@ -2427,8 +2565,15 @@ class VoiceThingWindow(QWidget):
         self._chime([2], [6], [9], [14], t=0.08)  # D key: transcription done
         self._finish()
 
-    def start_recording(self):
+    def start_recording(self, pre_buffer=None):
+        """Start recording audio. Optional pre_buffer is prepended to recording."""
+        # Pause wake word listener to free mic
+        self._pause_wake_word_listener()
+
         self.audio_chunks = []
+        if pre_buffer is not None and len(pre_buffer) > 0:
+            self.audio_chunks.append(pre_buffer)
+
         self.show()
         if self.first_show:
             screen = QApplication.primaryScreen().geometry()
@@ -2536,7 +2681,8 @@ class VoiceThingWindow(QWidget):
 
     def _finish(self):
         self._cleanup()
-        self._set_state("idle", "Double-tap ⌥")
+        self._set_state("idle")
+        self._resume_wake_word_listener()
         self.hide_signal.emit()
 
 

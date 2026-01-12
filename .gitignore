@@ -19,3 +19,6 @@ __pycache__/
 *.DS_Store
 #<RP Default Gitignore End>
 
+.frenzy
+scratchpad.py
+.claude_todo.md
