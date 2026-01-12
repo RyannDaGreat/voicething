@@ -108,26 +108,42 @@ WAVEFORM_DURATION_SECONDS = 10  # Duration of audio shown in waveform display
 #   computer, glados, hey_marvin, hey_luna, dumbledore, darth_vader, tars, alfred, andromeda,
 #   barclay, bartolo, edna, hey_gerty, hey_alba, hey_anna, queen_of_lights, choo_choo_homie, etc.
 # Custom training: https://github.com/dscripka/openWakeWord/blob/main/notebooks/automatic_model_training.ipynb
-WAKE_WORD_MODEL = "hey_jarvis_v0.1"
+WAKE_WORD_MODEL = "computer"
 WAKE_WORD_THRESHOLD = 0.5  # Detection confidence threshold
 WAKE_WORD_BUFFER_SECONDS = 2  # Seconds of audio to capture before wake word
 WAKE_WORD_FRAME_SAMPLES = 1280  # 80ms chunks for OpenWakeWord (16kHz * 0.08)
 
 # Community wake word models - download with download_community_wake_word()
-# Base URL for fwartner's home-assistant-wakewords-collection
-_COMMUNITY_WAKE_WORD_BASE = "https://raw.githubusercontent.com/fwartner/home-assistant-wakewords-collection/main/en"
-COMMUNITY_WAKE_WORDS = [
-    "computer", "glados", "hey_marvin", "hey_luna", "dumbledore",
-    "darth_vader", "tars", "alfred", "hey_gerty", "queen_of_lights",
-]
+# From home-assistant-wakewords-collection (cloned): https://github.com/RyannDaGreat/home-assistant-wakewords-collection
+# Format: {name: path} - most use v2, some only have v1
+_COMMUNITY_WAKE_WORD_BASE = "https://raw.githubusercontent.com/RyannDaGreat/home-assistant-wakewords-collection/main/en"
+COMMUNITY_WAKE_WORDS = {
+    "computer":        "computer/computer_v2.tflite",
+    "ok_computer":     "ok_computer/ok_computer_v2.tflite",
+    "glados":          "glados/glados_v2.tflite",
+    "hey_marvin":      "hey_Marvin/hey_marvin_v2.tflite",
+    "hey_luna":        "Hey Luna/hey_luna.tflite",
+    "dumbledore":      "Dumbledore/dumbledore_v2.tflite",
+    "darth_vader":     "darth_vader/darth_vader_v2.tflite",
+    "tars":            "TARS/tars_v2.tflite",
+    "alfred":          "alfred/alfred_v2.tflite",
+    "hey_gerty":       "hey_GERTY/hey_gerty.tflite",
+    "jarvis":          "jarvis/jarvis_v2.tflite",
+    "ok_jarvis":       "ok_jarvis/ok_jarvis_v2.tflite",
+    "hey_friday":      "hey_friday/hey_friday_v2.tflite",
+    "hal":             "hal/hal_v2.tflite",
+    "skynet":          "skynet/skynet_v2.tflite",
+    "terminator":      "terminator/terminator_v2.tflite",
+    "home_assistant":  "home_assistant/home_assistant_v2.tflite",
+}
 
 def download_community_wake_word(name):
     """Download a community wake word model. Returns path to downloaded .tflite file."""
     if name not in COMMUNITY_WAKE_WORDS:
-        raise ValueError(f"Unknown community wake word: {name}. Options: {COMMUNITY_WAKE_WORDS}")
-    url = f"{_COMMUNITY_WAKE_WORD_BASE}/{name}/{name}.tflite"
-    dest = os.path.join(WAKE_WORD_CACHE_DIR, f"{name}.tflite")
-    return rp.download_url(url, dest, skip_existing=True)
+        raise ValueError(f"Unknown community wake word: {name}. Options: {list(COMMUNITY_WAKE_WORDS.keys())}")
+    url = f"{_COMMUNITY_WAKE_WORD_BASE}/{COMMUNITY_WAKE_WORDS[name]}"
+    os.makedirs(WAKE_WORD_CACHE_DIR, exist_ok=True)
+    return rp.download_url(url, WAKE_WORD_CACHE_DIR, skip_existing=True, show_progress=True)
 
 # Import style system - all UI styling comes from here
 import sys, os
@@ -231,9 +247,6 @@ def is_blacklisted(text):
     normalized = re.sub(r'[^\w\s]', '', text.lower()).strip()
     return normalized in BLACKLISTED_TRANSCRIPTIONS
 
-RECORDINGS_DIR = os.path.join(tempfile.gettempdir(), APP_NAME)
-ASSETS_DIR = os.path.join(os.path.dirname(__file__), "assets")
-
 # UI Font - from style (will be loaded in main())
 UI_FONT = STYLE.font
 UI_FONT_PATH = rp.download_font("R:Futura")
@@ -310,7 +323,7 @@ ACTIONS = [
     ("sound", "S", "volume", "Toggle sound effects", None),
     ("auto_hide", "V", "eye", "Toggle auto-minimize", None),
     ("llm", "R", "robot", "Toggle LLM post-processing", None),
-    ("wake_word", "J", "mic", "Toggle wake word (say 'hey jarvis')", None),
+    ("wake_word", "J", "ear", "Toggle wake word detection", None),
     ("model", "M", "mic", "Change Whisper model", None),
     ("prefs", "P", "settings", "Preferences", None),
     ("help", "?", "book", "Show help", "Help"),
@@ -1688,7 +1701,7 @@ class VoiceThingWindow(QWidget):
         self.llm_btn.setCheckable(True)
         self.llm_btn.setEnabled(True)
         self.wake_word_btn = make_btn("J", "ear", self.toggle_wake_word)
-        self.wake_word_btn.setToolTip("Toggle wake word (say 'hey jarvis')")
+        self.wake_word_btn.setToolTip(f"Toggle wake word (say '{WAKE_WORD_MODEL}')")
         self.wake_word_btn.setCheckable(True)
         self.wake_word_btn.setEnabled(True)
         self.model_btn = make_btn("M", "mic", self.show_model_dialog)
@@ -2182,7 +2195,7 @@ class VoiceThingWindow(QWidget):
 
     def _get_idle_status(self):
         """Get the appropriate idle status message based on wake word setting."""
-        return "Say 'hey jarvis'" if self.wake_word_enabled else "Double-tap ⌥"
+        return f"Say '{WAKE_WORD_MODEL}'" if self.wake_word_enabled else "Double-tap ⌥"
 
     def _set_state(self, state, status=None):
         """Set app state. If status is None and state is 'idle', uses appropriate idle message."""
@@ -2274,15 +2287,23 @@ class VoiceThingWindow(QWidget):
             return True
         try:
             from openwakeword.model import Model
-            self.wake_word_model = Model(
-                wakeword_models=[WAKE_WORD_MODEL],
-                inference_framework='onnx'
-            )
+            # Check if it's a community model (needs download) or official model
+            if WAKE_WORD_MODEL in COMMUNITY_WAKE_WORDS:
+                model_path = download_community_wake_word(WAKE_WORD_MODEL)
+                self.wake_word_model = Model(
+                    wakeword_models=[model_path],
+                    inference_framework='tflite'
+                )
+            else:
+                self.wake_word_model = Model(
+                    wakeword_models=[WAKE_WORD_MODEL],
+                    inference_framework='onnx'
+                )
             print(f"Wake word model loaded: {WAKE_WORD_MODEL}")
             return True
         except Exception as e:
             print(f"Failed to load wake word model: {e}")
-            return False
+            raise
 
     def _start_wake_word_listener(self):
         """Start always-on audio stream for wake word detection."""
@@ -2321,7 +2342,7 @@ class VoiceThingWindow(QWidget):
             blocksize=WAKE_WORD_FRAME_SAMPLES,
         )
         self.wake_word_stream.start()
-        print("Wake word listener started (say 'hey jarvis')")
+        print(f"Wake word listener started (say '{WAKE_WORD_MODEL}')")
 
     def _stop_wake_word_listener(self):
         """Stop the wake word audio stream."""
