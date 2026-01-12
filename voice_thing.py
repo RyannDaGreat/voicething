@@ -2083,7 +2083,7 @@ class VoiceThingWindow(QWidget):
 
         # Update simple mode button icon and checked state
         self.simple_btn.setChecked(self.simple_mode)
-        self._update_checkable_btn_icon(self.simple_btn, "minus" if self.simple_mode else "plus")
+        self._update_checkable_btn_icon(self.simple_btn, "plus" if self.simple_mode else "minus")
 
         # --- Button text mode (ONLY text, not visibility) ---
         self._update_button_mode(icon_only)
@@ -2555,15 +2555,20 @@ class VoiceThingWindow(QWidget):
         threading.Thread(target=self._transcribe_file_thread, args=(path,), daemon=True).start()
 
     def _transcribe_file_thread(self, path):
-        print(f"Transcribing file: {path}")
-        initial_prompt = ", ".join(self.custom_words) if self.custom_words else None
-        result = rp.transcribe_audio_file_via_whisper(
-            path, model=self.current_model, show_progress=True,
-            initial_prompt=initial_prompt, carry_initial_prompt=True
-        )
-        self._handle_transcription_result(result.text, audio_path=path)
-        self._chime([2], [6], [9], [14], t=0.08)  # D key: transcription done
-        self._finish()
+        try:
+            print(f"Transcribing file: {path}")
+            initial_prompt = ", ".join(self.custom_words) if self.custom_words else None
+            result = rp.transcribe_audio_file_via_whisper(
+                path, model=self.current_model, show_progress=True,
+                initial_prompt=initial_prompt, carry_initial_prompt=True
+            )
+            self._handle_transcription_result(result.text, audio_path=path)
+            self._chime([2], [6], [9], [14], t=0.08)  # D key: transcription done
+        except Exception as e:
+            print(f"Transcription error: {e}")
+            raise
+        finally:
+            self._finish()
 
     def start_recording(self, pre_buffer=None):
         """Start recording audio. Optional pre_buffer is prepended to recording."""
@@ -2657,27 +2662,31 @@ class VoiceThingWindow(QWidget):
             self.add_transcription_signal.emit(raw_text, "", audio_path or "")
 
     def _transcribe(self, audio):
-        if len(audio) == 0:
-            print("No audio.")
+        try:
+            if len(audio) == 0:
+                print("No audio.")
+                return
+            print(f"Recorded {len(audio) / SAMPLE_RATE:.2f}s")
+
+            os.makedirs(RECORDINGS_DIR, exist_ok=True)
+            ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+            wav_path = os.path.join(RECORDINGS_DIR, f"{ts}.wav")
+            txt_path = os.path.join(RECORDINGS_DIR, f"{ts}.txt")
+
+            scipy.io.wavfile.write(wav_path, SAMPLE_RATE, (audio * 32767).astype(np.int16))
+            self.last_audio_path = wav_path
+            initial_prompt = ", ".join(self.custom_words) if self.custom_words else None
+            result = rp.transcribe_audio_file_via_whisper(
+                wav_path, model=self.current_model, show_progress=True,
+                initial_prompt=initial_prompt, carry_initial_prompt=True
+            )
+            self._handle_transcription_result(result.text, txt_path, audio_path=wav_path)
+            self._chime([2], [6], [9], [14], t=0.08)  # D key: transcription done
+        except Exception as e:
+            print(f"Transcription error: {e}")
+            raise
+        finally:
             self._finish()
-            return
-        print(f"Recorded {len(audio) / SAMPLE_RATE:.2f}s")
-
-        os.makedirs(RECORDINGS_DIR, exist_ok=True)
-        ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        wav_path = os.path.join(RECORDINGS_DIR, f"{ts}.wav")
-        txt_path = os.path.join(RECORDINGS_DIR, f"{ts}.txt")
-
-        scipy.io.wavfile.write(wav_path, SAMPLE_RATE, (audio * 32767).astype(np.int16))
-        self.last_audio_path = wav_path
-        initial_prompt = ", ".join(self.custom_words) if self.custom_words else None
-        result = rp.transcribe_audio_file_via_whisper(
-            wav_path, model=self.current_model, show_progress=True,
-            initial_prompt=initial_prompt, carry_initial_prompt=True
-        )
-        self._handle_transcription_result(result.text, txt_path, audio_path=wav_path)
-        self._chime([2], [6], [9], [14], t=0.08)  # D key: transcription done
-        self._finish()
 
     def _finish(self):
         self._cleanup()
