@@ -82,18 +82,52 @@ sys.path.insert(0, osp.dirname(osp.abspath(__file__)))
 from pet_companion import PetCompanionWidget, PetContainer, PetType, ALL_PET_TYPES, get_pet_icon
 
 APP_NAME = "VoiceThing"
-SETTINGS_FILE = os.path.join(os.path.dirname(__file__), "settings.json")
+
+# Directories and paths
+_VOICETHING_DIR       = os.path.dirname(__file__)
+SETTINGS_FILE         = os.path.join(_VOICETHING_DIR, "settings.json")
+ASSETS_DIR            = os.path.join(_VOICETHING_DIR, "assets")
+WAKE_WORD_CACHE_DIR   = os.path.join(_VOICETHING_DIR, ".wake_word_cache")
+RECORDINGS_DIR        = os.path.join(tempfile.gettempdir(), APP_NAME)
+
+# Audio settings
 SAMPLE_RATE = 16000
 BLOCKSIZE = 256
+
+# Whisper settings
 WHISPER_MODEL = "large-v3"
+
+# UI settings
 TRAY_ICON_SIZE = 44  # Menu bar icon size (2x for retina)
 WAVEFORM_DURATION_SECONDS = 10  # Duration of audio shown in waveform display
 
 # Wake word detection settings
-WAKE_WORD_MODEL = "hey_jarvis_v0.1"  # Pre-trained model (say "hey jarvis")
+# Training uses 100% synthetic TTS data - no real recordings needed! <1hr on free Colab GPU.
+# Official models: "hey_jarvis_v0.1", "alexa_v0.1", "hey_mycroft_v0.1", "hey_rhasspy_v0.1", "ok_nabu_v0.1"
+# Community models (https://github.com/fwartner/home-assistant-wakewords-collection):
+#   computer, glados, hey_marvin, hey_luna, dumbledore, darth_vader, tars, alfred, andromeda,
+#   barclay, bartolo, edna, hey_gerty, hey_alba, hey_anna, queen_of_lights, choo_choo_homie, etc.
+# Custom training: https://github.com/dscripka/openWakeWord/blob/main/notebooks/automatic_model_training.ipynb
+WAKE_WORD_MODEL = "hey_jarvis_v0.1"
 WAKE_WORD_THRESHOLD = 0.5  # Detection confidence threshold
 WAKE_WORD_BUFFER_SECONDS = 2  # Seconds of audio to capture before wake word
 WAKE_WORD_FRAME_SAMPLES = 1280  # 80ms chunks for OpenWakeWord (16kHz * 0.08)
+
+# Community wake word models - download with download_community_wake_word()
+# Base URL for fwartner's home-assistant-wakewords-collection
+_COMMUNITY_WAKE_WORD_BASE = "https://raw.githubusercontent.com/fwartner/home-assistant-wakewords-collection/main/en"
+COMMUNITY_WAKE_WORDS = [
+    "computer", "glados", "hey_marvin", "hey_luna", "dumbledore",
+    "darth_vader", "tars", "alfred", "hey_gerty", "queen_of_lights",
+]
+
+def download_community_wake_word(name):
+    """Download a community wake word model. Returns path to downloaded .tflite file."""
+    if name not in COMMUNITY_WAKE_WORDS:
+        raise ValueError(f"Unknown community wake word: {name}. Options: {COMMUNITY_WAKE_WORDS}")
+    url = f"{_COMMUNITY_WAKE_WORD_BASE}/{name}/{name}.tflite"
+    dest = os.path.join(WAKE_WORD_CACHE_DIR, f"{name}.tflite")
+    return rp.download_url(url, dest, skip_existing=True)
 
 # Import style system - all UI styling comes from here
 import sys, os
@@ -2223,8 +2257,10 @@ class VoiceThingWindow(QWidget):
         self._update_checkable_btn_icon(self.wake_word_btn)
         if enabled:
             self._start_wake_word_listener()
+            self._chime([0, 4, 7, 12], t=0.15)  # Bright major chord: "listening"
         else:
             self._stop_wake_word_listener()
+            self._chime([-12, -8, -5, 0], t=0.15)  # Low major chord: "stopped"
         print(f"Wake word detection {'ON' if enabled else 'OFF'}")
         # Update status label if idle
         if self.state == "idle":
@@ -2305,6 +2341,9 @@ class VoiceThingWindow(QWidget):
     def _resume_wake_word_listener(self):
         """Resume wake word listener if enabled."""
         if self.wake_word_enabled and self.wake_word_stream is None:
+            # Reset model state to avoid false triggers from buffered audio
+            if self.wake_word_model is not None:
+                self.wake_word_model.reset()
             self._start_wake_word_listener()
 
     def _on_wake_word_detected(self):
@@ -2410,6 +2449,10 @@ class VoiceThingWindow(QWidget):
                     break
         if 'custom_words' in settings:
             self.custom_words = settings['custom_words']
+        if 'whisper_model' in settings:
+            self.current_model = settings['whisper_model']
+        if 'theme' in settings:
+            self._change_style(settings['theme'], save=False)
 
     def _save_settings(self):
         """Save settings to JSON file."""
@@ -2421,15 +2464,17 @@ class VoiceThingWindow(QWidget):
             'simple_mode': self.simple_mode,
             'pet_types': [pt.value for pt in self.current_pet_types],
             'custom_words': self.custom_words,
+            'whisper_model': self.current_model,
+            'theme': STYLE.name,
         }
         with open(SETTINGS_FILE, 'w') as f:
             json.dump(settings, f, indent=2)
 
     def _preview_style(self, style_name):
         """Preview a style temporarily (for hover preview in prefs dialog)."""
-        self._change_style(style_name)
+        self._change_style(style_name, save=False)
 
-    def _change_style(self, style_name):
+    def _change_style(self, style_name, save=True):
         """Change the UI style immediately."""
         global STYLE, ACCENT, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_MUTED, TEXT_ERROR, TEXT_LINK
         global BORDER_COLOR, BORDER_DARK, ICON_COLOR_DARK, ICON_COLOR_LIGHT, ICON_COLOR_MUTED
@@ -2455,6 +2500,8 @@ class VoiceThingWindow(QWidget):
 
         # Refresh all widgets
         self._refresh_styles()
+        if save:
+            self._save_settings()
 
     def _refresh_styles(self):
         """Refresh all widget styles after a style change."""
@@ -2501,6 +2548,7 @@ class VoiceThingWindow(QWidget):
             print(f"Loading model: {new_model}")
             rp.r._get_pywhispercpp_model(new_model)
             self.current_model = new_model
+            self._save_settings()
             print(f"Model {new_model} loaded")
 
             waiting_timer[0] = False
