@@ -111,8 +111,8 @@ WAVEFORM_DURATION_SECONDS = 10  # Duration of audio shown in waveform display
 #   barclay, bartolo, edna, hey_gerty, hey_alba, hey_anna, queen_of_lights, choo_choo_homie, etc.
 # Custom training: https://github.com/dscripka/openWakeWord/blob/main/notebooks/automatic_model_training.ipynb
 WAKE_WORD_MODEL = "computer"
-WAKE_WORD_START_THRESHOLD = 0.5  # Confidence threshold to start recording
-WAKE_WORD_STOP_THRESHOLD = 0.5  # Confidence threshold to stop recording
+WAKE_WORD_START_THRESHOLD = 0.25  # Confidence threshold to start recording (lower = more sensitive)
+WAKE_WORD_STOP_THRESHOLD = 0.25  # Confidence threshold to stop recording (lower = more sensitive)
 WAKE_WORD_BUFFER_SECONDS = 2  # Seconds of audio to capture before wake word
 WAKE_WORD_FRAME_SAMPLES = 1280  # 80ms chunks for OpenWakeWord (16kHz * 0.08)
 WAKE_WORD_COOLDOWN = 1.0  # Seconds to ignore wake word after triggering (avoids self-detection)
@@ -127,22 +127,22 @@ PRESS_ENTER_DELAY = 0.1  # Seconds to wait after paste before pressing Enter
 _COMMUNITY_WAKE_WORD_BASE = "https://raw.githubusercontent.com/RyannDaGreat/home-assistant-wakewords-collection/main/en"
 COMMUNITY_WAKE_WORDS = {
     "computer":        "computer/computer_v2.onnx",
-    "ok_computer":     "ok_computer/ok_computer_v2.onnx",
-    "glados":          "glados/glados_v2.onnx",
-    "hey_marvin":      "hey_Marvin/hey_marvin_v2.onnx",
+    "ok_computer":     "ok_computer/ok_computer.onnx",
+    "glados":          "glados/glados.onnx",
+    "hey_marvin":      "hey_Marvin/hey_Marvin.onnx",
     "hey_luna":        "Hey Luna/hey_luna.onnx",
-    "dumbledore":      "Dumbledore/dumbledore_v2.onnx",
-    "darth_vader":     "darth_vader/darth_vader_v2.onnx",
-    "tars":            "TARS/tars_v2.onnx",
-    "alfred":          "alfred/alfred_v2.onnx",
-    "hey_gerty":       "hey_GERTY/hey_gerty.onnx",
-    "jarvis":          "jarvis/jarvis_v2.onnx",
-    "ok_jarvis":       "ok_jarvis/ok_jarvis_v2.onnx",
-    "hey_friday":      "hey_friday/hey_friday_v2.onnx",
+    "dumbledore":      "Dumbledore/Dumbledore.onnx",
+    "darth_vader":     "darth_vader/Darth_Vader.onnx",
+    "tars":            "TARS/TARS.onnx",
+    "alfred":          "alfred/alfred.onnx",
+    "hey_gerty":       "hey_GERTY/hey_GERTY.onnx",
+    "jarvis":          "jarvis/jarvis_v1.onnx",
+    "ok_jarvis":       "ok_jarvis/ok_jarvis.onnx",
+    "hey_friday":      "hey_friday/hey_Friday!.onnx",
     "hal":             "hal/hal_v2.onnx",
-    "skynet":          "skynet/skynet_v2.onnx",
-    "terminator":      "terminator/terminator_v2.onnx",
-    "home_assistant":  "home_assistant/home_assistant_v2.onnx",
+    "skynet":          "skynet/Skynet.onnx",
+    "terminator":      "terminator/Terminator.onnx",
+    "home_assistant":  "home_assistant/Home_assistant.onnx",
 }
 
 def download_community_wake_word(name):
@@ -265,6 +265,28 @@ def get_btn_css():
 
 def get_menu_css():
     return STYLE.menu_css()
+
+def get_combobox_css():
+    """Get ComboBox CSS - white bg, black text, inverted on hover."""
+    return """
+        QComboBox { background: white; color: black; border: 1px solid #888; padding: 4px 8px; }
+        QComboBox::drop-down { border: none; width: 20px; }
+        QComboBox::down-arrow { border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 6px solid black; }
+        QComboBox QAbstractItemView { background: white; color: black; }
+        QComboBox QAbstractItemView::item:hover { background: black; color: white; }
+    """
+
+def get_slider_css():
+    """Get slider CSS for preference dialogs."""
+    return f"""
+        QSlider::groove:horizontal {{ background: rgba(60,60,60,0.9); height: 6px; border-radius: 3px; }}
+        QSlider::handle:horizontal {{ background: {CYAN_CSS}; width: 14px; margin: -4px 0; border-radius: 7px; }}
+        QSlider::sub-page:horizontal {{ background: {CYAN_CSS}; border-radius: 3px; }}
+    """
+
+def get_pref_label_css():
+    """Get label CSS for preference dialogs."""
+    return f"color: {TEXT_PRIMARY}; font-size: 12px;"
 
 def get_tab_css():
     return STYLE.button_css()  # Tab buttons use same style
@@ -571,71 +593,26 @@ class ModelDialog(DraggableDialog):
             super().keyPressEvent(e)
 
 
-class WakeWordDialog(DraggableDialog):
-    """Dialog to select wake word model."""
-
-    def __init__(self, current_wake_word, parent=None):
-        super().__init__(parent)
-        self.selected_wake_word = None
-
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(15, 15, 15, 15)
-        layout.setSpacing(8)
-
-        layout.addWidget(make_title("Select Wake Word"))
-
-        wake_words = list(COMMUNITY_WAKE_WORDS.keys())
-        for i, ww in enumerate(wake_words):
-            display = ww.replace("_", " ").title()
-            key = str(i + 1) if i < 9 else ""
-            btn = QPushButton(f"{key}  {display}" if key else f"    {display}")
-            btn.setStyleSheet(get_btn_css())
-            if ww == current_wake_word:
-                btn.setStyleSheet(get_btn_css() + f"QPushButton {{ border: 2px solid {CYAN_CSS}; }}")
-            btn.clicked.connect(lambda checked, w=ww: self._select(w))
-            layout.addWidget(btn)
-
-        layout.addWidget(make_close_btn("Esc  Cancel", self.reject))
-        self.setFixedWidth(250)
-
-    def _select(self, wake_word):
-        self.selected_wake_word = wake_word
-        self.accept()
-
-    def keyPressEvent(self, e):
-        key = e.key()
-        wake_words = list(COMMUNITY_WAKE_WORDS.keys())
-        if Qt.Key.Key_1 <= key <= Qt.Key.Key_9:
-            idx = key - Qt.Key.Key_1
-            if idx < len(wake_words):
-                self._select(wake_words[idx])
-        elif key == Qt.Key.Key_Escape:
-            self.reject()
-        else:
-            super().keyPressEvent(e)
-
-
 class PrefsDialog(DraggableDialog):
     """Preferences dialog with theme, wake word settings, and pet selection."""
 
     style_changed = pyqtSignal(str)  # Emits style name when changed
     pets_changed = pyqtSignal(list)  # Emits list of PetType when changed
     simple_mode_changed = pyqtSignal(bool)  # Emits when simple mode toggled
-    style_preview = pyqtSignal(str)  # Emits style name for live preview on hover
 
     def __init__(self, current_style, current_pet_types, simple_mode=False, parent=None,
-                 wake_word=None, wake_word_cooldown=None, auto_enter=None, enter_delay=None):
+                 wake_word=None, wake_word_cooldown=None, wake_word_sensitivity=None,
+                 auto_enter=None, enter_delay=None):
         super().__init__(parent)
-        self.selected_style = None
+        self.selected_style = current_style
         self.selected_pets = list(current_pet_types) if current_pet_types else []
         self.pet_checkboxes = {}
         self.simple_mode = simple_mode
-        self._original_style = current_style
         self._style_buttons = {}  # Map button -> style_name
-        self._current_preview = current_style  # Track current preview to avoid redundant updates
         # Wake word settings
         self.selected_wake_word = wake_word or WAKE_WORD_MODEL
         self.wake_word_cooldown = wake_word_cooldown if wake_word_cooldown is not None else WAKE_WORD_COOLDOWN
+        self.wake_word_sensitivity = wake_word_sensitivity if wake_word_sensitivity is not None else WAKE_WORD_START_THRESHOLD
         self.auto_enter = auto_enter if auto_enter is not None else PRESS_ENTER_AFTER_PASTE
         self.enter_delay = enter_delay if enter_delay is not None else PRESS_ENTER_DELAY
 
@@ -662,9 +639,7 @@ class PrefsDialog(DraggableDialog):
             btn.setStyleSheet(base_css)
             if style_name == current_style:
                 btn.setStyleSheet(base_css + f"QPushButton {{ border: 2px solid {CYAN_CSS}; }}")
-            btn.clicked.connect(lambda checked, s=style_name: self._select_style(s))
-            # Install event filter for hover preview
-            btn.installEventFilter(self)
+            btn.clicked.connect(lambda checked, s=style_name, b=btn: self._select_style(s, b))
             self._style_buttons[btn] = style_name
             theme_layout.addWidget(btn)
         layout.addWidget(theme_container)
@@ -676,22 +651,14 @@ class PrefsDialog(DraggableDialog):
         ww_row = QHBoxLayout()
         ww_row.setSpacing(8)
         ww_label = QLabel("Model:")
-        ww_label.setStyleSheet(f"color: {TEXT_PRIMARY}; font-size: 12px;")
+        ww_label.setStyleSheet(get_pref_label_css())
+        ww_label.setToolTip("The phrase to say to activate voice recording")
         ww_row.addWidget(ww_label)
         self.wake_word_combo = QComboBox()
-        self.wake_word_combo.setStyleSheet(f"""
-            QComboBox {{ background: rgba(60,60,60,0.9); color: {TEXT_PRIMARY}; border: 1px solid rgba(255,255,255,0.2);
-                        border-radius: 4px; padding: 4px 8px; font-size: 12px; }}
-            QComboBox::drop-down {{ border: none; width: 20px; }}
-            QComboBox::down-arrow {{ image: none; border-left: 4px solid transparent; border-right: 4px solid transparent;
-                                     border-top: 6px solid {TEXT_PRIMARY}; }}
-            QComboBox QAbstractItemView {{ background: rgba(50,50,50,0.95); color: {TEXT_PRIMARY};
-                                           selection-background-color: {CYAN_CSS}; }}
-        """)
+        self.wake_word_combo.setStyleSheet(get_combobox_css())
         wake_word_options = list(COMMUNITY_WAKE_WORDS.keys())
         for ww in wake_word_options:
             self.wake_word_combo.addItem(ww.replace("_", " ").title(), ww)
-        # Set current selection
         idx = wake_word_options.index(self.selected_wake_word) if self.selected_wake_word in wake_word_options else 0
         self.wake_word_combo.setCurrentIndex(idx)
         self.wake_word_combo.currentIndexChanged.connect(self._on_wake_word_changed)
@@ -702,30 +669,47 @@ class PrefsDialog(DraggableDialog):
         cooldown_row = QHBoxLayout()
         cooldown_row.setSpacing(8)
         cooldown_label = QLabel("Cooldown:")
-        cooldown_label.setStyleSheet(f"color: {TEXT_PRIMARY}; font-size: 12px;")
-        cooldown_label.setToolTip("Seconds to wait after wake word before detecting again")
+        cooldown_label.setStyleSheet(get_pref_label_css())
+        cooldown_label.setToolTip("Seconds to wait after wake word triggers before it can trigger again.\nPrevents the wake word from re-triggering while you're still speaking.")
         cooldown_row.addWidget(cooldown_label)
         self.cooldown_slider = QSlider(Qt.Orientation.Horizontal)
         self.cooldown_slider.setRange(5, 50)  # 0.5s to 5.0s in 0.1s steps
         self.cooldown_slider.setValue(int(self.wake_word_cooldown * 10))
-        self.cooldown_slider.setStyleSheet(f"""
-            QSlider::groove:horizontal {{ background: rgba(60,60,60,0.9); height: 6px; border-radius: 3px; }}
-            QSlider::handle:horizontal {{ background: {CYAN_CSS}; width: 14px; margin: -4px 0; border-radius: 7px; }}
-            QSlider::sub-page:horizontal {{ background: {CYAN_CSS}; border-radius: 3px; }}
-        """)
+        self.cooldown_slider.setStyleSheet(get_slider_css())
         self.cooldown_slider.valueChanged.connect(self._on_cooldown_changed)
         cooldown_row.addWidget(self.cooldown_slider, 1)
         self.cooldown_value = QLabel(f"{self.wake_word_cooldown:.1f}s")
-        self.cooldown_value.setStyleSheet(f"color: {TEXT_PRIMARY}; font-size: 12px; min-width: 35px;")
+        self.cooldown_value.setStyleSheet(get_pref_label_css() + " min-width: 35px;")
         cooldown_row.addWidget(self.cooldown_value)
         layout.addLayout(cooldown_row)
+
+        # Sensitivity slider (0.1 to 0.9, lower = more sensitive)
+        sens_row = QHBoxLayout()
+        sens_row.setSpacing(8)
+        sens_label = QLabel("Sensitivity:")
+        sens_label.setStyleSheet(get_pref_label_css())
+        sens_label.setToolTip("How easily the wake word triggers.\nLower threshold = more sensitive (may false trigger).\nHigher threshold = less sensitive (may miss words).")
+        sens_row.addWidget(sens_label)
+        self.sens_slider = QSlider(Qt.Orientation.Horizontal)
+        self.sens_slider.setRange(5, 90)  # 0.05 to 0.90 in 0.05 steps
+        self.sens_slider.setValue(int(self.wake_word_sensitivity * 100))
+        self.sens_slider.setStyleSheet(get_slider_css())
+        self.sens_slider.valueChanged.connect(self._on_sensitivity_changed)
+        sens_row.addWidget(self.sens_slider, 1)
+        self.sens_value = QLabel(f"{self.wake_word_sensitivity:.2f}")
+        self.sens_value.setStyleSheet(get_pref_label_css() + " min-width: 35px;")
+        sens_row.addWidget(self.sens_value)
+        layout.addLayout(sens_row)
+
+        # Paste Behavior section (separate from wake word)
+        layout.addWidget(make_section("Paste Behavior"))
 
         # Auto-enter toggle
         enter_row = QHBoxLayout()
         enter_row.setSpacing(8)
         enter_label = QLabel("Auto-Enter:")
-        enter_label.setStyleSheet(f"color: {TEXT_PRIMARY}; font-size: 12px;")
-        enter_label.setToolTip("Press Enter after pasting transcription (for hands-free Claude Code)")
+        enter_label.setStyleSheet(get_pref_label_css())
+        enter_label.setToolTip("After pasting transcription, automatically press Enter.\nUseful for hands-free Claude Code interaction.")
         enter_row.addWidget(enter_label)
         self.enter_checkbox = QCheckBox("Press Enter after paste")
         self.enter_checkbox.setChecked(self.auto_enter)
@@ -738,21 +722,17 @@ class PrefsDialog(DraggableDialog):
         delay_row = QHBoxLayout()
         delay_row.setSpacing(8)
         delay_label = QLabel("Enter Delay:")
-        delay_label.setStyleSheet(f"color: {TEXT_PRIMARY}; font-size: 12px;")
-        delay_label.setToolTip("Seconds to wait after paste before pressing Enter")
+        delay_label.setStyleSheet(get_pref_label_css())
+        delay_label.setToolTip("Seconds to wait after pasting before pressing Enter.\nAllows time for the paste to complete.")
         delay_row.addWidget(delay_label)
         self.delay_slider = QSlider(Qt.Orientation.Horizontal)
         self.delay_slider.setRange(1, 20)  # 0.1s to 2.0s in 0.1s steps
         self.delay_slider.setValue(int(self.enter_delay * 10))
-        self.delay_slider.setStyleSheet(f"""
-            QSlider::groove:horizontal {{ background: rgba(60,60,60,0.9); height: 6px; border-radius: 3px; }}
-            QSlider::handle:horizontal {{ background: {CYAN_CSS}; width: 14px; margin: -4px 0; border-radius: 7px; }}
-            QSlider::sub-page:horizontal {{ background: {CYAN_CSS}; border-radius: 3px; }}
-        """)
+        self.delay_slider.setStyleSheet(get_slider_css())
         self.delay_slider.valueChanged.connect(self._on_delay_changed)
         delay_row.addWidget(self.delay_slider, 1)
         self.delay_value = QLabel(f"{self.enter_delay:.1f}s")
-        self.delay_value.setStyleSheet(f"color: {TEXT_PRIMARY}; font-size: 12px; min-width: 35px;")
+        self.delay_value.setStyleSheet(get_pref_label_css() + " min-width: 35px;")
         delay_row.addWidget(self.delay_value)
         layout.addLayout(delay_row)
 
@@ -795,9 +775,11 @@ class PrefsDialog(DraggableDialog):
         layout.addWidget(make_close_btn("Esc  Close", self.accept))
         self.setFixedWidth(max(250, 48 * len(ALL_PET_TYPES)))
 
-    def _select_style(self, style_name):
+    def _select_style(self, style_name, clicked_btn):
+        """Select a style and apply it immediately, then close dialog."""
         self.selected_style = style_name
-        self.accept()
+        self.style_changed.emit(style_name)
+        self.accept()  # Close dialog - avoids partial redraw issues
 
     def _toggle_pet(self, pet_type, state):
         if state == Qt.CheckState.Checked.value:
@@ -814,27 +796,16 @@ class PrefsDialog(DraggableDialog):
         self.wake_word_cooldown = value / 10.0
         self.cooldown_value.setText(f"{self.wake_word_cooldown:.1f}s")
 
+    def _on_sensitivity_changed(self, value):
+        self.wake_word_sensitivity = value / 100.0
+        self.sens_value.setText(f"{self.wake_word_sensitivity:.2f}")
+
     def _on_enter_changed(self, state):
         self.auto_enter = state == Qt.CheckState.Checked.value
 
     def _on_delay_changed(self, value):
         self.enter_delay = value / 10.0
         self.delay_value.setText(f"{self.enter_delay:.1f}s")
-
-    def eventFilter(self, obj, event):
-        """Handle hover events on style buttons for live preview."""
-        if obj in self._style_buttons:
-            if event.type() == QEvent.Type.Enter:
-                style_name = self._style_buttons[obj]
-                if style_name != self._current_preview:
-                    self._current_preview = style_name
-                    self.style_preview.emit(style_name)
-            elif event.type() == QEvent.Type.Leave:
-                # Restore original style on hover leave
-                if self._original_style != self._current_preview:
-                    self._current_preview = self._original_style
-                    self.style_preview.emit(self._original_style)
-        return super().eventFilter(obj, event)
 
     def keyPressEvent(self, e):
         key = e.key()
@@ -843,7 +814,7 @@ class PrefsDialog(DraggableDialog):
         if Qt.Key.Key_1 <= key <= Qt.Key.Key_9:
             idx = key - Qt.Key.Key_1
             if idx < len(style_keys):
-                self._select_style(style_keys[idx])
+                self._select_style(style_keys[idx], None)
         elif key == Qt.Key.Key_Escape:
             self.accept()
         else:
@@ -1752,6 +1723,7 @@ class VoiceThingWindow(QWidget):
         self.current_wake_word = WAKE_WORD_MODEL  # Current wake word model name
         self.auto_enter = PRESS_ENTER_AFTER_PASTE  # Whether to press Enter after pasting
         self.wake_word_cooldown = WAKE_WORD_COOLDOWN  # Cooldown between wake word triggers
+        self.wake_word_sensitivity = WAKE_WORD_START_THRESHOLD  # Detection threshold (lower = more sensitive)
         self.enter_delay = PRESS_ENTER_DELAY  # Delay before pressing Enter
 
         self.setWindowTitle(APP_NAME)
@@ -1872,9 +1844,6 @@ class VoiceThingWindow(QWidget):
         self.wake_word_btn.setToolTip(f"Toggle wake word (say '{WAKE_WORD_MODEL}')")
         self.wake_word_btn.setCheckable(True)
         self.wake_word_btn.setEnabled(True)
-        self.wake_word_model_btn = make_btn("K", "ear", self.show_wake_word_dialog)
-        self.wake_word_model_btn.setToolTip("Change wake word model")
-        self.wake_word_model_btn.setEnabled(True)
         self.enter_btn = make_btn("N", "enter", self.toggle_auto_enter)
         self.enter_btn.setToolTip("Toggle auto-enter after paste")
         self.enter_btn.setCheckable(True)
@@ -1900,9 +1869,9 @@ class VoiceThingWindow(QWidget):
             Qt.Key.Key_C: self.copy_btn, Qt.Key.Key_L: self.load_btn,
             Qt.Key.Key_F: self.folder_btn, Qt.Key.Key_S: self.sound_btn,
             Qt.Key.Key_V: self.eye_btn, Qt.Key.Key_R: self.llm_btn,
-            Qt.Key.Key_J: self.wake_word_btn, Qt.Key.Key_K: self.wake_word_model_btn,
-            Qt.Key.Key_N: self.enter_btn, Qt.Key.Key_M: self.model_btn,
-            Qt.Key.Key_P: self.prefs_btn, Qt.Key.Key_Question: self.help_btn,
+            Qt.Key.Key_J: self.wake_word_btn, Qt.Key.Key_N: self.enter_btn,
+            Qt.Key.Key_M: self.model_btn, Qt.Key.Key_P: self.prefs_btn,
+            Qt.Key.Key_Question: self.help_btn,
         }
 
         self.waveform = WaveformWidget()
@@ -2227,8 +2196,6 @@ class VoiceThingWindow(QWidget):
             self.toggle_llm()
         elif no_mods and key == Qt.Key.Key_J:
             self.toggle_wake_word()
-        elif no_mods and key == Qt.Key.Key_K:
-            self.show_wake_word_dialog()
         elif no_mods and key == Qt.Key.Key_N:
             self.toggle_auto_enter()
         elif no_mods and key == Qt.Key.Key_E:
@@ -2294,7 +2261,7 @@ class VoiceThingWindow(QWidget):
         # Advanced buttons: hidden in simple mode OR minimal mode
         essential = {self.record_btn, self.cancel_btn, self.simple_btn, self.prefs_btn, self.help_btn}
         advanced = [self.retranscribe_btn, self.eye_btn, self.llm_btn, self.wake_word_btn,
-                   self.wake_word_model_btn, self.enter_btn, self.model_btn, self.folder_btn,
+                   self.enter_btn, self.model_btn, self.folder_btn,
                    self.sound_btn, self.copy_btn, self.load_btn]
 
         for btn in essential:
@@ -2358,7 +2325,7 @@ class VoiceThingWindow(QWidget):
                 (self.retranscribe_btn, "Z"), (self.simple_btn, "W"),
                 (self.copy_btn, "C"), (self.load_btn, "L"), (self.folder_btn, "F"),
                 (self.sound_btn, "S"), (self.eye_btn, "V"), (self.llm_btn, "R"),
-                (self.wake_word_btn, "J"), (self.wake_word_model_btn, "K"), (self.enter_btn, "N"),
+                (self.wake_word_btn, "J"), (self.enter_btn, "N"),
                 (self.model_btn, "M"), (self.prefs_btn, "P"), (self.help_btn, "?"),
             ]
         for btn, label in labels:
@@ -2527,8 +2494,7 @@ class VoiceThingWindow(QWidget):
             # Check for wake word
             prediction = self.wake_word_model.predict(audio)
             for model_name, score in prediction.items():
-                threshold = WAKE_WORD_STOP_THRESHOLD if self.state == "recording" else WAKE_WORD_START_THRESHOLD
-                if score > threshold:
+                if score > self.wake_word_sensitivity:
                     # Check cooldown to avoid self-triggering
                     now = time.time()
                     if now - self.wake_word_last_trigger < self.wake_word_cooldown:
@@ -2621,28 +2587,20 @@ class VoiceThingWindow(QWidget):
         if dialog.exec() and dialog.selected_model and dialog.selected_model != self.current_model:
             self._change_model(dialog.selected_model)
 
-    def show_wake_word_dialog(self):
-        """Show dialog to select wake word model."""
-        dialog = WakeWordDialog(self.current_wake_word, self)
-        dialog.center_on_parent()
-        if dialog.exec() and dialog.selected_wake_word and dialog.selected_wake_word != self.current_wake_word:
-            self._change_wake_word(dialog.selected_wake_word)
-
     def show_prefs(self):
         """Show preferences dialog."""
         dialog = PrefsDialog(
             STYLE.name, self.current_pet_types, self.simple_mode, self,
             wake_word=self.current_wake_word,
             wake_word_cooldown=self.wake_word_cooldown,
+            wake_word_sensitivity=self.wake_word_sensitivity,
             auto_enter=self.auto_enter,
             enter_delay=self.enter_delay,
         )
         dialog.simple_mode_changed.connect(self._set_simple_mode)
-        dialog.style_preview.connect(self._preview_style)
+        dialog.style_changed.connect(self._change_style)
         dialog.center_on_parent()
         if dialog.exec():
-            if dialog.selected_style and dialog.selected_style != STYLE.name:
-                self._change_style(dialog.selected_style)
             if dialog.selected_pets != self.current_pet_types:
                 self._change_pets(dialog.selected_pets)
             # Update wake word settings
@@ -2650,6 +2608,9 @@ class VoiceThingWindow(QWidget):
                 self._change_wake_word(dialog.selected_wake_word)
             if dialog.wake_word_cooldown != self.wake_word_cooldown:
                 self.wake_word_cooldown = dialog.wake_word_cooldown
+                self._save_settings()
+            if dialog.wake_word_sensitivity != self.wake_word_sensitivity:
+                self.wake_word_sensitivity = dialog.wake_word_sensitivity
                 self._save_settings()
             if dialog.auto_enter != self.auto_enter:
                 self._set_auto_enter(dialog.auto_enter)
@@ -2727,6 +2688,8 @@ class VoiceThingWindow(QWidget):
             self.wake_word_btn.setToolTip(f"Toggle wake word (say '{self.current_wake_word}')")
         if 'wake_word_cooldown' in settings:
             self.wake_word_cooldown = settings['wake_word_cooldown']
+        if 'wake_word_sensitivity' in settings:
+            self.wake_word_sensitivity = settings['wake_word_sensitivity']
         if 'auto_enter' in settings:
             self._set_auto_enter(settings['auto_enter'], save=False)
         if 'enter_delay' in settings:
@@ -2747,15 +2710,12 @@ class VoiceThingWindow(QWidget):
             # Wake word settings
             'wake_word_model': self.current_wake_word,
             'wake_word_cooldown': self.wake_word_cooldown,
+            'wake_word_sensitivity': self.wake_word_sensitivity,
             'auto_enter': self.auto_enter,
             'enter_delay': self.enter_delay,
         }
         with open(SETTINGS_FILE, 'w') as f:
             json.dump(settings, f, indent=2)
-
-    def _preview_style(self, style_name):
-        """Preview a style temporarily (for hover preview in prefs dialog)."""
-        self._change_style(style_name, save=False)
 
     def _change_style(self, style_name, save=True):
         """Change the UI style immediately."""
@@ -2792,7 +2752,7 @@ class VoiceThingWindow(QWidget):
         # Refresh all buttons
         for btn in [self.record_btn, self.cancel_btn, self.retranscribe_btn, self.simple_btn,
                     self.copy_btn, self.load_btn, self.folder_btn, self.sound_btn,
-                    self.eye_btn, self.llm_btn, self.wake_word_btn, self.wake_word_model_btn,
+                    self.eye_btn, self.llm_btn, self.wake_word_btn,
                     self.enter_btn, self.model_btn, self.prefs_btn, self.help_btn]:
             btn.setStyleSheet(btn_css)
         # Refresh tab buttons
