@@ -272,7 +272,7 @@ ACTIONS = [
     ("retranscribe", "Z", "retranscribe", "Retranscribe latest with current model", None),
     ("copy", "C", "copy", "Copy last transcription", "Copy Last Transcription"),
     ("load", "L", "disc", "Load audio file", "Load Audio File..."),
-    ("folder", "F", "folder", "Open recordings folder", "Open Recordings Folder"),
+    ("folder", "F", "folder-open", "Open recordings folder", "Open Recordings Folder"),
     ("sound", "S", "volume", "Toggle sound effects", None),
     ("auto_hide", "V", "eye", "Toggle auto-minimize", None),
     ("llm", "R", "robot", "Toggle LLM post-processing", None),
@@ -1529,6 +1529,7 @@ class VoiceThingWindow(QWidget):
     update_transcription_signal = pyqtSignal(int, str, str)  # (index, raw_text, processed_text)
     permission_error_signal = pyqtSignal()
     wake_word_signal = pyqtSignal(object)  # pre_buffer numpy array
+    finish_signal = pyqtSignal()  # Signal to call _finish on main thread
 
     def __init__(self):
         super().__init__()
@@ -1654,7 +1655,7 @@ class VoiceThingWindow(QWidget):
         self.load_btn = make_btn("L", "disc", self.load_audio_file)
         self.load_btn.setToolTip("Load audio file to transcribe")
         self.load_btn.setEnabled(True)
-        self.folder_btn = make_btn("F", "folder", self.open_folder)
+        self.folder_btn = make_btn("F", "folder-open", self.open_folder)
         self.folder_btn.setToolTip("Open recordings folder")
         self.sound_btn = make_btn("S", "volume", self.toggle_sound)
         self.sound_btn.setToolTip("Toggle sound effects")
@@ -1756,6 +1757,7 @@ class VoiceThingWindow(QWidget):
         self.update_transcription_signal.connect(self._update_transcription)
         self.permission_error_signal.connect(self._on_permission_error)
         self.wake_word_signal.connect(lambda buf: self.start_recording(pre_buffer=buf))
+        self.finish_signal.connect(self._finish)
 
         self.update_timer = QTimer()
         self.update_timer.timeout.connect(self._update_display)
@@ -2568,7 +2570,7 @@ class VoiceThingWindow(QWidget):
             print(f"Transcription error: {e}")
             raise
         finally:
-            self._finish()
+            self.finish_signal.emit()
 
     def start_recording(self, pre_buffer=None):
         """Start recording audio. Optional pre_buffer is prepended to recording."""
@@ -2686,7 +2688,7 @@ class VoiceThingWindow(QWidget):
             print(f"Transcription error: {e}")
             raise
         finally:
-            self._finish()
+            self.finish_signal.emit()
 
     def _finish(self):
         self._cleanup()
