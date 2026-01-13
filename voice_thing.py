@@ -96,30 +96,14 @@ RECORDINGS_DIR        = os.path.join(tempfile.gettempdir(), APP_NAME)
 SAMPLE_RATE = 16000
 BLOCKSIZE = 256
 
-# Whisper settings
-WHISPER_MODEL = "medium"  # Default model (overridden by settings.json if saved)
-
 # UI settings
 TRAY_ICON_SIZE = 44  # Menu bar icon size (2x for retina)
 WAVEFORM_DURATION_SECONDS = 10  # Duration of audio shown in waveform display
 
-# Wake word detection settings
-# Training uses 100% synthetic TTS data - no real recordings needed! <1hr on free Colab GPU.
-# Official models: "hey_jarvis_v0.1", "alexa_v0.1", "hey_mycroft_v0.1", "hey_rhasspy_v0.1", "ok_nabu_v0.1"
-# Community models (https://github.com/fwartner/home-assistant-wakewords-collection):
-#   computer, glados, hey_marvin, hey_luna, dumbledore, darth_vader, tars, alfred, andromeda,
-#   barclay, bartolo, edna, hey_gerty, hey_alba, hey_anna, queen_of_lights, choo_choo_homie, etc.
-# Custom training: https://github.com/dscripka/openWakeWord/blob/main/notebooks/automatic_model_training.ipynb
-WAKE_WORD_MODEL = "computer"
-WAKE_WORD_START_THRESHOLD = 0.25  # Confidence threshold to start recording (lower = more sensitive)
-WAKE_WORD_STOP_THRESHOLD = 0.25  # Confidence threshold to stop recording (lower = more sensitive)
+# Wake word detection constants
 WAKE_WORD_BUFFER_SECONDS = 2  # Seconds of audio to capture before wake word
 WAKE_WORD_FRAME_SAMPLES = 1280  # 80ms chunks for OpenWakeWord (16kHz * 0.08)
-WAKE_WORD_COOLDOWN = 2.0  # Seconds to ignore wake word after triggering (avoids self-detection)
-
-# Auto-submit settings (for hands-free Claude Code usage)
-PRESS_ENTER_AFTER_PASTE = True  # Press Enter after pasting transcription
-PRESS_ENTER_DELAY = 0.1  # Seconds to wait after paste before pressing Enter
+WAKE_WORD_COOLDOWN = 2.0  # Seconds to ignore wake word after triggering
 
 # Community wake word models - download with download_community_wake_word()
 # From home-assistant-wakewords-collection (cloned): https://github.com/RyannDaGreat/home-assistant-wakewords-collection
@@ -165,6 +149,42 @@ def download_community_wake_word(name):
     url = f"{_COMMUNITY_WAKE_WORD_BASE}/{COMMUNITY_WAKE_WORDS[name]}"
     os.makedirs(WAKE_WORD_CACHE_DIR, exist_ok=True)
     return rp.download_url(url, WAKE_WORD_CACHE_DIR, skip_existing=True, show_progress=True)
+
+# =============================================================================
+# SETTINGS - use S.ENTER_DELAY to read, S.set('ENTER_DELAY', val) to write
+# =============================================================================
+class Settings(dict):
+    """Settings dict with attribute access and hooks. Use S.set() to trigger hooks."""
+    hooks = {}  # name -> callback(new_value)
+    def __getattr__(self, k): return self[k] if k in self else object.__getattribute__(self, k)
+    def __setattr__(self, k, v): self[k] = v if k in self or k[0].isupper() else object.__setattr__(self, k, v)
+    def set(self, name, value):
+        """Set a value and trigger its hook if registered."""
+        self[name] = value
+        if name in self.hooks:
+            self.hooks[name](value)
+    def restore(self, snapshot):
+        """Restore from snapshot, triggering hooks only for changed values."""
+        for k, v in snapshot.items():
+            if self.get(k) != v:
+                self.set(k, v)
+
+S = Settings(
+    ENTER_DELAY=0.1,
+    WAKE_WORD_SENSITIVITY=0.25,
+    CUSTOM_WORDS=[],
+    AUTO_HIDE=False,
+    SOUND_ENABLED=True,
+    LLM_ENABLED=False,
+    AUTO_ENTER=True,
+    WAKE_WORD_ENABLED=False,
+    SIMPLE_MODE=False,
+    PET_TYPES=[],
+    WHISPER_MODEL='medium',
+    THEME='macos_2005',
+    WAKE_WORD_MODEL='computer',
+)
+# =============================================================================
 
 # Import style system - all UI styling comes from here
 import sys, os
@@ -416,8 +436,8 @@ WHISPER_MODELS = [
     ("B", "base", "Fast, basic accuracy (~1GB VRAM)"),
     ("S", "small", "Balanced speed/accuracy (~2GB VRAM)"),
     ("M", "medium", "Good accuracy, slower (~5GB VRAM)"),
-    ("L", "large", "High accuracy (~10GB VRAM)"),
-    ("3", "large-v3", "Best accuracy, slowest (~10GB VRAM)"),
+    ("L", "large-v3", "Best accuracy, slowest (~10GB VRAM)"),
+    ("3", "large-v3-turbo", "Best accuracy + speed (~10GB VRAM)"),
 ]
 
 # Action definitions: (id, key, icon_name, description, menu_text or None)
@@ -585,7 +605,7 @@ class HelpDialog(DraggableDialog):
             "• Access from menu bar (top right of Mac)\n"
             "• Drag & drop audio files to transcribe\n"
             "• ⌘Q to quit\n\n"
-            f"Wake word (J): Say \"{WAKE_WORD_MODEL}\" to start recording hands-free! "
+            f"Wake word (J): Say \"{S.WAKE_WORD_MODEL}\" to start recording hands-free! "
             "The app captures 2 seconds before you say the wake word so you don't lose any words.\n\n"
             "100% keyboard-driven - no mouse needed! (hover buttons to see shortcuts)\n\n"
             "Small mode (E or green button): Compact view with just status and timer - "
@@ -697,7 +717,7 @@ class ModelDialog(DraggableDialog):
     def keyPressEvent(self, e):
         key = e.key()
         key_map = {Qt.Key.Key_T: "tiny", Qt.Key.Key_B: "base", Qt.Key.Key_S: "small",
-                   Qt.Key.Key_M: "medium", Qt.Key.Key_L: "large", Qt.Key.Key_3: "large-v3"}
+                   Qt.Key.Key_M: "medium", Qt.Key.Key_L: "large-v3", Qt.Key.Key_3: "large-v3-turbo"}
         if key in key_map:
             self._select(key_map[key])
         elif key == Qt.Key.Key_Escape:
@@ -719,30 +739,24 @@ class PrefsDialog(DraggableDialog):
     wake_word_changed = pyqtSignal(str)  # Emits wake word model name
     sensitivity_changed = pyqtSignal(float)  # Emits sensitivity threshold
     auto_enter_changed = pyqtSignal(bool)  # Emits auto enter flag
-    enter_delay_changed = pyqtSignal(float)  # Emits enter delay seconds
 
     def __init__(self, current_style, current_pet_types, simple_mode=False, parent=None,
                  wake_word=None, wake_word_sensitivity=None,
-                 auto_enter=None, enter_delay=None):
+                 auto_enter=None):
         super().__init__(parent)
         # Store ORIGINAL values for Cancel revert
         self.original_style = current_style
         self.original_pets = list(current_pet_types) if current_pet_types else []
-        self.original_wake_word = wake_word or WAKE_WORD_MODEL
-        self.original_sensitivity = wake_word_sensitivity if wake_word_sensitivity is not None else WAKE_WORD_START_THRESHOLD
-        self.original_auto_enter = auto_enter if auto_enter is not None else PRESS_ENTER_AFTER_PASTE
-        self.original_enter_delay = enter_delay if enter_delay is not None else PRESS_ENTER_DELAY
+        self.original_wake_word = wake_word or S.WAKE_WORD_MODEL
+        self.original_sensitivity = wake_word_sensitivity if wake_word_sensitivity is not None else S.WAKE_WORD_SENSITIVITY
+        self.original_auto_enter = auto_enter if auto_enter is not None else S.AUTO_ENTER
 
         # Current values (start same as original)
         self.selected_style = current_style
         self.selected_pets = list(self.original_pets)
         self.pet_checkboxes = {}
-        self.simple_mode = simple_mode
         self._style_buttons = {}  # Map button -> style_name
         self.selected_wake_word = self.original_wake_word
-        self.wake_word_sensitivity = self.original_sensitivity
-        self.auto_enter = self.original_auto_enter
-        self.enter_delay = self.original_enter_delay
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(15, 15, 15, 15)
@@ -804,11 +818,11 @@ class PrefsDialog(DraggableDialog):
         sens_row.addWidget(sens_label)
         self.sens_slider = QSlider(Qt.Orientation.Horizontal)
         self.sens_slider.setRange(1, 100)  # 0.01 to 1.00 (no zero - would trigger constantly)
-        self.sens_slider.setValue(int(self.wake_word_sensitivity * 100))
+        self.sens_slider.setValue(int(S.WAKE_WORD_SENSITIVITY * 100))
         self.sens_slider.setStyleSheet(get_slider_css())
         self.sens_slider.valueChanged.connect(self._on_sensitivity_changed)
         sens_row.addWidget(self.sens_slider, 1)
-        self.sens_value = QLabel(f"{self.wake_word_sensitivity:.2f}")
+        self.sens_value = QLabel(f"{S.WAKE_WORD_SENSITIVITY:.2f}")
         self.sens_value.setStyleSheet(get_pref_label_css() + " min-width: 35px;")
         sens_row.addWidget(self.sens_value)
         layout.addLayout(sens_row)
@@ -824,7 +838,7 @@ class PrefsDialog(DraggableDialog):
         enter_label.setToolTip("After pasting transcription, automatically press Enter.\nUseful for hands-free Claude Code interaction.")
         enter_row.addWidget(enter_label)
         self.enter_checkbox = QCheckBox("Press Enter after paste")
-        self.enter_checkbox.setChecked(self.auto_enter)
+        self.enter_checkbox.setChecked(S.AUTO_ENTER)
         self.enter_checkbox.setStyleSheet(f"QCheckBox {{ color: {TEXT_PRIMARY}; font-size: 12px; }}")
         self.enter_checkbox.stateChanged.connect(self._on_enter_changed)
         enter_row.addWidget(self.enter_checkbox, 1)
@@ -842,11 +856,11 @@ class PrefsDialog(DraggableDialog):
         delay_row.addWidget(delay_label)
         self.delay_slider = QSlider(Qt.Orientation.Horizontal)
         self.delay_slider.setRange(0, 20)  # 0.0s to 2.0s in 0.1s steps
-        self.delay_slider.setValue(int(self.enter_delay * 10))
+        self.delay_slider.setValue(int(S.ENTER_DELAY * 10))
         self.delay_slider.setStyleSheet(get_slider_css())
         self.delay_slider.valueChanged.connect(self._on_delay_changed)
         delay_row.addWidget(self.delay_slider, 1)
-        self.delay_value = QLabel(f"{self.enter_delay:.1f}s")
+        self.delay_value = QLabel(f"{S.ENTER_DELAY:.1f}s")
         self.delay_value.setStyleSheet(get_pref_label_css() + " min-width: 35px;")
         delay_row.addWidget(self.delay_value)
         layout.addLayout(delay_row)
@@ -921,18 +935,17 @@ class PrefsDialog(DraggableDialog):
         self.wake_word_changed.emit(self.selected_wake_word)  # Apply immediately
 
     def _on_sensitivity_changed(self, value):
-        self.wake_word_sensitivity = value / 100.0
-        self.sens_value.setText(f"{self.wake_word_sensitivity:.2f}")
-        self.sensitivity_changed.emit(self.wake_word_sensitivity)  # Apply immediately
+        S.WAKE_WORD_SENSITIVITY = value / 100.0
+        self.sens_value.setText(f"{S.WAKE_WORD_SENSITIVITY:.2f}")
+        self.sensitivity_changed.emit(S.WAKE_WORD_SENSITIVITY)  # Apply immediately
 
     def _on_enter_changed(self, state):
-        self.auto_enter = state == Qt.CheckState.Checked.value
-        self.auto_enter_changed.emit(self.auto_enter)  # Apply immediately
+        S.AUTO_ENTER = state == Qt.CheckState.Checked.value
+        S.AUTO_ENTER_changed.emit(S.AUTO_ENTER)  # Apply immediately
 
     def _on_delay_changed(self, value):
-        self.enter_delay = value / 10.0
-        self.delay_value.setText(f"{self.enter_delay:.1f}s")
-        self.enter_delay_changed.emit(self.enter_delay)  # Apply immediately
+        S.set('ENTER_DELAY', value / 10.0)
+        self.delay_value.setText(f"{S.ENTER_DELAY:.1f}s")
 
     def keyPressEvent(self, e):
         key = e.key()
@@ -1839,21 +1852,12 @@ class VoiceThingWindow(QWidget):
         self.last_transcription = None
         self.transcriptions = []  # List of (raw_text, processed_text, audio_path) tuples
         self.permission_error = False  # True if accessibility permission denied
-        self.auto_hide = False  # Whether to auto-hide after transcription
         self._prev_app = None  # For restoring focus when toggling window
-        self.sound_enabled = True  # Whether to play chimes
-        self.llm_enabled = False  # Whether to use LLM post-processing
-        self.current_model = WHISPER_MODEL  # Current Whisper model
-        self.custom_words = []  # Custom vocabulary for Whisper to recognize
-        self.wake_word_enabled = False  # Whether wake word detection is active
+        # Non-settings instance state
         self.wake_word_stream = None  # Always-on audio stream for wake word
         self.wake_word_model = None  # OpenWakeWord model (lazy loaded)
         self.wake_word_buffer = collections.deque(maxlen=SAMPLE_RATE * WAKE_WORD_BUFFER_SECONDS)
         self.wake_word_last_trigger = 0  # Timestamp of last wake word trigger (for cooldown)
-        self.current_wake_word = WAKE_WORD_MODEL  # Current wake word model name
-        self.auto_enter = PRESS_ENTER_AFTER_PASTE  # Whether to press Enter after pasting
-        self.wake_word_sensitivity = WAKE_WORD_START_THRESHOLD  # Detection threshold (lower = more sensitive)
-        self.enter_delay = PRESS_ENTER_DELAY  # Delay before pressing Enter
 
         self.setWindowTitle(APP_NAME)
         self.setWindowFlags(
@@ -1875,7 +1879,6 @@ class VoiceThingWindow(QWidget):
         status_row = QHBoxLayout()
         status_row.setContentsMargins(0, 0, 0, 0)
         status_row.setSpacing(8)
-        self.simple_mode = False  # Hide advanced buttons (VRM, F, L, C) and output panel
         self.close_btn = TrafficLightButton("rgb(255, 95, 87)", "rgb(255, 120, 110)", "macos-close")
         self.close_btn.setToolTip("Close window")
         self.close_btn.clicked.connect(self.hide)
@@ -1913,9 +1916,8 @@ class VoiceThingWindow(QWidget):
         self.timer_label = TimerWidget(seg_font)
         timer_row.addWidget(self.timer_label, 1, Qt.AlignmentFlag.AlignCenter)
         # Pet container is parented to timer_row_widget but positioned absolutely (doesn't affect layout)
-        self.current_pet_types = []  # No pets enabled by default
         self.pet_container = PetContainer(self.timer_row_widget)
-        self.pet_container.set_pets(self.current_pet_types)
+        self.pet_container.set_pets(S.PET_TYPES)
         self.pet_container.move(0, 0)  # Top-left corner
         self.pet_container.raise_()  # Ensure pets are on top
         layout.addWidget(self.timer_row_widget)
@@ -1970,14 +1972,14 @@ class VoiceThingWindow(QWidget):
         self.llm_btn.setCheckable(True)
         self.llm_btn.setEnabled(True)
         self.wake_word_btn = make_btn("J", "ear", self.toggle_wake_word)
-        self.wake_word_btn.setToolTip(f"Toggle wake word (say '{WAKE_WORD_MODEL}')")
+        self.wake_word_btn.setToolTip(f"Toggle wake word (say '{S.WAKE_WORD_MODEL}')")
         self.wake_word_btn.setCheckable(True)
         self.wake_word_btn.setEnabled(True)
         self.enter_btn = make_btn("N", "enter", self.toggle_auto_enter)
         self.enter_btn.setToolTip("Toggle auto-enter after paste")
         self.enter_btn.setCheckable(True)
-        self.enter_btn.setChecked(self.auto_enter)
-        if self.auto_enter:
+        self.enter_btn.setChecked(S.AUTO_ENTER)
+        if S.AUTO_ENTER:
             self.enter_btn.setIcon(load_icon("enter", color=ICON_COLOR_LIGHT))
         self.enter_btn.setEnabled(True)
         self.model_btn = make_btn("M", "mic", self.show_model_dialog)
@@ -2074,6 +2076,16 @@ class VoiceThingWindow(QWidget):
         self.log_timer.start(100)  # Update log output 10x/sec
 
         self._setup_tray()
+
+        # Register hooks for settings with UI side effects
+        S.hooks['PET_TYPES'] = self._on_pet_types_changed
+        S.hooks['AUTO_HIDE'] = self._on_auto_hide_changed
+        S.hooks['SOUND_ENABLED'] = self._on_sound_changed
+        S.hooks['LLM_ENABLED'] = self._on_llm_changed
+        S.hooks['AUTO_ENTER'] = self._on_auto_enter_changed
+        S.hooks['WAKE_WORD_ENABLED'] = self._on_wake_word_enabled_changed
+        S.hooks['WAKE_WORD_MODEL'] = self._on_wake_word_model_changed
+
         self._load_settings()
 
     def _get_action_handler(self, action_id):
@@ -2116,7 +2128,7 @@ class VoiceThingWindow(QWidget):
         self.tray.show()
 
     def _maybe_hide(self):
-        if not self.auto_hide:
+        if not S.AUTO_HIDE:
             return
         if not self.is_focused:
             self.hide()
@@ -2216,8 +2228,8 @@ class VoiceThingWindow(QWidget):
         kb = KeyboardController()
         with kb.pressed(Key.cmd):
             kb.tap("v")
-        if self.auto_enter:
-            time.sleep(self.enter_delay)
+        if S.AUTO_ENTER:
+            time.sleep(S.ENTER_DELAY)
             self._chime([-10], [-14], [-10], t=0.05)  # Low do-ba-do for Enter
             kb.press(Key.enter)
             time.sleep(0.1)
@@ -2381,7 +2393,7 @@ class VoiceThingWindow(QWidget):
         # --- Panel visibility ---
         # Simple mode only affects which tabs/buttons are shown, NOT height thresholds
         self.tab_stack.setVisible(show_output)
-        self.tab_row_widget.setVisible(show_tabs and not self.simple_mode)
+        self.tab_row_widget.setVisible(show_tabs and not S.SIMPLE_MODE)
         self.btn_row_widget.setVisible(show_buttons)
         self.waveform.setVisible(show_waveform)
         self.status_spacer.setVisible(show_buttons)
@@ -2397,11 +2409,11 @@ class VoiceThingWindow(QWidget):
         for btn in essential:
             btn.setVisible(show_buttons)
         for btn in advanced:
-            btn.setVisible(show_buttons and not self.simple_mode and not minimal_buttons)
+            btn.setVisible(show_buttons and not S.SIMPLE_MODE and not minimal_buttons)
 
         # Update simple mode button icon and checked state
-        self.simple_btn.setChecked(self.simple_mode)
-        self._update_checkable_btn_icon(self.simple_btn, "plus" if self.simple_mode else "minus")
+        self.simple_btn.setChecked(S.SIMPLE_MODE)
+        self._update_checkable_btn_icon(self.simple_btn, "plus" if S.SIMPLE_MODE else "minus")
 
         # --- Button text mode (ONLY text, not visibility) ---
         self._update_button_mode(icon_only)
@@ -2412,7 +2424,7 @@ class VoiceThingWindow(QWidget):
         self.small_btn.set_icon_name("macos-fullscreen" if is_small else "macos-collapse")
 
         # In simple mode, ensure transcriptions tab is active
-        if self.simple_mode:
+        if S.SIMPLE_MODE:
             self.tab_stack.setCurrentIndex(1)
 
     def _cleanup(self):
@@ -2444,7 +2456,7 @@ class VoiceThingWindow(QWidget):
         """
         # Normal mode: show key shortcuts (or nothing if icon_only)
         # Simple mode: show descriptive one-word labels
-        if self.simple_mode:
+        if S.SIMPLE_MODE:
             labels = [
                 (self.record_btn, "Record"), (self.cancel_btn, "Cancel"),
                 (self.simple_btn, "More"), (self.prefs_btn, "Prefs"), (self.help_btn, "Help"),
@@ -2459,7 +2471,7 @@ class VoiceThingWindow(QWidget):
                 (self.model_btn, "M"), (self.prefs_btn, "P"), (self.help_btn, "?"),
             ]
         for btn, label in labels:
-            btn.setText("" if icon_only and not self.simple_mode else label)
+            btn.setText("" if icon_only and not S.SIMPLE_MODE else label)
 
     def toggle_recording(self):
         if self.state == "idle":
@@ -2485,7 +2497,7 @@ class VoiceThingWindow(QWidget):
 
     def _get_idle_status(self):
         """Get the appropriate idle status message based on wake word setting."""
-        return f"Say '{self.current_wake_word}'" if self.wake_word_enabled else "Double-tap ⌥"
+        return f"Say '{S.WAKE_WORD_MODEL}'" if S.WAKE_WORD_ENABLED else "Double-tap ⌥"
 
     def _set_state(self, state, status=None):
         """Set app state. If status is None and state is 'idle', uses appropriate idle message."""
@@ -2497,32 +2509,49 @@ class VoiceThingWindow(QWidget):
         self.timer_label.set_opacity(opacity)
         self._update_buttons()
 
-    # --- Toggle button setters (single source of truth for state sync) ---
-    def _set_auto_hide(self, enabled, save=True):
-        self.auto_hide = enabled
+    # --- Settings hooks - UI updates only (called after S.set changes value) ---
+    def _on_pet_types_changed(self, pet_types):
+        self.pet_container.set_pets(pet_types)
+
+    def _on_auto_hide_changed(self, enabled):
         self.eye_btn.setChecked(enabled)
-        icon_name = "eye-off" if enabled else "eye"
-        self._update_checkable_btn_icon(self.eye_btn, icon_name)
-        if save:
-            self._save_settings()
+        self._update_checkable_btn_icon(self.eye_btn, "eye-off" if enabled else "eye")
 
-    def _set_sound_enabled(self, enabled, save=True):
-        self.sound_enabled = enabled
+    def _on_sound_changed(self, enabled):
         self.sound_btn.setChecked(enabled)
-        icon_name = "volume" if enabled else "volume-off"
-        self._update_checkable_btn_icon(self.sound_btn, icon_name)
-        if save:
-            self._save_settings()
+        self._update_checkable_btn_icon(self.sound_btn, "volume" if enabled else "volume-off")
 
-    def _set_llm_enabled(self, enabled, save=True):
-        self.llm_enabled = enabled
+    def _on_llm_changed(self, enabled):
         self.llm_btn.setChecked(enabled)
         self._update_checkable_btn_icon(self.llm_btn)
-        if save:
-            self._save_settings()
+
+    def _on_auto_enter_changed(self, enabled):
+        self.enter_btn.setChecked(enabled)
+        self._update_checkable_btn_icon(self.enter_btn, "enter" if enabled else "enter-off")
+
+    def _on_wake_word_enabled_changed(self, enabled):
+        self.wake_word_btn.setChecked(enabled)
+        self._update_checkable_btn_icon(self.wake_word_btn)
+        if enabled:
+            self._start_wake_word_listener()
+            self._chime([0, 4, 7, 12], t=0.15)
+        else:
+            self._stop_wake_word_listener()
+            self._chime([-12, -8, -5, 0], t=0.15)
+        print(f"Wake word detection {'ON' if enabled else 'OFF'}")
+        if self.state == "idle":
+            self.status_label.setText(self._get_idle_status())
+
+    def _on_wake_word_model_changed(self, model):
+        if S.WAKE_WORD_ENABLED:
+            self._stop_wake_word_listener()
+            self.wake_word_model = None
+            self._start_wake_word_listener()
+        self.wake_word_btn.setToolTip(f"Toggle wake word (say '{model}')")
 
     def toggle_auto_hide(self):
-        self._set_auto_hide(not self.auto_hide)
+        S.set('AUTO_HIDE', not S.AUTO_HIDE)
+        self._save_settings()
 
     def toggle_small_mode(self):
         """Toggle between small and normal window size. Progressive collapse handles the rest."""
@@ -2541,46 +2570,25 @@ class VoiceThingWindow(QWidget):
 
     def toggle_simple_mode(self):
         """Toggle simple mode - hides advanced buttons and shows only transcriptions."""
-        self.simple_mode = not self.simple_mode
+        S.SIMPLE_MODE = not S.SIMPLE_MODE
         self._update_ui()  # Single source of truth handles all visibility
         self._save_settings()
 
     def toggle_sound(self):
-        self._set_sound_enabled(not self.sound_enabled)
+        S.set('SOUND_ENABLED', not S.SOUND_ENABLED)
+        self._save_settings()
 
     def toggle_llm(self):
-        self._set_llm_enabled(not self.llm_enabled)
+        S.set('LLM_ENABLED', not S.LLM_ENABLED)
+        self._save_settings()
 
     def toggle_wake_word(self):
-        self._set_wake_word_enabled(not self.wake_word_enabled)
+        S.set('WAKE_WORD_ENABLED', not S.WAKE_WORD_ENABLED)
+        self._save_settings()
 
     def toggle_auto_enter(self):
-        self._set_auto_enter(not self.auto_enter)
-
-    def _set_auto_enter(self, enabled, save=True):
-        self.auto_enter = enabled
-        self.enter_btn.setChecked(enabled)
-        icon_name = "enter" if enabled else "enter-off"
-        self._update_checkable_btn_icon(self.enter_btn, icon_name)
-        if save:
-            self._save_settings()
-
-    def _set_wake_word_enabled(self, enabled, save=True):
-        self.wake_word_enabled = enabled
-        self.wake_word_btn.setChecked(enabled)
-        self._update_checkable_btn_icon(self.wake_word_btn)
-        if enabled:
-            self._start_wake_word_listener()
-            self._chime([0, 4, 7, 12], t=0.15)  # Bright major chord: "listening"
-        else:
-            self._stop_wake_word_listener()
-            self._chime([-12, -8, -5, 0], t=0.15)  # Low major chord: "stopped"
-        print(f"Wake word detection {'ON' if enabled else 'OFF'}")
-        # Update status label if idle
-        if self.state == "idle":
-            self.status_label.setText(self._get_idle_status())
-        if save:
-            self._save_settings()
+        S.set('AUTO_ENTER', not S.AUTO_ENTER)
+        self._save_settings()
 
     def _load_wake_word_model(self):
         """Lazy load OpenWakeWord model."""
@@ -2589,15 +2597,15 @@ class VoiceThingWindow(QWidget):
         try:
             from openwakeword.model import Model
             # Check if it's a community model (needs download) or official model
-            if self.current_wake_word in COMMUNITY_WAKE_WORDS:
-                model_path = download_community_wake_word(self.current_wake_word)
+            if S.WAKE_WORD_MODEL in COMMUNITY_WAKE_WORDS:
+                model_path = download_community_wake_word(S.WAKE_WORD_MODEL)
             else:
-                model_path = self.current_wake_word
+                model_path = S.WAKE_WORD_MODEL
             self.wake_word_model = Model(
                 wakeword_models=[model_path],
                 inference_framework='onnx'
             )
-            print(f"Wake word model loaded: {self.current_wake_word}")
+            print(f"Wake word model loaded: {S.WAKE_WORD_MODEL}")
             return True
         except Exception as e:
             print(f"Failed to load wake word model: {e}")
@@ -2608,7 +2616,7 @@ class VoiceThingWindow(QWidget):
         if self.wake_word_stream is not None:
             return  # Already running
         if not self._load_wake_word_model():
-            self.wake_word_enabled = False
+            S.WAKE_WORD_ENABLED = False
             return
 
         self.wake_word_buffer.clear()
@@ -2623,7 +2631,7 @@ class VoiceThingWindow(QWidget):
             # Check for wake word
             prediction = self.wake_word_model.predict(audio)
             for model_name, score in prediction.items():
-                if score > self.wake_word_sensitivity:
+                if score > S.WAKE_WORD_SENSITIVITY:
                     # Debounce
                     now = time.time()
                     if now - self.wake_word_last_trigger < WAKE_WORD_COOLDOWN:
@@ -2646,7 +2654,7 @@ class VoiceThingWindow(QWidget):
             blocksize=WAKE_WORD_FRAME_SAMPLES,
         )
         self.wake_word_stream.start()
-        print(f"Wake word listener started (say '{self.current_wake_word}')")
+        print(f"Wake word listener started (say '{S.WAKE_WORD_MODEL}')")
 
     def _stop_wake_word_listener(self):
         """Stop the wake word audio stream."""
@@ -2665,7 +2673,7 @@ class VoiceThingWindow(QWidget):
 
     def _resume_wake_word_listener(self):
         """Resume wake word listener if enabled."""
-        if self.wake_word_enabled and self.wake_word_stream is None:
+        if S.WAKE_WORD_ENABLED and self.wake_word_stream is None:
             # Reset model state to avoid false triggers from buffered audio
             if self.wake_word_model is not None:
                 self.wake_word_model.reset()
@@ -2686,12 +2694,8 @@ class VoiceThingWindow(QWidget):
 
     def _chime(self, *args, **kwargs):
         """Play chime only if sound is enabled."""
-        if self.sound_enabled:
+        if S.SOUND_ENABLED:
             chime(*args, **kwargs)
-
-    def _play_waiting_chime(self):
-        """Play low bump-a-bump sound while waiting."""
-        self._chime([-20], [-19], [-20], t=0.066)
 
     def show_help(self):
         """Show help dialog."""
@@ -2713,174 +2717,85 @@ class VoiceThingWindow(QWidget):
 
     def show_model_dialog(self):
         """Show dialog to select Whisper model."""
-        dialog = ModelDialog(self.current_model, self)
+        dialog = ModelDialog(S.WHISPER_MODEL, self)
         dialog.center_on_parent()
-        if dialog.exec() and dialog.selected_model and dialog.selected_model != self.current_model:
+        if dialog.exec() and dialog.selected_model and dialog.selected_model != S.WHISPER_MODEL:
             self._change_model(dialog.selected_model)
 
     def show_prefs(self):
-        """Show preferences dialog.
-
-        Settings apply IMMEDIATELY as you change them (live preview).
-        OK = save to JSON, Cancel = revert to original values.
-        """
-        # Store original values for Cancel revert
+        """Show preferences dialog. Settings apply live, Cancel reverts."""
+        import copy
+        orig = copy.deepcopy(dict(S))  # Snapshot for Cancel
         orig_style = STYLE.name
-        orig_pets = list(self.current_pet_types)
-        orig_wake_word = self.current_wake_word
-        orig_sensitivity = self.wake_word_sensitivity
-        orig_auto_enter = self.auto_enter
-        orig_enter_delay = self.enter_delay
 
-        dialog = PrefsDialog(
-            STYLE.name, self.current_pet_types, self.simple_mode, self,
-            wake_word=self.current_wake_word,
-            wake_word_sensitivity=self.wake_word_sensitivity,
-            auto_enter=self.auto_enter,
-            enter_delay=self.enter_delay,
-        )
+        dialog = PrefsDialog(STYLE.name, S.PET_TYPES, S.SIMPLE_MODE, self,
+                             wake_word=S.WAKE_WORD_MODEL,
+                             wake_word_sensitivity=S.WAKE_WORD_SENSITIVITY,
+                             auto_enter=S.AUTO_ENTER)
 
-        # Connect all signals for IMMEDIATE application (live preview)
-        def set_sensitivity(v):
-            self.wake_word_sensitivity = v
-            print(f"[Prefs] sensitivity -> {v:.2f}")
-
-        def set_enter_delay(v):
-            self.enter_delay = v
-            print(f"[Prefs] enter_delay -> {v:.1f}s")
-
+        # Live preview connections - all use S.set() to trigger hooks
         dialog.simple_mode_changed.connect(self._set_simple_mode)
         dialog.style_changed.connect(lambda s: self._change_style(s, save=False))
-        dialog.pets_changed.connect(lambda p: self._change_pets_nosave(p))
-        dialog.wake_word_changed.connect(lambda w: self._change_wake_word_nosave(w))
-        dialog.sensitivity_changed.connect(set_sensitivity)
-        dialog.auto_enter_changed.connect(lambda v: self._set_auto_enter(v, save=False))
-        dialog.enter_delay_changed.connect(set_enter_delay)
+        dialog.pets_changed.connect(lambda p: S.set('PET_TYPES', list(p)))
+        dialog.wake_word_changed.connect(lambda w: S.set('WAKE_WORD_MODEL', w))
+        dialog.sensitivity_changed.connect(lambda v: setattr(S, 'WAKE_WORD_SENSITIVITY', v))
+        dialog.auto_enter_changed.connect(lambda v: S.set('AUTO_ENTER', v))
 
         dialog.center_on_parent()
 
         if dialog.exec():
-            # OK pressed - save all current values to JSON
             self._save_settings()
         else:
-            # Cancel pressed - revert to original values
+            # Cancel - restore snapshot (hooks handle UI updates)
             if STYLE.name != orig_style:
                 self._change_style(orig_style, save=False)
-            if self.current_pet_types != orig_pets:
-                self._change_pets_nosave(orig_pets)
-            if self.current_wake_word != orig_wake_word:
-                self._change_wake_word_nosave(orig_wake_word)
-            self.wake_word_sensitivity = orig_sensitivity
-            if self.auto_enter != orig_auto_enter:
-                self._set_auto_enter(orig_auto_enter, save=False)
-            self.enter_delay = orig_enter_delay
+            S.restore(orig)
 
     def _set_simple_mode(self, enabled):
         """Set simple mode on/off (called from prefs dialog)."""
-        if self.simple_mode != enabled:
+        if S.SIMPLE_MODE != enabled:
             self.toggle_simple_mode()
 
-    def _change_pets(self, pet_types, save=True):
-        """Change the pet companion types."""
-        self.current_pet_types = list(pet_types)
-        self.pet_container.set_pets(pet_types)
-        if save:
-            self._save_settings()
-
-    def _change_pets_nosave(self, pet_types):
-        """Change pets without saving (for live preview)."""
-        self._change_pets(pet_types, save=False)
-
-    def _change_wake_word(self, wake_word, save=True):
-        """Change the wake word model. Requires reload if wake word is active."""
-        self.current_wake_word = wake_word
-        # If wake word detection is active, reload the model
-        if self.wake_word_enabled:
-            self._stop_wake_word_listener()
-            self.wake_word_model = None  # Force reload
-            self._start_wake_word_listener()
-        # Update button tooltip
-        self.wake_word_btn.setToolTip(f"Toggle wake word (say '{wake_word}')")
-        if save:
-            self._save_settings()
-
-    def _change_wake_word_nosave(self, wake_word):
-        """Change wake word without saving (for live preview)."""
-        self._change_wake_word(wake_word, save=False)
-
     def _load_settings(self):
-        """Load settings from JSON file."""
+        """Load settings from JSON file. Uses S.set() to trigger hooks for UI updates."""
         if not os.path.exists(SETTINGS_FILE):
             return
         with open(SETTINGS_FILE, 'r') as f:
-            settings = json.load(f)
-        if 'auto_hide' in settings:
-            self._set_auto_hide(settings['auto_hide'], save=False)
-        if 'sound_enabled' in settings:
-            self._set_sound_enabled(settings['sound_enabled'], save=False)
-        if 'llm_enabled' in settings:
-            self._set_llm_enabled(settings['llm_enabled'], save=False)
-        if 'simple_mode' in settings and settings['simple_mode']:
-            self.simple_mode = False  # Start as False so toggle works
-            self.toggle_simple_mode()  # Toggle to True and apply visibility
-        if 'pet_types' in settings:
-            pet_values = settings['pet_types']
-            loaded_pets = []
-            for pet_value in pet_values:
-                for pet_type in ALL_PET_TYPES:
-                    if pet_type.value == pet_value:
-                        loaded_pets.append(pet_type)
-                        break
-            self.current_pet_types = loaded_pets
-            self.pet_container.set_pets(loaded_pets)
-        elif 'pet_type' in settings:
-            # Legacy single pet support
-            pet_value = settings['pet_type']
-            for pet_type in ALL_PET_TYPES:
-                if pet_type.value == pet_value:
-                    self.current_pet_types = [pet_type]
-                    self.pet_container.set_pets([pet_type])
-                    break
-        if 'custom_words' in settings:
-            self.custom_words = settings['custom_words']
-        if 'whisper_model' in settings:
-            self.current_model = settings['whisper_model']
-        if 'theme' in settings:
-            self._change_style(settings['theme'], save=False)
-        # Wake word settings - load BEFORE enabling wake word detection
-        if 'wake_word_model' in settings:
-            self.current_wake_word = settings['wake_word_model']
-            self.wake_word_btn.setToolTip(f"Toggle wake word (say '{self.current_wake_word}')")
-        if 'wake_word_sensitivity' in settings:
-            self.wake_word_sensitivity = settings['wake_word_sensitivity']
-        if 'auto_enter' in settings:
-            self._set_auto_enter(settings['auto_enter'], save=False)
-        if 'enter_delay' in settings:
-            self.enter_delay = settings['enter_delay']
-        # Enable wake word AFTER all settings are loaded
-        if 'wake_word_enabled' in settings:
-            self._set_wake_word_enabled(settings['wake_word_enabled'], save=False)
+            data = json.load(f)
+
+        # Migrate old lowercase keys to uppercase
+        data = {k.upper(): v for k, v in data.items()}
+
+        # Convert pet strings to enums
+        if 'PET_TYPES' in data:
+            pet_map = {pt.value: pt for pt in ALL_PET_TYPES}
+            data['PET_TYPES'] = [pet_map[v] for v in data['PET_TYPES'] if v in pet_map]
+
+        # Apply settings via S.set() to trigger hooks
+        for key in ['AUTO_HIDE', 'SOUND_ENABLED', 'LLM_ENABLED', 'AUTO_ENTER', 'PET_TYPES', 'WAKE_WORD_MODEL']:
+            if key in data:
+                S.set(key, data[key])
+        # Simple settings without hooks (or with trivial hooks)
+        for key in ['ENTER_DELAY', 'WAKE_WORD_SENSITIVITY', 'CUSTOM_WORDS', 'WHISPER_MODEL']:
+            if key in data:
+                S[key] = data[key]
+        # SIMPLE_MODE needs toggle pattern
+        if data.get('SIMPLE_MODE') and not S.SIMPLE_MODE:
+            self.toggle_simple_mode()
+        # THEME is separate (not in S)
+        if 'THEME' in data:
+            self._change_style(data['THEME'], save=False)
+        # WAKE_WORD_ENABLED last (needs model loaded)
+        if data.get('WAKE_WORD_ENABLED'):
+            S.set('WAKE_WORD_ENABLED', True)
 
     def _save_settings(self):
         """Save settings to JSON file."""
-        settings = {
-            'auto_hide': self.auto_hide,
-            'sound_enabled': self.sound_enabled,
-            'llm_enabled': self.llm_enabled,
-            'wake_word_enabled': self.wake_word_enabled,
-            'simple_mode': self.simple_mode,
-            'pet_types': [pt.value for pt in self.current_pet_types],
-            'custom_words': self.custom_words,
-            'whisper_model': self.current_model,
-            'theme': STYLE.name,
-            # Wake word settings
-            'wake_word_model': self.current_wake_word,
-            'wake_word_sensitivity': self.wake_word_sensitivity,
-            'auto_enter': self.auto_enter,
-            'enter_delay': self.enter_delay,
-        }
+        data = dict(S)
+        data['PET_TYPES'] = [pt.value for pt in S.PET_TYPES]  # Convert enums to strings
+        data['THEME'] = STYLE.name  # Theme is in STYLE, not S
         with open(SETTINGS_FILE, 'w') as f:
-            json.dump(settings, f, indent=2)
+            json.dump(data, f, indent=2)
 
     def _change_style(self, style_name, save=True):
         """Change the UI style immediately."""
@@ -2943,25 +2858,13 @@ class VoiceThingWindow(QWidget):
         self._switch_tab(0)
 
         def load():
-            self._chime([5], [12], t=0.1)  # F key: model loading start
-            # Start waiting chime timer
-            waiting_timer = [True]
-            def chime_loop():
-                while waiting_timer[0]:
-                    time.sleep(3)
-                    if waiting_timer[0]:
-                        self._play_waiting_chime()
-            chime_thread = threading.Thread(target=chime_loop, daemon=True)
-            chime_thread.start()
-
+            self._chime([5], [12], t=0.1)  # Loading start
             print(f"Loading model: {new_model}")
             rp.r._get_pywhispercpp_model(new_model)
-            self.current_model = new_model
+            S.WHISPER_MODEL = new_model
             self._save_settings()
             print(f"Model {new_model} loaded")
-
-            waiting_timer[0] = False
-            self._chime([5, 9, 12], [17], t=0.15)  # F key: model loaded
+            self._chime([5, 9, 12], [17], t=0.15)  # Loading done
             self._set_state("idle")
 
         threading.Thread(target=load, daemon=True).start()
@@ -2998,9 +2901,9 @@ class VoiceThingWindow(QWidget):
     def _transcribe_file_thread(self, path):
         try:
             print(f"Transcribing file: {path}")
-            initial_prompt = ", ".join(self.custom_words) if self.custom_words else None
+            initial_prompt = ", ".join(S.CUSTOM_WORDS) if S.CUSTOM_WORDS else None
             result = rp.transcribe_audio_file_via_whisper(
-                path, model=self.current_model, show_progress=True,
+                path, model=S.WHISPER_MODEL, show_progress=True,
                 initial_prompt=initial_prompt, carry_initial_prompt=True
             )
             self._handle_transcription_result(result.text, audio_path=path)
@@ -3066,7 +2969,7 @@ class VoiceThingWindow(QWidget):
 
     def _process_with_llm(self, text):
         """Post-process transcription with LLM if enabled. Returns (raw, processed) or (raw, "")."""
-        if not self.llm_enabled or not text:
+        if not S.LLM_ENABLED or not text:
             return text, ""
         return text, self._run_llm(text)
 
@@ -3082,7 +2985,7 @@ class VoiceThingWindow(QWidget):
             return
         self._chime([2], [6], [9], [14], t=0.08)  # Transcription done chime
 
-        if self.llm_enabled:
+        if S.LLM_ENABLED:
             # Show raw immediately, paste after LLM finishes
             index = len(self.transcriptions)
             self.add_transcription_signal.emit(raw_text, "", audio_path or "")
@@ -3118,9 +3021,9 @@ class VoiceThingWindow(QWidget):
 
             scipy.io.wavfile.write(wav_path, SAMPLE_RATE, (audio * 32767).astype(np.int16))
             self.last_audio_path = wav_path
-            initial_prompt = ", ".join(self.custom_words) if self.custom_words else None
+            initial_prompt = ", ".join(S.CUSTOM_WORDS) if S.CUSTOM_WORDS else None
             result = rp.transcribe_audio_file_via_whisper(
-                wav_path, model=self.current_model, show_progress=True,
+                wav_path, model=S.WHISPER_MODEL, show_progress=True,
                 initial_prompt=initial_prompt, carry_initial_prompt=True
             )
             self._handle_transcription_result(result.text, txt_path, audio_path=wav_path)
@@ -3209,10 +3112,13 @@ def main():
     window.show()
     window.first_show = False
 
-    print(f"Loading Whisper ({window.current_model})...")
-    rp.r._get_pywhispercpp_model(window.current_model)
-    chime([0, 4, 7], [12], t=0.15)
-    print(f"{APP_NAME} ready. Double-tap ⌥ to record.")
+    # Load whisper model in background thread (GUI stays responsive)
+    def load_model():
+        print(f"Loading Whisper ({S.WHISPER_MODEL})...")
+        rp.r._get_pywhispercpp_model(S.WHISPER_MODEL)
+        print(f"{APP_NAME} ready. Double-tap ⌥ to record.")
+    threading.Thread(target=load_model, daemon=True).start()
+
     app.exec()
 
 
