@@ -101,6 +101,7 @@ BLOCKSIZE = 256
 # UI settings
 TRAY_ICON_SIZE = 44  # Menu bar icon size (2x for retina)
 WAVEFORM_DURATION_SECONDS = 10  # Duration of audio shown in waveform display
+MIN_TOOLBAR_BUTTON_WIDTH = 28  # Minimum button width before toolbar wraps/collapses
 
 # Wake word detection constants
 WAKE_WORD_BUFFER_SECONDS = 2  # Seconds of audio to capture before wake word
@@ -602,7 +603,6 @@ WHISPER_MODELS = [
     ("S", "small", "Balanced speed/accuracy (~2GB VRAM)"),
     ("M", "medium", "Good accuracy, slower (~5GB VRAM)"),
     ("L", "large-v3", "Best accuracy, slowest (~10GB VRAM)"),
-    ("3", "large-v3-turbo", "Best accuracy + speed (~10GB VRAM)"),
 ]
 
 # Action definitions: (id, key, icon_name, description, menu_text or None)
@@ -882,7 +882,7 @@ class ModelDialog(DraggableDialog):
     def keyPressEvent(self, e):
         key = e.key()
         key_map = {Qt.Key.Key_T: "tiny", Qt.Key.Key_B: "base", Qt.Key.Key_S: "small",
-                   Qt.Key.Key_M: "medium", Qt.Key.Key_L: "large-v3", Qt.Key.Key_3: "large-v3-turbo"}
+                   Qt.Key.Key_M: "medium", Qt.Key.Key_L: "large-v3"}
         if key in key_map:
             self._select(key_map[key])
         elif key == Qt.Key.Key_Escape:
@@ -2121,9 +2121,9 @@ class VoiceThingWindow(QWidget):
         layout.addWidget(self.timer_row_widget)
 
         self.btn_row_widget = QWidget()
-        btn_row = QHBoxLayout(self.btn_row_widget)
-        btn_row.setContentsMargins(0, 0, 0, 0)
-        btn_row.setSpacing(8)
+        self.btn_row = QHBoxLayout(self.btn_row_widget)
+        self.btn_row.setContentsMargins(0, 0, 0, 0)
+        self.btn_row.setSpacing(8)
 
         def make_btn(text, icon_name, handler):
             btn = QPushButton(text)
@@ -2134,7 +2134,7 @@ class VoiceThingWindow(QWidget):
             btn.clicked.connect(handler)
             btn.setEnabled(False)
             btn.icon_name = icon_name  # Store for later icon color updates
-            btn_row.addWidget(btn)
+            self.btn_row.addWidget(btn)
             return btn
 
         self.record_btn = make_btn("Space", "record", self.toggle_recording)
@@ -2196,7 +2196,23 @@ class VoiceThingWindow(QWidget):
         self.help_btn = make_btn("?", "book", self.show_help)
         self.help_btn.setToolTip("Show help")
         self.help_btn.setEnabled(True)
+
+        # Second button row for two-row mode
+        self.btn_row2_widget = QWidget()
+        self.btn_row2 = QHBoxLayout(self.btn_row2_widget)
+        self.btn_row2.setContentsMargins(0, 0, 0, 0)
+        self.btn_row2.setSpacing(8)
+        self.btn_row2_widget.setVisible(False)
+
+        # Store all buttons in display order for dynamic row assignment
+        self.all_toolbar_buttons = [
+            self.record_btn, self.cancel_btn, self.retranscribe_btn, self.simple_btn,
+            self.copy_btn, self.load_btn, self.folder_btn, self.sound_btn,
+            self.eye_btn, self.llm_btn, self.wake_word_btn, self.enter_btn,
+            self.tmux_btn, self.model_btn, self.prefs_btn, self.help_btn,
+        ]
         layout.addWidget(self.btn_row_widget)
+        layout.addWidget(self.btn_row2_widget)
 
         # Key-to-button mapping for visual feedback
         self.key_buttons = {
@@ -2603,6 +2619,11 @@ class VoiceThingWindow(QWidget):
 
         React-like approach: all visibility decisions happen here based on current state.
         Called by resizeEvent, toggle_simple_mode, and any other state changes.
+
+        Toolbar width breakpoints:
+        1. Normal: all buttons in single row
+        2. Two-row: split buttons across two rows when width too narrow
+        3. Simple mode: hide advanced buttons when even two rows are too narrow
         """
         h, w = self.height(), self.width()
 
@@ -2614,30 +2635,82 @@ class VoiceThingWindow(QWidget):
         show_waveform = h >= 120
         is_small = h < 120
 
-        # Width thresholds for button collapse
+        # Width threshold for icon-only mode
         icon_only = w < 350
-        minimal_buttons = w < 250
 
         # --- Panel visibility ---
-        # Simple mode only affects which tabs/buttons are shown, NOT height thresholds
         self.tab_stack.setVisible(show_output)
         self.tab_row_widget.setVisible(show_tabs and not S.SIMPLE_MODE)
         self.btn_row_widget.setVisible(show_buttons)
         self.waveform.setVisible(show_waveform)
         self.status_spacer.setVisible(show_buttons)
 
-        # --- Button visibility (ALL visibility decisions happen here) ---
-        # Essential buttons: record, cancel, simple, prefs, help (always when btn row visible)
-        # Advanced buttons: hidden in simple mode OR minimal mode
+        # --- Calculate toolbar layout mode based on button widths ---
+        # Essential buttons always shown; advanced hidden in simple mode
         essential = {self.record_btn, self.cancel_btn, self.simple_btn, self.prefs_btn, self.help_btn}
         advanced = [self.retranscribe_btn, self.eye_btn, self.llm_btn, self.wake_word_btn,
-                   self.enter_btn, self.model_btn, self.folder_btn,
+                   self.enter_btn, self.tmux_btn, self.model_btn, self.folder_btn,
                    self.sound_btn, self.copy_btn, self.load_btn]
 
+        # Get visible buttons (respect simple mode)
+        if S.SIMPLE_MODE:
+            visible_buttons = [b for b in self.all_toolbar_buttons if b in essential]
+        else:
+            visible_buttons = self.all_toolbar_buttons[:]
+
+        # Calculate button width if all in single row
+        spacing = 8
+        num_visible = len(visible_buttons)
+        available_width = w - 16  # margins
+        total_spacing = spacing * (num_visible - 1) if num_visible > 1 else 0
+        btn_width_single_row = (available_width - total_spacing) / num_visible if num_visible else 0
+
+        # Determine layout mode: single row, two rows, or force simple
+        use_two_rows = False
+        force_simple = False
+
+        if btn_width_single_row < MIN_TOOLBAR_BUTTON_WIDTH and not S.SIMPLE_MODE:
+            # Try two rows: split buttons evenly
+            half = (num_visible + 1) // 2
+            btn_width_two_rows = (available_width - spacing * (half - 1)) / half if half else 0
+            if btn_width_two_rows >= MIN_TOOLBAR_BUTTON_WIDTH:
+                use_two_rows = True
+            else:
+                # Even two rows too narrow - force simple mode display
+                force_simple = True
+
+        # --- Button visibility ---
         for btn in essential:
             btn.setVisible(show_buttons)
         for btn in advanced:
-            btn.setVisible(show_buttons and not S.SIMPLE_MODE and not minimal_buttons)
+            btn.setVisible(show_buttons and not S.SIMPLE_MODE and not force_simple)
+
+        # --- Move buttons between rows ---
+        if use_two_rows and show_buttons:
+            # Recalculate visible buttons for two-row layout
+            visible_buttons = [b for b in self.all_toolbar_buttons if b.isVisible()]
+            half = (len(visible_buttons) + 1) // 2
+            row1_buttons = visible_buttons[:half]
+            row2_buttons = visible_buttons[half:]
+
+            # Move buttons to appropriate rows
+            for btn in row1_buttons:
+                if btn.parent() != self.btn_row_widget:
+                    self.btn_row2.removeWidget(btn)
+                    self.btn_row.addWidget(btn)
+            for btn in row2_buttons:
+                if btn.parent() != self.btn_row2_widget:
+                    self.btn_row.removeWidget(btn)
+                    self.btn_row2.addWidget(btn)
+
+            self.btn_row2_widget.setVisible(True)
+        else:
+            # All buttons in single row
+            for btn in self.all_toolbar_buttons:
+                if btn.parent() != self.btn_row_widget:
+                    self.btn_row2.removeWidget(btn)
+                    self.btn_row.addWidget(btn)
+            self.btn_row2_widget.setVisible(False)
 
         # Update simple mode button icon and checked state
         self.simple_btn.setChecked(S.SIMPLE_MODE)
