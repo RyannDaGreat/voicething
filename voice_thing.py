@@ -79,6 +79,148 @@ TRAY_ICON_SIZE = 44  # Menu bar icon size (2x for retina)
 WAVEFORM_DURATION_SECONDS = 10  # Duration of audio shown in waveform display
 MIN_TOOLBAR_BUTTON_WIDTH = 28  # Minimum button width before toolbar wraps/collapses
 
+# Chime themes - each theme defines sounds for various events
+# Format: {theme_name: {event_name: (chords_tuple, duration)}}
+# Chords are lists of semitone offsets from A4 (0 = A4, 12 = A5, -12 = A3)
+# CRITICAL: start_rec→stop_rec→transcribe→llm_start→llm_done play in rapid sequence!
+# ALL CHORDS MUST BE GLOBALLY UNIQUE across all themes!
+CHIME_THEMES = {
+    # Vintage: The original VoiceThing chimes (pre-theme era)
+    'default': {
+        'demo':           (([0, 4, 7, 12],), 0.15),     # Amaj+octave
+        'focus':          (([7, 14],), 0.06),           # E5+B5 ascending
+        'unfocus':        (([14, 11],), 0.06),          # B5+G#5 descending
+        'copy':           (([16, 20],), 0.05),          # C#6+E6 bright copy
+        'delete':         (([0, -3],), 0.08),           # A+F# minor feel
+        'enter':          (([-10], [-14], [-10]), 0.05),# Low do-ba-do
+        'cancel':         (([3, -1],), 0.06),           # C+G# minor cancel
+        'record_start':   (([0, 4, 7, 11],), 0.15),     # Amaj7
+        'record_stop':    (([-12, -8, -5, 0],), 0.15),  # Amaj low
+        'loading_start':  (([5], [12]), 0.1),           # D→A5 loading
+        'loading_done':   (([5, 9, 12], [17]), 0.15),   # D+F#+A→B5 done
+        'start_rec':      (([2, 6], [9, 14]), 0.08),    # B+Eb→F#+B5
+        'stop_rec':       (([14, 9], [6, 2]), 0.08),    # B5+F#→Eb+B descend
+        'transcribe':     (([2], [6], [9], [14]), 0.08),# B→Eb→F#→B5 arpeggio
+        'llm_start':      (([7, 11],), 0.06),           # E+G# LLM start
+        'llm_done':       (([11, 14, 18],), 0.08),      # G#+B+D#6 LLM done
+    },
+    # Minimal: Clean single notes, perfect intervals (octaves, 5ths)
+    'minimal': {
+        'demo':           (([0, 7],), 0.1),             # A+E power chord
+        'focus':          (([7],), 0.04),               # E5 single
+        'unfocus':        (([-5],), 0.04),              # E4 single
+        'copy':           (([12],), 0.03),              # A5 octave up
+        'delete':         (([-12],), 0.06),             # A3 octave down
+        'enter':          (([5],), 0.04),               # D5 (4th up)
+        'cancel':         (([-7],), 0.05),              # D4 (5th down)
+        'record_start':   (([0, 12],), 0.12),           # A4+A5 octave
+        'record_stop':    (([-12, 0],), 0.12),          # A3+A4 octave
+        'loading_start':  (([2],), 0.08),               # B4 single
+        'loading_done':   (([7, 12],), 0.1),            # E5+A5
+        'start_rec':      (([0],), 0.05),               # A4 single
+        'stop_rec':       (([7, 2],), 0.05),            # E5+B4
+        'transcribe':     (([-2],), 0.04),              # G4 single
+        'llm_start':      (([-12, -5],), 0.04),         # A3+E4
+        'llm_done':       (([12, 19],), 0.06),          # A5+E6 octave+5th
+    },
+    # Blues: A blues scale with blue notes (0, 3, 5, 6, 7, 10)
+    'blues': {
+        'demo':           (([0, 3, 7], [10, 15]), 0.15),# Am7 spread
+        'focus':          (([3, 10],), 0.06),           # C+G
+        'unfocus':        (([10, 6],), 0.06),           # G+Eb (tritone!)
+        'copy':           (([12, 15],), 0.05),          # A5+C6
+        'delete':         (([6, 3],), 0.08),            # Eb+C tritone
+        'enter':          (([-12], [-9]), 0.05),        # A3→C4 arpeggio
+        'cancel':         (([6, 0],), 0.06),            # Eb+A tritone resolve
+        'record_start':   (([0, 3, 6, 10],), 0.15),     # Am7b5 (blues!)
+        'record_stop':    (([-12, -9, -5, -2],), 0.15), # Am7 low
+        'loading_start':  (([3], [6]), 0.1),            # C→Eb chromatic
+        'loading_done':   (([7, 10, 15],), 0.12),       # E+G+C (C maj)
+        'start_rec':      (([0, 3],), 0.08),            # A+C minor 3rd
+        'stop_rec':       (([3, 6, 10],), 0.08),        # C+Eb+G (Cm)
+        'transcribe':     (([-9, -5, -2],), 0.06),      # C4+E4+G4
+        'llm_start':      (([-7, -4],), 0.06),          # D4+F4 (Dm feel)
+        'llm_done':       (([0, 4, 7, 10],), 0.1),      # A7 blues resolve
+    },
+    # Ethereal: Sus2/Sus4 only, wide voicings (0, 2, 5, 7, 9)
+    # Rapid sequence: Asus2 → Esus4 → Dsus2 → Asus2/E → Asus2 high
+    'ethereal': {
+        'demo':           (([0, 2, 7], [9, 14, 21]), 0.18),  # Asus2 spread
+        'focus':          (([2, 7, 14],), 0.1),         # B+E+B5 wide
+        'unfocus':        (([14, 9, 2],), 0.1),         # B5+F#+B descend
+        'copy':           (([14, 19, 26],), 0.06),      # B5+E6+B6 very high
+        'delete':         (([-19, -7, -5],), 0.1),      # D3+D4+E4 low cluster
+        'enter':          (([-14, -7, 0],), 0.08),      # G3+D4+A4 wide arp
+        'cancel':         (([-7, 2, 9],), 0.08),        # D+B+F# stack
+        'record_start':   (([-12, 0, 2, 7],), 0.2),     # A3+Asus2
+        'record_stop':    (([-12, -7, -5, 0, 7],), 0.2),# Wide sus4 spread
+        'loading_start':  (([0, 5, 9],), 0.12),         # A+D+F# (Dsus2/A)
+        'loading_done':   (([2, 7, 9, 14, 21],), 0.18), # Asus2add9+high E
+        'start_rec':      (([-12, 0, 2],), 0.1),        # A3+A+B (Asus2 low)
+        'stop_rec':       (([7, 12, 14],), 0.1),        # E+A5+B5 (Esus4 high)
+        'transcribe':     (([5, 9, 12],), 0.08),        # D+F#+A (Dsus2)
+        'llm_start':      (([0, 7, 14],), 0.08),        # A+E+B5 (Asus2/E)
+        'llm_done':       (([2, 9, 14, 21],), 0.1),     # B+F#+B5+E6 (soar)
+    },
+    # Melancholy: A natural minor (0, 2, 3, 5, 7, 8, 10)
+    'melancholy': {
+        'demo':           (([0, 3, 7, 12], [15]), 0.2), # Am+octave spread
+        'focus':          (([3, 8],), 0.1),             # C+F (minor 6)
+        'unfocus':        (([8, 5],), 0.1),             # F+D descend
+        'copy':           (([12, 15, 19],), 0.08),      # A5+C6+E6 high Am
+        'delete':         (([-5, -10],), 0.1),          # E4+Bb3 dark
+        'enter':          (([-12], [-9], [-5]), 0.06),  # A3→C4→E4 arp
+        'cancel':         (([8, 5, 0],), 0.08),         # F+D+A descend
+        'record_start':   (([0, 3, 7],), 0.18),         # Am triad
+        'record_stop':    (([-12, -9, -5],), 0.18),     # Am low
+        'loading_start':  (([5, 8, 12],), 0.12),        # D+F+A (Dm)
+        'loading_done':   (([0, 3, 8, 12],), 0.15),     # Am+F (Fmaj7/A)
+        'start_rec':      (([0, 3, 8],), 0.1),          # A+C+F (Am add b6)
+        'stop_rec':       (([7, 10, 15],), 0.1),        # E+G+C6 (Cmaj high)
+        'transcribe':     (([3, 5, 10],), 0.08),        # C+D+G
+        'llm_start':      (([5, 8, 10],), 0.08),        # D+F+G (Dm7 no root)
+        'llm_done':       (([-12, -5, 0, 3],), 0.12),   # Am with low root
+    },
+    # Bright: A major scale (0, 2, 4, 5, 7, 9, 11)
+    'bright': {
+        'demo':           (([0, 4, 7], [11, 16]), 0.1), # Amaj7 spread
+        'focus':          (([4, 9],), 0.05),            # C#+F#
+        'unfocus':        (([9, 2],), 0.05),            # F#+B descend
+        'copy':           (([12, 16],), 0.04),          # A5+C#6 bright
+        'delete':         (([-8, -5],), 0.05),          # C#4+E4
+        'enter':          (([4], [7], [12]), 0.04),     # C#→E→A arp
+        'cancel':         (([-4, -9],), 0.05),          # F#4+C#4
+        'record_start':   (([0, 4, 7],), 0.12),         # A major
+        'record_stop':    (([-12, -8, -5],), 0.12),     # A major low
+        'loading_start':  (([5, 9, 14],), 0.08),        # D+F#+B (D add9)
+        'loading_done':   (([7, 11, 16],), 0.1),        # E+G#+C# (E maj)
+        'start_rec':      (([0, 4, 11],), 0.06),        # A+C#+G# (Amaj7 no5)
+        'stop_rec':       (([2, 7, 11],), 0.06),        # B+E+G# (E/B)
+        'transcribe':     (([7, 11, 14],), 0.05),       # E+G#+B (E)
+        'llm_start':      (([4, 7, 11],), 0.05),        # C#+E+G# (Emaj/C#)
+        'llm_done':       (([12, 16, 19, 23],), 0.06),  # A5+C#6+E6+G#6 Amaj7
+    },
+    # Jazzy: Extended chords, 7ths, 9ths, 13ths
+    'jazzy': {
+        'demo':           (([0, 4, 7, 10], [14, 17]), 0.12),  # A9 spread
+        'focus':          (([0, 4, 10, 14],), 0.06),    # A9 voicing
+        'unfocus':        (([14, 10, 7],), 0.06),       # B5+G+E descend
+        'copy':           (([12, 16, 21],), 0.05),      # A5+C#6+F#6
+        'delete':         (([-2, 2, 5],), 0.08),        # G+B+D (Gmaj)
+        'enter':          (([-5, -1, 2, 7],), 0.06),    # E+G#+B+E (Emaj w/oct)
+        'cancel':         (([6, 10, 13],), 0.06),       # Eb+G+Bb (Eb maj)
+        'record_start':   (([0, 4, 7, 10, 14],), 0.12), # A9 full
+        'record_stop':    (([-12, -8, -5, -2],), 0.12), # A7 low
+        'loading_start':  (([2, 5, 9],), 0.1),          # B+D+F# (Bm)
+        'loading_done':   (([0, 4, 7, 11],), 0.1),      # Amaj7
+        'start_rec':      (([7, 10, 14, 17],), 0.08),   # Em7+D (Em9)
+        'stop_rec':       (([0, 4, 7, 14],), 0.08),     # A+C#+E+B (Amaj9 no7)
+        'transcribe':     (([5, 9, 12, 16],), 0.06),    # D+F#+A+C# (Dmaj7)
+        'llm_start':      (([2, 5, 8, 11],), 0.06),     # B+D+F+G# (Bdim7)
+        'llm_done':       (([0, 4, 7, 11, 14],), 0.1),  # Amaj9
+    },
+}
+
 # Wake word detection constants
 WAKE_WORD_BUFFER_SECONDS = 2  # Seconds of audio to capture before wake word
 WAKE_WORD_FRAME_SAMPLES = 1280  # 80ms chunks for OpenWakeWord (16kHz * 0.08)
@@ -338,9 +480,9 @@ DEFAULTS = dict(
     SILENCE_SKIP_ENABLED=False,  # Skip recording during silence
     SILENCE_THRESHOLD=-60,  # dB threshold below which audio is considered silence
     CHIME_VOLUME=0.5,  # Volume for chimes (0.0 to 1.0)
-    CHIME_PROGRAM=0,  # Program number (0-127), single source of truth
+    CHIME_PROGRAM=38,  # Program number (0-127), single source of truth
     CHIME_PITCH=0,  # Pitch shift in semitones (-24 to +24)
-    CHIME_DECAY=0.5,  # Reverb decay (0.0 to 1.0, room size)
+    CHIME_THEME='default',  # Chime theme (default, blues, melancholy, bright)
 )
 S = Settings(**DEFAULTS)
 # =============================================================================
@@ -672,13 +814,87 @@ PANEL_BG_FLAT_CSS = STYLE.panel_bg_flat_css()
 
 from synth import synth_sequence, play_native, set_reverb
 
-def chime(*chords, t=0.15, gap=0.0, **kwargs):
+# Chime debug log - records (timestamp, name, chords, duration, theme, program, pitch)
+_chime_log = []
+_CHIME_DEBUG = True  # Set to False to disable logging
+CHIME_LOG_FILE = os.path.join(RECORDINGS_DIR, "chime_log.jsonl")
+
+def _log_chime_to_file(entry):
+    """Append chime entry to persistent log file (JSONL format)."""
+    import json
+    os.makedirs(RECORDINGS_DIR, exist_ok=True)
+    with open(CHIME_LOG_FILE, 'a') as f:
+        f.write(json.dumps(entry) + '\n')
+
+def chime(*chords, t=0.15, gap=0.0, name=None, **kwargs):
     """Play chime using native FluidSynth audio (non-blocking, layerable)."""
     if not S.SOUND_ENABLED or S.CHIME_VOLUME <= 0:
         return
+    # Log if debug enabled
+    if _CHIME_DEBUG and name:
+        import datetime
+        shift = -12 + S.CHIME_PITCH
+        # Compute final semitones after shift for analysis
+        final_semitones = [[note + shift for note in chord] for chord in chords]
+        entry = {
+            'ts': datetime.datetime.now().isoformat(),
+            'name': name,
+            'chords': [list(c) for c in chords],
+            'final_semitones': final_semitones,
+            't': t,
+            'theme': S.CHIME_THEME,
+            'program': S.CHIME_PROGRAM,
+            'pitch': S.CHIME_PITCH,
+            'volume': S.CHIME_VOLUME,
+        }
+        _chime_log.append(entry)
+        _log_chime_to_file(entry)
     # shift param adds to the base -12 octave shift
     play_native(chords, duration=t, gap=gap, volume=S.CHIME_VOLUME,
                 shift=-12 + S.CHIME_PITCH, program=S.CHIME_PROGRAM)
+
+
+def play_chime(name):
+    """Play a named chime from the current theme."""
+    theme = CHIME_THEMES.get(S.CHIME_THEME, CHIME_THEMES['default'])
+    if name not in theme:
+        return
+    chords, t = theme[name]
+    chime(*chords, t=t, name=name)
+
+
+def dump_chime_log():
+    """Print the chime log for analysis."""
+    print("\n=== CHIME LOG (session) ===")
+    print(f"{'Time':<12} {'Name':<15} {'Semitones':<35} {'Dur':<6} {'Theme':<12}")
+    print("-" * 85)
+    for e in _chime_log:
+        ts = e['ts'].split('T')[1][:12]  # HH:MM:SS.mmm
+        semitones = " → ".join(str(c) for c in e['final_semitones'])
+        print(f"{ts:<12} {e['name']:<15} {semitones:<35} {e['t']:.2f}s {e['theme']:<12}")
+    print(f"\nSession: {len(_chime_log)} chimes | File: {CHIME_LOG_FILE}")
+    print("=" * 85 + "\n")
+    return _chime_log
+
+
+def load_chime_log_from_file():
+    """Load full chime history from persistent log file."""
+    import json
+    if not os.path.exists(CHIME_LOG_FILE):
+        return []
+    entries = []
+    with open(CHIME_LOG_FILE, 'r') as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                entries.append(json.loads(line))
+    return entries
+
+
+def clear_chime_log():
+    """Clear the in-memory chime log (file log is preserved)."""
+    global _chime_log
+    _chime_log = []
 
 
 def load_icon(name, color=None):
@@ -1077,18 +1293,19 @@ class PrefsDialog(DraggableDialog):
         content = QHBoxLayout()
         content.setSpacing(15)
 
-        # Left side: Volume + Theme
+        # Left side: Notification Instrument + Theme
         theme_box = QVBoxLayout()
+        theme_box.setSpacing(4)  # Reduced vertical spacing (was default ~12)
 
-        # Notification Volume section
-        theme_box.addWidget(make_section("Notification Volume"))
+        # Notification Instrument section (merged volume + instrument)
+        theme_box.addWidget(make_section("Notification Instrument"))
+
+        # Volume slider with mute (at top)
         vol_row = QHBoxLayout()
-        vol_row.setSpacing(8)
-        self.mute_checkbox = QCheckBox("Mute")
-        self.mute_checkbox.setChecked(not S.SOUND_ENABLED)
-        self.mute_checkbox.setStyleSheet(f"QCheckBox {{ color: {TEXT_PRIMARY}; font-size: 12px; }}")
-        self.mute_checkbox.stateChanged.connect(self._on_mute_changed)
-        vol_row.addWidget(self.mute_checkbox)
+        vol_row.setSpacing(4)
+        vol_label = QLabel("Volume:")
+        vol_label.setStyleSheet(get_pref_label_css())
+        vol_row.addWidget(vol_label)
         self.vol_slider = QSlider(Qt.Orientation.Horizontal)
         self.vol_slider.setRange(0, 100)
         self.vol_slider.setValue(int(S.CHIME_VOLUME * 100))
@@ -1097,12 +1314,34 @@ class PrefsDialog(DraggableDialog):
         self.vol_slider.valueChanged.connect(self._on_volume_changed)
         vol_row.addWidget(self.vol_slider, 1)
         self.vol_value = QLabel(f"{int(S.CHIME_VOLUME * 100)}%")
-        self.vol_value.setStyleSheet(get_pref_label_css() + " min-width: 35px;")
+        self.vol_value.setStyleSheet(get_pref_label_css() + " min-width: 30px;")
         vol_row.addWidget(self.vol_value)
+        self.mute_checkbox = QCheckBox("Mute")
+        self.mute_checkbox.setChecked(not S.SOUND_ENABLED)
+        self.mute_checkbox.setStyleSheet(f"QCheckBox {{ color: {TEXT_PRIMARY}; font-size: 11px; }}")
+        self.mute_checkbox.stateChanged.connect(self._on_mute_changed)
+        vol_row.addWidget(self.mute_checkbox)
         theme_box.addLayout(vol_row)
 
+        # Pitch slider (-24 to +24 semitones)
+        pitch_row = QHBoxLayout()
+        pitch_row.setSpacing(4)
+        pitch_label = QLabel("Pitch:")
+        pitch_label.setStyleSheet(get_pref_label_css())
+        set_tooltip(pitch_label, "Pitch shift in semitones (-24 to +24)")
+        pitch_row.addWidget(pitch_label)
+        self.pitch_slider = QSlider(Qt.Orientation.Horizontal)
+        self.pitch_slider.setRange(-24, 24)
+        self.pitch_slider.setValue(S.CHIME_PITCH)
+        self.pitch_slider.setStyleSheet(get_slider_css())
+        self.pitch_slider.valueChanged.connect(self._on_pitch_changed)
+        pitch_row.addWidget(self.pitch_slider, 1)
+        self.pitch_value = QLabel(f"{S.CHIME_PITCH:+d}")
+        self.pitch_value.setStyleSheet(get_pref_label_css() + " min-width: 30px;")
+        pitch_row.addWidget(self.pitch_value)
+        theme_box.addLayout(pitch_row)
+
         # Instrument grid with icons (plays demo on click)
-        theme_box.addWidget(make_section("Instrument"))
         from synth import get_preset_name
         # Map program_number -> icon_file (sorted by program number)
         preset_icons = [
@@ -1122,7 +1361,7 @@ class PrefsDialog(DraggableDialog):
         for i, (prog_num, icon_name) in enumerate(preset_icons):
             btn = QPushButton()
             btn.setFixedSize(24, 24)
-            icon = load_icon(icon_name, color=ICON_COLOR_LIGHT)
+            icon = load_icon(icon_name, color=ICON_COLOR_DARK)  # Dark gray icons on light themes
             if icon:
                 btn.setIcon(icon)
                 btn.setIconSize(QSize(18, 18))
@@ -1131,6 +1370,7 @@ class PrefsDialog(DraggableDialog):
             base_css = get_btn_css().replace("padding: 3px 8px;", "padding: 0px; margin: 0px;").replace("text-align: left;", "text-align: center;")
             btn.setStyleSheet(base_css)
             btn.clicked.connect(lambda checked, p=prog_num: self._select_program(p))
+            btn.icon_name = icon_name  # Store for later icon color updates
             self._inst_buttons[btn] = prog_num
             inst_grid.addWidget(btn, i // 6, i % 6)  # 6 columns
         theme_box.addLayout(inst_grid)
@@ -1138,7 +1378,7 @@ class PrefsDialog(DraggableDialog):
 
         # Instrument name label (above program selector)
         self.prog_name_label = QLabel()
-        self.prog_name_label.setStyleSheet(get_pref_label_css() + f" font-size: 11px; color: {CYAN_CSS};")
+        self.prog_name_label.setStyleSheet(get_pref_label_css() + " font-size: 11px;")  # Uses TEXT_PRIMARY
         self.prog_name_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         theme_box.addWidget(self.prog_name_label)
 
@@ -1152,79 +1392,68 @@ class PrefsDialog(DraggableDialog):
         # Minus button with icon
         self.prog_minus = QPushButton()
         self.prog_minus.setFixedSize(24, 24)
-        minus_icon = load_icon('minus', color=ICON_COLOR_LIGHT)
+        minus_icon = load_icon('minus', color=ICON_COLOR_DARK)
         if minus_icon:
             self.prog_minus.setIcon(minus_icon)
-            self.prog_minus.setIconSize(QSize(16, 16))
-        self.prog_minus.setStyleSheet(get_btn_css().replace("padding: 3px 8px;", "padding: 0px; margin: 0px;"))
+            self.prog_minus.setIconSize(QSize(14, 14))
+        prog_btn_css = get_btn_css().replace("padding: 3px 8px;", "padding: 0px; margin: 0px;").replace("text-align: left;", "text-align: center;")
+        self.prog_minus.setStyleSheet(prog_btn_css)
         self.prog_minus.clicked.connect(self._prog_decrement)
         prog_row.addWidget(self.prog_minus)
         # 7-segment display
-        self.prog_display = Mini7Segment(S.CHIME_PROGRAM, STYLE.accent)
+        self.prog_display = Mini7Segment(S.CHIME_PROGRAM, ICON_COLOR_DARK)
         prog_row.addWidget(self.prog_display)
         # Plus button with icon
         self.prog_plus = QPushButton()
         self.prog_plus.setFixedSize(24, 24)
-        plus_icon = load_icon('plus', color=ICON_COLOR_LIGHT)
+        plus_icon = load_icon('plus', color=ICON_COLOR_DARK)
         if plus_icon:
             self.prog_plus.setIcon(plus_icon)
-            self.prog_plus.setIconSize(QSize(16, 16))
-        self.prog_plus.setStyleSheet(get_btn_css().replace("padding: 3px 8px;", "padding: 0px; margin: 0px;"))
+            self.prog_plus.setIconSize(QSize(14, 14))
+        self.prog_plus.setStyleSheet(prog_btn_css)
         self.prog_plus.clicked.connect(self._prog_increment)
         prog_row.addWidget(self.prog_plus)
         prog_row.addStretch()
         theme_box.addLayout(prog_row)
         self._update_prog_display()  # Initialize name label
 
-        # Pitch slider (-24 to +24 semitones)
-        pitch_row = QHBoxLayout()
-        pitch_row.setSpacing(8)
-        pitch_label = QLabel("Pitch:")
-        pitch_label.setStyleSheet(get_pref_label_css())
-        set_tooltip(pitch_label, "Pitch shift in semitones (-24 to +24)")
-        pitch_row.addWidget(pitch_label)
-        self.pitch_slider = QSlider(Qt.Orientation.Horizontal)
-        self.pitch_slider.setRange(-24, 24)
-        self.pitch_slider.setValue(S.CHIME_PITCH)
-        self.pitch_slider.setStyleSheet(get_slider_css())
-        self.pitch_slider.valueChanged.connect(self._on_pitch_changed)
-        pitch_row.addWidget(self.pitch_slider, 1)
-        self.pitch_value = QLabel(f"{S.CHIME_PITCH:+d}")
-        self.pitch_value.setStyleSheet(get_pref_label_css() + " min-width: 30px;")
-        pitch_row.addWidget(self.pitch_value)
-        theme_box.addLayout(pitch_row)
-
-        # Decay slider (0.0 to 1.0) - controls reverb room size
-        decay_row = QHBoxLayout()
-        decay_row.setSpacing(8)
-        decay_label = QLabel("Decay:")
-        decay_label.setStyleSheet(get_pref_label_css())
-        set_tooltip(decay_label, "Reverb decay (shorter = dry, longer = wet/sustained)")
-        decay_row.addWidget(decay_label)
-        self.decay_slider = QSlider(Qt.Orientation.Horizontal)
-        self.decay_slider.setRange(0, 100)  # 0.0 to 1.0
-        self.decay_slider.setValue(int(S.CHIME_DECAY * 100))
-        self.decay_slider.setStyleSheet(get_slider_css())
-        self.decay_slider.valueChanged.connect(self._on_decay_changed)
-        decay_row.addWidget(self.decay_slider, 1)
-        self.decay_value = QLabel(f"{int(S.CHIME_DECAY * 100)}%")
-        self.decay_value.setStyleSheet(get_pref_label_css() + " min-width: 35px;")
-        decay_row.addWidget(self.decay_value)
-        theme_box.addLayout(decay_row)
+        # Chime theme dropdown
+        chime_theme_row = QHBoxLayout()
+        chime_theme_label = QLabel("Chime Style")
+        chime_theme_label.setStyleSheet(get_pref_label_css())
+        set_tooltip(chime_theme_label, "Musical style for chime sounds")
+        chime_theme_row.addWidget(chime_theme_label)
+        self.chime_theme_combo = QComboBox()
+        self.chime_theme_combo.setStyleSheet(get_combobox_css())
+        for theme_name in CHIME_THEMES.keys():
+            display = theme_name.replace("_", " ").title()
+            self.chime_theme_combo.addItem(display, theme_name)
+        idx = self.chime_theme_combo.findData(S.CHIME_THEME)
+        if idx >= 0:
+            self.chime_theme_combo.setCurrentIndex(idx)
+        self.chime_theme_combo.currentIndexChanged.connect(self._on_chime_theme_changed)
+        chime_theme_row.addWidget(self.chime_theme_combo, 1)
+        theme_box.addLayout(chime_theme_row)
 
         theme_box.addWidget(make_section("Theme"))
+        # Theme buttons in compact sub-layout (60% reduced spacing = ~2px)
+        theme_btns_box = QVBoxLayout()
+        theme_btns_box.setSpacing(2)
         style_keys = list(STYLES.keys())
+        # Custom display names for themes
+        THEME_DISPLAY_NAMES = {"rust_grunge": "SBU Tunnels"}
         for i, style_name in enumerate(style_keys):
             key = str(i + 1)
-            display_name = style_name.replace("_", " ").title()
+            display_name = THEME_DISPLAY_NAMES.get(style_name, style_name.replace("_", " ").title())
             btn = QPushButton(f"{key}  {display_name}")
-            base_css = get_btn_css().replace("padding: 3px 8px;", "padding: 2px 8px; margin: 0px;")
+            base_css = get_btn_css().replace("padding: 3px 8px;", "padding: 1px 8px; margin: 0px;")
             btn.setStyleSheet(base_css)
             if style_name == current_style:
                 btn.setStyleSheet(base_css + f"QPushButton {{ border: 2px solid {CYAN_CSS}; }}")
             btn.clicked.connect(lambda checked, s=style_name, b=btn: self._select_style(s, b))
             self._style_buttons[btn] = style_name
-            theme_box.addWidget(btn)
+            theme_btns_box.addWidget(btn)
+        theme_box.addLayout(theme_btns_box)
         theme_box.addStretch()
         content.addLayout(theme_box)
 
@@ -1548,11 +1777,12 @@ class PrefsDialog(DraggableDialog):
         S.CHIME_PITCH = value
         self.pitch_value.setText(f"{value:+d}")
 
-    def _on_decay_changed(self, value):
-        S.CHIME_DECAY = value / 100.0
-        self.decay_value.setText(f"{value}%")
-        # Update reverb in real-time
-        set_reverb(room_size=S.CHIME_DECAY, level=0.3 + S.CHIME_DECAY * 0.4)
+    def _on_chime_theme_changed(self, index):
+        theme = self.chime_theme_combo.currentData()
+        S.CHIME_THEME = theme
+        # Play demo to hear the new theme
+        import threading
+        threading.Thread(target=lambda: play_chime('demo'), daemon=True).start()
 
     def _select_program(self, prog):
         """Select program number, update all UI, and play demo."""
@@ -1561,7 +1791,7 @@ class PrefsDialog(DraggableDialog):
         self._update_prog_display()
         # Play demo chime in background
         import threading
-        threading.Thread(target=lambda: chime([2, 6], [9, 14], t=0.12), daemon=True).start()
+        threading.Thread(target=lambda: play_chime('demo'), daemon=True).start()
 
     def _prog_increment(self):
         """Increment program number with wrap-around."""
@@ -2041,8 +2271,8 @@ class Mini7Segment(QWidget):
     def __init__(self, value=0, color=None):
         super().__init__()
         self.value = value
-        self.color = color or STYLE.accent
-        self.setFixedSize(50, 22)
+        self.color = color or ICON_COLOR_DARK
+        self.setFixedSize(53, 22)  # 3 digits * (14+3) + padding
 
     def set_value(self, val):
         self.value = val
@@ -2064,7 +2294,7 @@ class Mini7Segment(QWidget):
         # Draw each digit
         digit_w, digit_h = 14, 18
         seg_thick = 2
-        gap = 2
+        gap = 3  # Spacing between digits
 
         for i, ch in enumerate(text):
             x_off = i * (digit_w + gap) + 2
@@ -2895,14 +3125,14 @@ class VoiceThingWindow(QWidget):
             if self._prev_app:
                 self._prev_app.activateWithOptions_(NSApplicationActivateIgnoringOtherApps)
                 self._prev_app = None
-            self._chime([14, 7], t=0.06)  # G key: descending unfocus
+            play_chime('unfocus')  # G key: descending unfocus
         else:
             # Remember current app before stealing focus
             self._prev_app = NSWorkspace.sharedWorkspace().frontmostApplication()
             self.show()
             self.raise_()
             self.activateWindow()
-            self._chime([7, 14], t=0.06)  # G key: ascending focus
+            play_chime('focus')  # G key: ascending focus
 
     def _switch_tab(self, index):
         self.tab_stack.setCurrentIndex(index)
@@ -2946,7 +3176,7 @@ class VoiceThingWindow(QWidget):
     def _copy_to_clipboard(self, text):
         rp.string_to_clipboard(text)
         self.pet_container.trigger_copy()
-        self._chime([16, 20], t=0.05)  # E key: copy
+        play_chime('copy')  # E key: copy
 
     def _deramble_transcription(self, index, raw_text):
         """Process a transcription with LLM and update it in place."""
@@ -2961,7 +3191,7 @@ class VoiceThingWindow(QWidget):
         Copies the audio to a new timestamped file and runs through normal transcribe path.
         """
         if self.state != "idle":
-            self._chime([0, -3], t=0.08)
+            play_chime('delete')
             return
         # Find latest transcription with audio_path
         audio_path = None
@@ -2970,7 +3200,7 @@ class VoiceThingWindow(QWidget):
                 audio_path = self.transcriptions[i][2]
                 break
         if not audio_path or not os.path.exists(audio_path):
-            self._chime([0, -3], t=0.08)
+            play_chime('delete')
             return
         # Copy to new file and transcribe through normal path
         self._transcribe_file(audio_path)
@@ -2990,7 +3220,7 @@ class VoiceThingWindow(QWidget):
                 kb.tap("v")
             if S.AUTO_ENTER:
                 time.sleep(S.ENTER_DELAY)
-                self._chime([-10], [-14], [-10], t=0.05)  # Low do-ba-do for Enter
+                play_chime('enter')  # Low do-ba-do for Enter
                 kb.press(Key.enter)
                 time.sleep(0.1)
                 kb.release(Key.enter)
@@ -3003,7 +3233,7 @@ class VoiceThingWindow(QWidget):
             subprocess.run(['tmux', 'send-keys', '-l', text], check=True)
             if S.AUTO_ENTER:
                 time.sleep(S.ENTER_DELAY)
-                self._chime([-10], [-14], [-10], t=0.05)  # Low do-ba-do for Enter
+                play_chime('enter')  # Low do-ba-do for Enter
                 subprocess.run(['tmux', 'send-keys', 'Enter'], check=True)
             print(f"Sent to tmux: {text[:50]}{'...' if len(text) > 50 else ''}")
         except subprocess.CalledProcessError as e:
@@ -3120,6 +3350,7 @@ class VoiceThingWindow(QWidget):
         elif no_mods and key == Qt.Key.Key_M: self.show_model_dialog()
         elif no_mods and key == Qt.Key.Key_P: self.show_prefs()
         elif key == Qt.Key.Key_Question: self.show_help()
+        elif ctrl and key == Qt.Key.Key_L: dump_chime_log()  # Ctrl+L: dump chime log
         else:
             super().keyPressEvent(e)
 
@@ -3261,7 +3492,7 @@ class VoiceThingWindow(QWidget):
         elif self.state == "recording":
             self.stop_recording()
         else:
-            self._chime([0, -3], t=0.08)  # Minor: busy/error
+            play_chime('delete')  # Minor: busy/error
 
     def cancel_recording(self):
         if self.state != "recording":
@@ -3271,7 +3502,7 @@ class VoiceThingWindow(QWidget):
         self.audio_chunks = []
         self.waveform.set_samples(np.array([]))
         self.pet_container.set_listening(False)  # Stop pet animation
-        self._chime([3, -1], t=0.06)  # Minor: cancel
+        play_chime('cancel')  # Minor: cancel
         # Reset wake word model to clear any buffered audio that might cause false triggers
         if self.wake_word_model is not None:
             self.wake_word_model.reset()
@@ -3332,10 +3563,10 @@ class VoiceThingWindow(QWidget):
         self._update_checkable_btn_icon(self.wake_word_btn)
         if enabled:
             self._start_wake_word_listener()
-            self._chime([0, 4, 7, 12], t=0.15)
+            play_chime('record_start')
         else:
             self._stop_wake_word_listener()
-            self._chime([-12, -8, -5, 0], t=0.15)
+            play_chime('record_stop')
         print(f"Wake word detection {'ON' if enabled else 'OFF'}")
         self._update_status()
 
@@ -3489,10 +3720,6 @@ class VoiceThingWindow(QWidget):
         # Use signal to call start_recording on main thread with pre_buffer
         self.wake_word_signal.emit(pre_buffer)
 
-    def _chime(self, *args, **kwargs):
-        """Play chime (sound check is inside chime())."""
-        chime(*args, **kwargs)
-
     def show_help(self):
         """Show help dialog."""
         dialog = HelpDialog(self)
@@ -3580,7 +3807,7 @@ class VoiceThingWindow(QWidget):
         # Simple settings without hooks (or with trivial hooks)
         for key in ['ENTER_DELAY', 'WAKE_WORD_SENSITIVITY', 'CUSTOM_WORDS', 'WHISPER_MODEL',
                     'LLM_MODEL', 'LLM_PREFIX', 'CHIME_VOLUME', 'CHIME_PITCH',
-                    'CHIME_DECAY', 'CHIME_PROGRAM', 'SILENCE_SKIP_ENABLED', 'SILENCE_THRESHOLD']:
+                    'CHIME_PROGRAM', 'CHIME_THEME', 'SILENCE_SKIP_ENABLED', 'SILENCE_THRESHOLD']:
             if key in data:
                 S[key] = data[key]
         # SIMPLE_MODE needs toggle pattern
@@ -3662,13 +3889,13 @@ class VoiceThingWindow(QWidget):
         self._switch_tab(0)
 
         def load():
-            self._chime([5], [12], t=0.1)  # Loading start
+            play_chime('loading_start')  # Loading start
             print(f"Loading model: {new_model}")
             rp.r._get_pywhispercpp_model(new_model)
             S.WHISPER_MODEL = new_model
             self._save_settings()
             print(f"Model {new_model} loaded")
-            self._chime([5, 9, 12], [17], t=0.15)  # Loading done
+            play_chime('loading_done')  # Loading done
             self._set_state("idle")
 
         threading.Thread(target=load, daemon=True).start()
@@ -3695,7 +3922,7 @@ class VoiceThingWindow(QWidget):
         self.show()
         self._set_state("transcribing", "Transcribing...")
         self._switch_tab(0)
-        self._chime([2, 6], [9, 14], t=0.08)  # D key
+        play_chime('start_rec')  # D key
         self.last_audio_path = path
         threading.Thread(target=self._transcribe_file_thread, args=(path,), daemon=True).start()
 
@@ -3731,7 +3958,7 @@ class VoiceThingWindow(QWidget):
         self.timer_label.set_text("0:00.0")
         self._set_state("recording", "Recording")
         self.pet_container.set_listening(True)
-        self._chime([2, 6], [9, 14], t=0.08)  # D key
+        play_chime('start_rec')  # D key
 
         def callback(indata, frames, time_info, status):
             chunk = indata[:, 0].copy()
@@ -3761,20 +3988,20 @@ class VoiceThingWindow(QWidget):
         self._set_state("transcribing", "Transcribing...")
         self.pet_container.set_listening(False)
         self._switch_tab(0)  # Switch to Output tab during transcription
-        self._chime([14, 9], [6, 2], t=0.08)  # D key: stop recording
+        play_chime('stop_rec')  # D key: stop recording
         audio = np.concatenate(self.audio_chunks) if self.audio_chunks else np.array([])
         self.waveform.set_samples(audio)
         threading.Thread(target=self._transcribe, args=(audio,), daemon=True).start()
 
     def _run_llm(self, text):
         """Run LLM on text. Returns processed result."""
-        self._chime([7, 11], t=0.06)  # LLM processing start
+        play_chime('llm_start')  # LLM processing start
         print(f"Processing with LLM ({S.LLM_MODEL})...")
         prefix = S.LLM_PREFIX if S.LLM_PREFIX else DEFAULT_LLM_PREFIX
         prompt = prefix + text
         result = rp.run_llm_api(prompt, model=S.LLM_MODEL)
         print(f"LLM result: {result!r}")
-        self._chime([11, 14, 18], t=0.08)  # LLM processing done
+        play_chime('llm_done')  # LLM processing done
         return result
 
     def _process_with_llm(self, text):
@@ -3793,7 +4020,7 @@ class VoiceThingWindow(QWidget):
         print(f"Result: {raw_text!r}")
         if not raw_text:
             return
-        self._chime([2], [6], [9], [14], t=0.08)  # Transcription done chime
+        play_chime('transcribe')  # Transcription done chime
 
         if S.LLM_ENABLED:
             # Show raw immediately, paste after LLM finishes
