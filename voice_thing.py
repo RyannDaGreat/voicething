@@ -3083,11 +3083,9 @@ class VoiceThingWindow(QWidget):
         self._chime([2], [6], [9], [14], t=0.08)  # Transcription done chime
 
         if self.llm_enabled:
-            # Show raw immediately, then update when LLM finishes
+            # Show raw immediately, paste after LLM finishes
             index = len(self.transcriptions)
             self.add_transcription_signal.emit(raw_text, "", audio_path or "")
-            self.last_transcription = raw_text
-            self.paste_signal.emit(raw_text)
 
             def run_llm_and_update():
                 processed = self._run_llm(raw_text)
@@ -3096,6 +3094,7 @@ class VoiceThingWindow(QWidget):
                         f.write(processed)
                 self.last_transcription = processed
                 self.update_transcription_signal.emit(index, raw_text, processed)
+                self.paste_signal.emit(processed)
             threading.Thread(target=run_llm_and_update, daemon=True).start()
         else:
             if txt_path:
