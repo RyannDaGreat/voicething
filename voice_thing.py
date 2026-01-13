@@ -482,7 +482,7 @@ DEFAULTS = dict(
     CHIME_VOLUME=0.5,  # Volume for chimes (0.0 to 1.0)
     CHIME_PROGRAM=38,  # Program number (0-127), single source of truth
     CHIME_PITCH=0,  # Pitch shift in semitones (-24 to +24)
-    CHIME_THEME='default',  # Chime theme (default, blues, melancholy, bright)
+    CHIME_THEME='ethereal',  # Chime theme (default, blues, melancholy, bright)
 )
 S = Settings(**DEFAULTS)
 # =============================================================================
