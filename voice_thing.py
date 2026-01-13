@@ -319,7 +319,7 @@ class Settings(dict):
 S = Settings(
     ENTER_DELAY=0.1,
     WAKE_WORD_SENSITIVITY=0.25,
-    CUSTOM_WORDS=[],
+    CUSTOM_WORDS="",
     AUTO_HIDE=False,
     SOUND_ENABLED=True,
     LLM_ENABLED=False,
@@ -1100,7 +1100,7 @@ class PrefsDialog(DraggableDialog):
         context_row.addWidget(context_label)
         self.context_edit = QLineEdit()
         self.context_edit.setPlaceholderText("e.g. Wall-E, Wally, PyTorch, CUDA")
-        self.context_edit.setText(", ".join(S.CUSTOM_WORDS))
+        self.context_edit.setText(S.CUSTOM_WORDS)
         self.context_edit.setStyleSheet(
             "QLineEdit { background: white; color: black; border: 1px solid #888; "
             "padding: 4px 8px; border-radius: 3px; }"
@@ -1231,9 +1231,7 @@ class PrefsDialog(DraggableDialog):
         self.delay_value.setText(f"{S.ENTER_DELAY:.1f}s")
 
     def _on_context_changed(self, text):
-        # Parse comma-separated words, strip whitespace, filter empty
-        words = [w.strip() for w in text.split(",") if w.strip()]
-        S.CUSTOM_WORDS = words
+        S.CUSTOM_WORDS = text
 
     def _on_llm_model_changed(self, index):
         S.LLM_MODEL = self.llm_model_combo.itemData(index)
@@ -2379,7 +2377,7 @@ class VoiceThingWindow(QWidget):
         min_w = STYLE.timer_panel_size[0] + 40  # timer panel + padding for title bar buttons
         min_h = STYLE.timer_panel_size[1] + 55  # timer panel + title bar height
         self.setMinimumSize(min_w, min_h)
-        self.resize(460, 460)
+        self.resize(478, 460)
         self.hide_signal.connect(self._maybe_hide)
         self.toggle_signal.connect(self.toggle_recording)
         self.focus_signal.connect(self._focus_window)
@@ -2409,6 +2407,7 @@ class VoiceThingWindow(QWidget):
         S.hooks['WAKE_WORD_ENABLED'] = self._on_wake_word_enabled_changed
         S.hooks['WAKE_WORD_MODEL'] = self._on_wake_word_model_changed
         S.hooks['TMUX_MODE'] = self._on_tmux_mode_changed
+        S.hooks['SIMPLE_MODE'] = self._on_simple_mode_changed
 
         self._load_settings()
         self._update_ui()  # Initialize UI layout based on boot size
@@ -2880,6 +2879,9 @@ class VoiceThingWindow(QWidget):
         self._update_checkable_btn_icon(self.tmux_btn)  # Uses icon_name from button ("tmux")
         print(f"Tmux paste mode {'ON' if enabled else 'OFF'}")
 
+    def _on_simple_mode_changed(self, enabled):
+        self._update_ui()
+
     def _on_wake_word_enabled_changed(self, enabled):
         self.wake_word_btn.setChecked(enabled)
         self._update_checkable_btn_icon(self.wake_word_btn)
@@ -2921,29 +2923,22 @@ class VoiceThingWindow(QWidget):
 
     def toggle_simple_mode(self):
         """Toggle simple mode - hides advanced buttons and shows only transcriptions."""
-        S.SIMPLE_MODE = not S.SIMPLE_MODE
-        self._update_ui()  # Single source of truth handles all visibility
-        self._save_settings()
+        S.set('SIMPLE_MODE', not S.SIMPLE_MODE)
 
     def toggle_sound(self):
         S.set('SOUND_ENABLED', not S.SOUND_ENABLED)
-        self._save_settings()
 
     def toggle_llm(self):
         S.set('LLM_ENABLED', not S.LLM_ENABLED)
-        self._save_settings()
 
     def toggle_wake_word(self):
         S.set('WAKE_WORD_ENABLED', not S.WAKE_WORD_ENABLED)
-        self._save_settings()
 
     def toggle_auto_enter(self):
         S.set('AUTO_ENTER', not S.AUTO_ENTER)
-        self._save_settings()
 
     def toggle_tmux_mode(self):
         S.set('TMUX_MODE', not S.TMUX_MODE)
-        self._save_settings()
 
     def _load_wake_word_model(self):
         """Lazy load OpenWakeWord model."""
@@ -3256,7 +3251,7 @@ class VoiceThingWindow(QWidget):
     def _transcribe_file_thread(self, path):
         try:
             print(f"Transcribing file: {path}")
-            initial_prompt = ", ".join(S.CUSTOM_WORDS) if S.CUSTOM_WORDS else None
+            initial_prompt = S.CUSTOM_WORDS or None
             # Note: carry_initial_prompt not yet exposed in pywhispercpp C bindings
             result = rp.transcribe_audio_file_via_whisper(
                 path, model=S.WHISPER_MODEL, show_progress=True,
@@ -3378,7 +3373,7 @@ class VoiceThingWindow(QWidget):
 
             scipy.io.wavfile.write(wav_path, SAMPLE_RATE, (audio * 32767).astype(np.int16))
             self.last_audio_path = wav_path
-            initial_prompt = ", ".join(S.CUSTOM_WORDS) if S.CUSTOM_WORDS else None
+            initial_prompt = S.CUSTOM_WORDS or None
             # Note: carry_initial_prompt not yet exposed in pywhispercpp C bindings
             result = rp.transcribe_audio_file_via_whisper(
                 wav_path, model=S.WHISPER_MODEL, show_progress=True,
