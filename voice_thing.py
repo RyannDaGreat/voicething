@@ -53,7 +53,7 @@ import sounddevice as sd
 from AppKit import NSWorkspace, NSApplicationActivateIgnoringOtherApps
 from pynput import keyboard
 from pynput.keyboard import Controller as KeyboardController, Key
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QSize, QPointF, QRectF, QPropertyAnimation, QEasingCurve, pyqtProperty, QEvent
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QSize, QPointF, QRectF, QPropertyAnimation, QEasingCurve, pyqtProperty, QEvent, QSortFilterProxyModel
 from PyQt6.QtGui import QPainter, QColor, QPen, QIcon, QFont, QFontDatabase, QPolygonF, QLinearGradient, QBrush, QPainterPath, QPixmap
 from PyQt6.QtSvg import QSvgRenderer
 from PyQt6.QtWidgets import (
@@ -77,6 +77,7 @@ from PyQt6.QtWidgets import (
     QGraphicsDropShadowEffect,
     QSizePolicy,
     QMessageBox,
+    QCompleter,
 )
 from Foundation import NSBundle
 import os.path as osp
@@ -105,29 +106,160 @@ WAKE_WORD_BUFFER_SECONDS = 2  # Seconds of audio to capture before wake word
 WAKE_WORD_FRAME_SAMPLES = 1280  # 80ms chunks for OpenWakeWord (16kHz * 0.08)
 WAKE_WORD_COOLDOWN = 2.0  # Seconds to ignore wake word after triggering
 
+# Built-in openWakeWord models (no download needed, use name directly)
+BUILTIN_WAKE_WORDS = ["alexa", "hey_mycroft", "hey_jarvis", "hey_rhasspy"]
+
 # Community wake word models - download with download_community_wake_word()
 # From home-assistant-wakewords-collection (cloned): https://github.com/RyannDaGreat/home-assistant-wakewords-collection
-# Format: {name: path} - most use v2, some only have v1
+# Format: {name: path} - most use v2 if available
 _COMMUNITY_WAKE_WORD_BASE = "https://raw.githubusercontent.com/RyannDaGreat/home-assistant-wakewords-collection/main/en"
 COMMUNITY_WAKE_WORDS = {
-    "computer":        "computer/computer_v2.onnx",
-    "ok_computer":     "ok_computer/ok_computer.onnx",
-    "glados":          "glados/glados.onnx",
-    "hey_marvin":      "hey_Marvin/hey_Marvin.onnx",
-    "hey_luna":        "Hey Luna/hey_luna.onnx",
-    "dumbledore":      "Dumbledore/Dumbledore.onnx",
-    "darth_vader":     "darth_vader/Darth_Vader.onnx",
-    "tars":            "TARS/TARS.onnx",
-    "alfred":          "alfred/alfred.onnx",
-    "hey_gerty":       "hey_GERTY/hey_GERTY.onnx",
-    "jarvis":          "jarvis/jarvis_v1.onnx",
-    "ok_jarvis":       "ok_jarvis/ok_jarvis.onnx",
-    "hey_friday":      "hey_friday/hey_Friday!.onnx",
-    "hal":             "hal/hal_v2.onnx",
-    "skynet":          "skynet/Skynet.onnx",
-    "terminator":      "terminator/Terminator.onnx",
-    "home_assistant":  "home_assistant/Home_assistant.onnx",
+    # A
+    "ae_ttuddae": "ae-ttuddae/ae-ttuddae.onnx",
+    "alfred": "alfred/alfred.onnx",
+    "alice": "Alice/Alice.onnx",
+    "andromeda": "andromeda/andromeda.onnx",
+    # B
+    "barclay": "barclay/Barclay.onnx",
+    "bartolo": "bartolo/Bartolo.onnx",
+    # C
+    "choo_choo_homie": "choo_choo_homie/choo_choo_homie.onnx",
+    "computer": "computer/computer_v2.onnx",
+    # D
+    "darth_vader": "darth_vader/Darth_Vader.onnx",
+    "do_you_read_me_hal": "do_you_read_me__hal/do_you_read_me__hal.onnx",
+    "dumbledore": "Dumbledore/Dumbledore.onnx",
+    # E
+    "edna": "edna/edna.onnx",
+    "em_oi": "em__oi/em__oi.onnx",
+    # G
+    "glados": "glados/glados.onnx",
+    # H
+    "hal": "hal/hal_v2.onnx",
+    "hey_hal": "hey__hal/hey__hal.onnx",
+    "hey_alba": "hey_alba/hey_alba.onnx",
+    "hey_anna": "hey_anna/hey_anna.onnx",
+    "hey_barabas": "hey_barabas/hey_barabas.onnx",
+    "hey_billy": "hey_billy/hey_billy.onnx",
+    "hey_chatterbox": "hey_chatterbox/hey_chatterbox.onnx",
+    "hey_chewbacca": "hey_chewbacca/Hey_Chewbacca.onnx",
+    "hey_cj": "hey_cj/Hey_CJ.onnx",
+    "hey_dick_head": "hey_dick_head/hey_dick_head.onnx",
+    "hey_esp": "hey_esp/hey_esp.onnx",
+    "hey_frenck": "hey_frenck/hey_frenck.onnx",
+    "hey_friday": "hey_friday/hey_Friday!.onnx",
+    "hey_gerty": "hey_GERTY/hey_GERTY.onnx",
+    "hey_guillermo": "hey_guillermo/hey_guillermo.onnx",
+    "hey_home_free": "hey_home_free/hey_home_free.onnx",
+    "hey_homer": "hey_homer/Hey_Homer.onnx",
+    "hey_honey": "hey_honey/Hey_Honey.onnx",
+    "hey_house": "hey_house/hey_house.onnx",
+    "hey_kitt": "hey_kitt/hey_kitt.onnx",
+    "hey_konstantin": "hey_konstantin/hey_konstantin.onnx",
+    "hey_kratos": "hey_kratos/Hey_Kreitos.onnx",
+    "hey_lara": "Hey Lara/lara.onnx",
+    "hey_lisa": "hey_lisa/hey_lisa.onnx",
+    "hey_luna": "Hey Luna/hey_luna.onnx",
+    "hey_marvin": "hey_Marvin/hey_Marvin.onnx",
+    "hey_mcqueen": "hey_mcqueen/Hey_McQueen.onnx",
+    "hey_megan": "hey_megan/hey_megan.onnx",
+    "hey_miriel": "hey_miriel/hey_miriel.onnx",
+    "hey_nabu": "hey_nabu/hey_nabu_v2.onnx",
+    "hey_ozzy": "hey_ozzy/hey_ozzy.onnx",
+    "hey_potato": "hey_potato/hey_potato.onnx",
+    "hey_rick": "hey_rick/hey_rick.onnx",
+    "hey_santa": "hey_santa/hey_santa.onnx",
+    "hey_skelly": "hey_skelly/Hey_Skelly.onnx",
+    "hey_snips": "hey_snips/hey_snips.onnx",
+    "hey_spock": "hey_spock/hey_spock.onnx",
+    "hey_wire_tap": "hey_wire_tap/hey_wire_tap.onnx",
+    "hey_zelda": "hey_zelda/hey_zelda.onnx",
+    "hi_xiaowen": "hi_xiaowen/hi_xiaowen_v2.onnx",
+    "hola_casita": "hola_casita/Hola_casita.onnx",
+    "home_assistant": "home_assistant/Home_assistant.onnx",
+    # J
+    "janet": "janet/Janet.onnx",
+    "jarvis": "jarvis/jarvis_v2.onnx",
+    "johnny_five": "johnny_five/johnny_five.onnx",
+    "jupiter": "jupiter/jupiter-50-50-700.onnx",
+    # K
+    "kelsey": "kelsey/kelsey.onnx",
+    # L
+    "lisa": "lisa/Lisa.onnx",
+    # M
+    "marvin": "marvin/marvin_v2.onnx",
+    "mirror_mirror_on_the_wall": "mirror_mirror_on_the_wall/mirror_mirror_on_the_wall.onnx",
+    "mr_anderson": "mr_anderson/Mr._Anderson.onnx",
+    "mr_smith": "mr_smith/mr_smith.onnx",
+    "mr_wick": "mr_wick/Mr._Wick.onnx",
+    # N
+    "nihao_mia": "nihao_mia/nihao_mia_v2.onnx",
+    "nihao_wenwen": "nihao_wenwen/nihao_wenwen.onnx",
+    # O
+    "oi_fuckwhit": "oi_fuckwhit/oi_fuckwhit_v2.onnx",
+    "ok_bender": "ok_bender/ok_bender.onnx",
+    "ok_boss": "ok_boss/ok_boss.onnx",
+    "ok_casita": "ok_casita/ok_casita.onnx",
+    "ok_computer": "ok_computer/ok_computer.onnx",
+    "ok_home": "ok_home/ok_home.onnx",
+    "ok_jarvis": "ok_jarvis/ok_jarvis.onnx",
+    "ok_nabu": "ok_nabu/ok_nabu.onnx",
+    "ok_neo": "ok_neo/ok_neo.onnx",
+    "ok_paulus": "ok_paulus/ok_paulus.onnx",
+    "ok_tau": "ok_tau/ok_tau.onnx",
+    "ok_trevor": "ok_trevor/ok_trevor.onnx",
+    "ok_wire_tap": "ok_wire_tap/ok_wire_tap.onnx",
+    # P
+    "pandora": "pandora/Pandora.onnx",
+    "polly": "polly/polly.onnx",
+    # Q
+    "queen_of_lights": "Queen_of_lights/Queen_of_lights.onnx",
+    # R
+    "r2d2": "r2d2/r2d2.onnx",
+    "ronaldo": "ronaldo/Ronaldo.onnx",
+    "rubber_duck": "rubber_duck/rubber_duck.onnx",
+    # S
+    "santana": "santana/Santana.onnx",
+    "scarlett": "scarlett/Scarlett.onnx",
+    "scooby": "scooby/Scooby.onnx",
+    "sheila": "sheila/sheila_v2.onnx",
+    "skynet": "skynet/Skynet.onnx",
+    # T
+    "tars": "TARS/TARS.onnx",
+    "terminator": "terminator/Terminator.onnx",
+    # U
+    "ultra_house": "ultra_house/ultra_house.onnx",
+    # V
+    "veronica": "veronica/veronica.onnx",
+    # W
+    "wall_e": "wall-e/wall-e.onnx",
+    "wheatley": "wheatley/wheatley.onnx",
+    "winston": "winston/Winston.onnx",
+    # Y
+    "yo_bitch": "yo_bitch/yo_bitch.onnx",
+    "yo_homie": "yo_homie/yo_homie.onnx",
 }
+
+# Popular/well-known wake words to show at top of dropdown (in order)
+FEATURED_WAKE_WORDS = [
+    "alexa",          # Built-in (Amazon style)
+    "computer",       # Star Trek classic (community)
+    "jarvis",         # Iron Man (community)
+    "hey_jarvis",     # Built-in
+    "hey_friday",     # Iron Man (community)
+    "glados",         # Portal (community)
+    "hal",            # 2001: A Space Odyssey (community)
+    "tars",           # Interstellar (community)
+    "hey_marvin",     # Hitchhiker's Guide (community)
+    "terminator",     # Classic (community)
+]
+
+def get_wake_words_ordered():
+    """Get all wake words with featured ones first, then rest alphabetically."""
+    all_words = set(COMMUNITY_WAKE_WORDS.keys()) | set(BUILTIN_WAKE_WORDS)
+    featured = [w for w in FEATURED_WAKE_WORDS if w in all_words]
+    rest = sorted(w for w in all_words if w not in featured)
+    return featured + rest
 
 def get_wake_word_display(name):
     """Get display name for a wake word model (e.g. 'hey_marvin' -> 'Hey Marvin')."""
@@ -372,11 +504,29 @@ def get_combobox_css():
     """Get ComboBox CSS - white bg, black text, inverted on hover."""
     return """
         QComboBox { background: white; color: black; border: 1px solid #888; padding: 4px 8px; }
-        QComboBox::drop-down { border: none; width: 20px; }
-        QComboBox::down-arrow { border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 6px solid black; }
-        QComboBox QAbstractItemView { background: white; color: black; }
+        QComboBox QAbstractItemView { background: white; color: black; selection-background-color: black; selection-color: white; }
         QComboBox QAbstractItemView::item:hover { background: black; color: white; }
+        QComboBox QLineEdit { background: white; color: black; padding: 0px; margin: 0px; border: none; }
     """
+
+def make_combobox_searchable(combo_box):
+    """Make a QComboBox searchable with substring filtering (type to filter).
+
+    Based on https://gist.github.com/rBrenick/cb4c29f8a2d094e9df3e321a87eceb04
+    """
+    combo_box.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+    combo_box.setEditable(True)
+    combo_box.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+
+    filter_model = QSortFilterProxyModel(combo_box)
+    filter_model.setFilterCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+    filter_model.setSourceModel(combo_box.model())
+
+    completer = QCompleter(filter_model, combo_box)
+    completer.setCompletionMode(QCompleter.CompletionMode.UnfilteredPopupCompletion)
+    combo_box.setCompleter(completer)
+
+    combo_box.lineEdit().textEdited.connect(filter_model.setFilterFixedString)
 
 def get_slider_css():
     """Get slider CSS for preference dialogs."""
@@ -797,11 +947,12 @@ class PrefsDialog(DraggableDialog):
         ww_row.addWidget(ww_label)
         self.wake_word_combo = QComboBox()
         self.wake_word_combo.setStyleSheet(get_combobox_css())
-        wake_word_options = list(COMMUNITY_WAKE_WORDS.keys())
+        wake_word_options = get_wake_words_ordered()  # Featured first, then alphabetical
         for ww in wake_word_options:
             self.wake_word_combo.addItem(get_wake_word_display(ww), ww)
         idx = wake_word_options.index(self.selected_wake_word) if self.selected_wake_word in wake_word_options else 0
         self.wake_word_combo.setCurrentIndex(idx)
+        make_combobox_searchable(self.wake_word_combo)  # Enable search/filter
         self.wake_word_combo.currentIndexChanged.connect(self._on_wake_word_changed)
         ww_row.addWidget(self.wake_word_combo, 1)
         layout.addLayout(ww_row)
@@ -2596,11 +2747,13 @@ class VoiceThingWindow(QWidget):
             return True
         try:
             from openwakeword.model import Model
-            # Check if it's a community model (needs download) or official model
-            if S.WAKE_WORD_MODEL in COMMUNITY_WAKE_WORDS:
+            # Built-in models use name directly, community models need download
+            if S.WAKE_WORD_MODEL in BUILTIN_WAKE_WORDS:
+                model_path = S.WAKE_WORD_MODEL  # Built-in, use name directly
+            elif S.WAKE_WORD_MODEL in COMMUNITY_WAKE_WORDS:
                 model_path = download_community_wake_word(S.WAKE_WORD_MODEL)
             else:
-                model_path = S.WAKE_WORD_MODEL
+                raise ValueError(f"Unknown wake word model: {S.WAKE_WORD_MODEL}")
             self.wake_word_model = Model(
                 wakeword_models=[model_path],
                 inference_framework='onnx'
