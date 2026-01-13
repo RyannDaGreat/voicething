@@ -2204,13 +2204,15 @@ class VoiceThingWindow(QWidget):
         self.btn_row2.setSpacing(8)
         self.btn_row2_widget.setVisible(False)
 
-        # Store all buttons in display order for dynamic row assignment
+        # Store buttons for dynamic row assignment
         self.all_toolbar_buttons = [
             self.record_btn, self.cancel_btn, self.retranscribe_btn, self.simple_btn,
             self.copy_btn, self.load_btn, self.folder_btn, self.sound_btn,
             self.eye_btn, self.llm_btn, self.wake_word_btn, self.enter_btn,
             self.tmux_btn, self.model_btn, self.prefs_btn, self.help_btn,
         ]
+        self.essential_buttons = {self.record_btn, self.cancel_btn, self.simple_btn,
+                                  self.prefs_btn, self.help_btn}
         layout.addWidget(self.btn_row_widget)
         layout.addWidget(self.btn_row2_widget)
 
@@ -2614,110 +2616,71 @@ class VoiceThingWindow(QWidget):
         super().resizeEvent(e)
         self._update_ui()
 
+    def _calc_btn_width(self, num_buttons, width):
+        """Calculate button width given number of buttons and available width."""
+        if num_buttons == 0:
+            return 0
+        spacing = 8 * (num_buttons - 1)
+        return (width - 16 - spacing) / num_buttons  # 16 = margins
+
     def _update_ui(self):
-        """Single source of truth for all UI visibility based on window size and mode flags.
-
-        React-like approach: all visibility decisions happen here based on current state.
-        Called by resizeEvent, toggle_simple_mode, and any other state changes.
-
-        Toolbar width breakpoints:
-        1. Normal: all buttons in single row
-        2. Two-row: split buttons across two rows when width too narrow
-        3. Simple mode: hide advanced buttons when even two rows are too narrow
-        """
+        """Single source of truth for all UI visibility based on window size and mode flags."""
         h, w = self.height(), self.width()
 
-        # Height thresholds for progressive element hiding
-        # Order: tabs hide first (highest threshold), then text area, then buttons
+        # Height thresholds
         show_tabs = h >= 250
         show_output = h >= 220
         show_buttons = h >= 180
-        show_waveform = h >= 120
         is_small = h < 120
 
-        # Width threshold for icon-only mode
-        icon_only = w < 350
-
-        # --- Panel visibility ---
+        # Panel visibility
         self.tab_stack.setVisible(show_output)
         self.tab_row_widget.setVisible(show_tabs and not S.SIMPLE_MODE)
         self.btn_row_widget.setVisible(show_buttons)
-        self.waveform.setVisible(show_waveform)
+        self.waveform.setVisible(h >= 120)
         self.status_spacer.setVisible(show_buttons)
 
-        # --- Calculate toolbar layout mode based on button widths ---
-        # Essential buttons always shown; advanced hidden in simple mode
-        essential = {self.record_btn, self.cancel_btn, self.simple_btn, self.prefs_btn, self.help_btn}
-        advanced = [self.retranscribe_btn, self.eye_btn, self.llm_btn, self.wake_word_btn,
-                   self.enter_btn, self.tmux_btn, self.model_btn, self.folder_btn,
-                   self.sound_btn, self.copy_btn, self.load_btn]
-
-        # Get visible buttons (respect simple mode)
-        if S.SIMPLE_MODE:
-            visible_buttons = [b for b in self.all_toolbar_buttons if b in essential]
-        else:
-            visible_buttons = self.all_toolbar_buttons[:]
-
-        # Calculate button width if all in single row
-        spacing = 8
-        num_visible = len(visible_buttons)
-        available_width = w - 16  # margins
-        total_spacing = spacing * (num_visible - 1) if num_visible > 1 else 0
-        btn_width_single_row = (available_width - total_spacing) / num_visible if num_visible else 0
-
-        # Determine layout mode: single row, two rows, or force simple
+        # Determine toolbar layout: single row, two rows, or force simple
+        n = len(self.all_toolbar_buttons)
         use_two_rows = False
         force_simple = False
 
-        if btn_width_single_row < MIN_TOOLBAR_BUTTON_WIDTH and not S.SIMPLE_MODE:
-            # Try two rows: split buttons evenly
-            half = (num_visible + 1) // 2
-            btn_width_two_rows = (available_width - spacing * (half - 1)) / half if half else 0
-            if btn_width_two_rows >= MIN_TOOLBAR_BUTTON_WIDTH:
-                use_two_rows = True
-            else:
-                # Even two rows too narrow - force simple mode display
-                force_simple = True
+        if not S.SIMPLE_MODE:
+            if self._calc_btn_width(n, w) < MIN_TOOLBAR_BUTTON_WIDTH:
+                # Try two rows
+                if self._calc_btn_width((n + 1) // 2, w) >= MIN_TOOLBAR_BUTTON_WIDTH:
+                    use_two_rows = True
+                else:
+                    force_simple = True
 
-        # --- Button visibility ---
-        for btn in essential:
-            btn.setVisible(show_buttons)
-        for btn in advanced:
-            btn.setVisible(show_buttons and not S.SIMPLE_MODE and not force_simple)
+        # Button visibility
+        hide_advanced = S.SIMPLE_MODE or force_simple
+        for btn in self.all_toolbar_buttons:
+            btn.setVisible(show_buttons and (btn in self.essential_buttons or not hide_advanced))
 
-        # --- Move buttons between rows ---
+        # Arrange buttons into rows
+        visible = [b for b in self.all_toolbar_buttons if b.isVisible()]
         if use_two_rows and show_buttons:
-            # Recalculate visible buttons for two-row layout
-            visible_buttons = [b for b in self.all_toolbar_buttons if b.isVisible()]
-            half = (len(visible_buttons) + 1) // 2
-            row1_buttons = visible_buttons[:half]
-            row2_buttons = visible_buttons[half:]
-
-            # Move buttons to appropriate rows
-            for btn in row1_buttons:
+            half = (len(visible) + 1) // 2
+            for btn in visible[:half]:
                 if btn.parent() != self.btn_row_widget:
-                    self.btn_row2.removeWidget(btn)
                     self.btn_row.addWidget(btn)
-            for btn in row2_buttons:
+            for btn in visible[half:]:
                 if btn.parent() != self.btn_row2_widget:
-                    self.btn_row.removeWidget(btn)
                     self.btn_row2.addWidget(btn)
-
             self.btn_row2_widget.setVisible(True)
         else:
-            # All buttons in single row
             for btn in self.all_toolbar_buttons:
                 if btn.parent() != self.btn_row_widget:
-                    self.btn_row2.removeWidget(btn)
                     self.btn_row.addWidget(btn)
             self.btn_row2_widget.setVisible(False)
 
-        # Update simple mode button icon and checked state
+        # Update simple mode button
         self.simple_btn.setChecked(S.SIMPLE_MODE)
         self._update_checkable_btn_icon(self.simple_btn, "plus" if S.SIMPLE_MODE else "minus")
 
-        # --- Button text mode (ONLY text, not visibility) ---
-        self._update_button_mode(icon_only)
+        # Button text mode
+        self._update_button_mode(w < 350)
 
         # --- Small mode appearance ---
         font_size = 10 if is_small else 14
