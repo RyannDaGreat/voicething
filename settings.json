@@ -6,6 +6,12 @@
   "simple_mode": false,
   "pet_types": [],
   "custom_words": [],
-  "whisper_model": "large-v3",
-  "theme": "macos_2005"
+  "whisper_model": "medium",
+  "theme": "cyberpunk_metal",
+  "wake_word_model": "computer",
+  "wake_word_cooldown": 0.0,
+  "wake_word_sensitivity": 0.28,
+  "silence_ratio": 0.0,
+  "auto_enter": true,
+  "enter_delay": 0.3
 }
