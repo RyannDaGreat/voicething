@@ -8,7 +8,7 @@ from .base import BaseStyle, CYAN
 
 
 # Aqua theme colors
-GREEN_OSCILLOSCOPE = QColor(100, 255, 100)
+GREEN_OSCILLOSCOPE = QColor(150, 255, 150)
 WHITE = "rgb(255,255,255)"
 NEAR_WHITE = "rgb(250,250,252)"
 OFF_WHITE = "rgb(240,240,245)"
@@ -48,6 +48,12 @@ class MacOS2005Style(BaseStyle):
     font = "Futura"
 
     _metal_cache = None  # Class-level texture cache
+
+    # Text colors - dark gray on light background
+    text_primary = TEXT_DARK
+    text_secondary = TEXT_DARK_DIMMED
+    text_link = "rgb(30,80,140)"  # Darker blue for section headers
+    accent_css = "rgb(60,140,220)"  # Darker blue for sliders
 
     # Waveform - green oscilloscope with glow and Aqua panel
     waveform_color = GREEN_OSCILLOSCOPE

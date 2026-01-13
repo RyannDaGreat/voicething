@@ -28,7 +28,7 @@ from AppKit import NSWorkspace, NSApplicationActivateIgnoringOtherApps
 from pynput import keyboard
 from pynput.keyboard import Controller as KeyboardController, Key
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QSize, QPointF, QRectF, QPropertyAnimation, QEasingCurve, pyqtProperty, QEvent, QSortFilterProxyModel
-from PyQt6.QtGui import QPainter, QColor, QPen, QIcon, QFont, QFontDatabase, QPolygonF, QLinearGradient, QBrush, QPainterPath, QPixmap
+from PyQt6.QtGui import QPainter, QColor, QPen, QIcon, QFont, QFontDatabase, QPolygonF, QLinearGradient, QBrush, QPainterPath, QPixmap, QCursor
 from PyQt6.QtSvg import QSvgRenderer
 from PyQt6.QtWidgets import (
     QApplication,
@@ -581,7 +581,7 @@ def make_labeled_textedit(label_text, value, placeholder, tooltip, on_change=Non
     label = QLabel(label_text)
     label.setStyleSheet(get_pref_label_css())
     if tooltip:
-        label.setToolTip(tooltip)
+        set_tooltip(label, tooltip)
     header.addWidget(label)
     if default is not None:
         reset_btn = QPushButton()
@@ -610,15 +610,47 @@ def make_labeled_textedit(label_text, value, placeholder, tooltip, on_change=Non
 
 def get_slider_css():
     """Get slider CSS for preference dialogs."""
+    accent = STYLE.accent_css
     return f"""
         QSlider::groove:horizontal {{ background: rgba(60,60,60,0.9); height: 6px; border-radius: 3px; }}
-        QSlider::handle:horizontal {{ background: {CYAN_CSS}; width: 14px; margin: -4px 0; border-radius: 7px; }}
-        QSlider::sub-page:horizontal {{ background: {CYAN_CSS}; border-radius: 3px; }}
+        QSlider::handle:horizontal {{ background: {accent}; width: 14px; margin: -4px 0; border-radius: 7px; }}
+        QSlider::sub-page:horizontal {{ background: {accent}; border-radius: 3px; }}
     """
 
 def get_pref_label_css():
     """Get label CSS for preference dialogs."""
     return f"color: {TEXT_PRIMARY}; font-size: 12px;"
+
+_HELP_CURSOR = None
+
+def _get_help_cursor():
+    """Lazy-load help cursor (needs QApplication to exist)."""
+    global _HELP_CURSOR
+    if _HELP_CURSOR is None:
+        path = os.path.join(ASSETS_DIR, "cursors", "help.svg")
+        if os.path.exists(path):
+            # Render at 64x64 for crisp retina, display at 16px (ratio 4.0)
+            from PyQt6.QtSvg import QSvgRenderer
+            from PyQt6.QtGui import QImage, QPainter as QPainter2
+            renderer = QSvgRenderer(path)
+            image = QImage(64, 64, QImage.Format.Format_ARGB32_Premultiplied)
+            image.fill(Qt.GlobalColor.transparent)
+            painter = QPainter2(image)
+            renderer.render(painter)
+            painter.end()
+            pixmap = QPixmap.fromImage(image)
+            pixmap.setDevicePixelRatio(4.0)  # 64/4 = 16px logical
+            _HELP_CURSOR = QCursor(pixmap, 16, 16)  # Hotspot at center (in device pixels)
+    return _HELP_CURSOR
+
+def set_tooltip(widget, text):
+    """Set tooltip and show help cursor."""
+    widget.setToolTip(text)
+    cursor = _get_help_cursor()
+    if cursor:
+        widget.setCursor(cursor)
+    else:
+        widget.setCursor(Qt.CursorShape.WhatsThisCursor)
 
 def get_tab_css():
     return STYLE.button_css()  # Tab buttons use same style
@@ -659,6 +691,38 @@ def load_icon(name, color=None):
     renderer.render(painter)
     painter.end()
     return QIcon(pixmap)
+
+
+def _get_menubar_icon():
+    """Create menu bar template icon from app icon (auto-adapts to macOS theme)."""
+    from PIL import Image
+    import numpy as np
+    icon_path = os.path.join(ASSETS_DIR, "icon.png")
+    if not os.path.exists(icon_path):
+        return load_icon("mic")  # Fallback
+    # Load and resize to menu bar size
+    img = Image.open(icon_path).convert('RGBA')
+    img = img.resize((TRAY_ICON_SIZE, TRAY_ICON_SIZE), Image.Resampling.LANCZOS)
+    data = np.array(img)
+    # Template images: black RGB with alpha defining the shape
+    # macOS automatically colors it for light/dark menu bar
+    alpha = data[:, :, 3]
+    data[:, :, 0] = 0  # Black
+    data[:, :, 1] = 0
+    data[:, :, 2] = 0
+    data[:, :, 3] = alpha
+    # Convert to QIcon
+    result = Image.fromarray(data, 'RGBA')
+    from io import BytesIO
+    buf = BytesIO()
+    result.save(buf, format='PNG')
+    buf.seek(0)
+    pixmap = QPixmap()
+    pixmap.loadFromData(buf.read())
+    pixmap.setDevicePixelRatio(2.0)  # Retina
+    icon = QIcon(pixmap)
+    icon.setIsMask(True)  # Tell macOS this is a template image
+    return icon
 
 
 WHISPER_MODELS = [
@@ -752,6 +816,7 @@ class DraggableDialog(QDialog):
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setMouseTracking(True)
+        self.setStyleSheet("QToolTip { background: #333; color: white; border: 1px solid #555; border-radius: 4px; }")
 
     def center_on_parent(self):
         self.adjustSize()
@@ -788,14 +853,17 @@ class DraggableDialog(QDialog):
             elif self.drag_pos:
                 self.move(e.globalPosition().toPoint() - self.drag_pos)
         else:
-            # Update cursor based on position
+            # Update cursor based on position (only set resize cursors on edges)
             edge = self._edge_at(e.position().toPoint())
-            cursor = {
-                "br": Qt.CursorShape.SizeFDiagCursor,
-                "b": Qt.CursorShape.SizeVerCursor,
-                "r": Qt.CursorShape.SizeHorCursor,
-            }.get(edge, Qt.CursorShape.ArrowCursor)
-            self.setCursor(cursor)
+            if edge:
+                cursor = {
+                    "br": Qt.CursorShape.SizeFDiagCursor,
+                    "b": Qt.CursorShape.SizeVerCursor,
+                    "r": Qt.CursorShape.SizeHorCursor,
+                }[edge]
+                self.setCursor(cursor)
+            else:
+                self.unsetCursor()  # Let child widgets show their own cursor
 
     def mouseReleaseEvent(self, e):
         self.drag_pos = self.resize_edge = None
@@ -1034,7 +1102,7 @@ class PrefsDialog(DraggableDialog):
         ww_row.setSpacing(8)
         ww_label = QLabel("Model:")
         ww_label.setStyleSheet(get_pref_label_css())
-        ww_label.setToolTip("The phrase to say to activate voice recording")
+        set_tooltip(ww_label, "The phrase to say to activate voice recording")
         ww_row.addWidget(ww_label)
         self.wake_word_combo = QComboBox()
         self.wake_word_combo.setStyleSheet(get_combobox_css())
@@ -1053,10 +1121,10 @@ class PrefsDialog(DraggableDialog):
         sens_row.setSpacing(8)
         sens_label = QLabel("Sensitivity:")
         sens_label.setStyleSheet(get_pref_label_css())
-        sens_label.setToolTip("Wake word detection threshold (0.0-1.0).\n\n"
-                              "LOWER = more sensitive, triggers easily (may false trigger)\n"
-                              "HIGHER = less sensitive, needs clearer speech (may miss words)\n\n"
-                              "Try 0.1-0.2 for noisy environments, 0.3-0.5 for quiet rooms.")
+        set_tooltip(sens_label, "Wake word detection threshold (0.0-1.0).\n\n"
+                                "LOWER = more sensitive, triggers easily (may false trigger)\n"
+                                "HIGHER = less sensitive, needs clearer speech (may miss words)\n\n"
+                                "Try 0.1-0.2 for noisy environments, 0.3-0.5 for quiet rooms.")
         sens_row.addWidget(sens_label)
         self.sens_slider = QSlider(Qt.Orientation.Horizontal)
         self.sens_slider.setRange(1, 100)  # 0.01 to 1.00 (no zero - would trigger constantly)
@@ -1077,7 +1145,7 @@ class PrefsDialog(DraggableDialog):
         enter_row.setSpacing(8)
         enter_label = QLabel("Auto-Enter:")
         enter_label.setStyleSheet(get_pref_label_css())
-        enter_label.setToolTip("After pasting transcription, automatically press Enter.\nUseful for hands-free Claude Code interaction.")
+        set_tooltip(enter_label, "After pasting transcription, automatically press Enter.\nUseful for hands-free Claude Code interaction.")
         enter_row.addWidget(enter_label)
         self.enter_checkbox = QCheckBox("Press Enter after paste")
         self.enter_checkbox.setChecked(S.AUTO_ENTER)
@@ -1091,10 +1159,10 @@ class PrefsDialog(DraggableDialog):
         delay_row.setSpacing(8)
         delay_label = QLabel("Enter Delay:")
         delay_label.setStyleSheet(get_pref_label_css())
-        delay_label.setToolTip("Seconds to wait after pasting before pressing Enter.\n\n"
-                               "0s = Immediate (may race with paste)\n"
-                               "0.1s = Usually enough for paste to complete\n"
-                               "0.5-2s = Safe for slow applications")
+        set_tooltip(delay_label, "Seconds to wait after pasting before pressing Enter.\n\n"
+                                 "0s = Immediate (may race with paste)\n"
+                                 "0.1s = Usually enough for paste to complete\n"
+                                 "0.5-2s = Safe for slow applications")
         delay_row.addWidget(delay_label)
         self.delay_slider = QSlider(Qt.Orientation.Horizontal)
         self.delay_slider.setRange(0, 20)  # 0.0s to 2.0s in 0.1s steps
@@ -1113,7 +1181,7 @@ class PrefsDialog(DraggableDialog):
         context_row.setSpacing(8)
         context_label = QLabel("Words:")
         context_label.setStyleSheet(get_pref_label_css())
-        context_label.setToolTip(
+        set_tooltip(context_label,
             "Comma-separated words to help Whisper recognize.\n\n"
             "Use for names, jargon, or unusual spellings that Whisper\n"
             "might not know. These words bias the transcription output.\n\n"
@@ -1141,10 +1209,12 @@ class PrefsDialog(DraggableDialog):
         llm_model_row.setSpacing(8)
         llm_model_label = QLabel("Model:")
         llm_model_label.setStyleSheet(get_pref_label_css())
-        llm_model_label.setToolTip(
-            "LLM model to use for post-processing.\n\n"
+        set_tooltip(llm_model_label,
+            "LLM model used to clean up transcripts.\n\n"
+            "When LLM is enabled, transcripts are sent to this model\n"
+            "to remove filler words, fix stutters, etc.\n\n"
             "OLLAMA models run locally (free, private).\n"
-            "OpenAI models require an API key in OPENAI_API_KEY env var."
+            "OpenAI models require OPENAI_API_KEY env var."
         )
         llm_model_row.addWidget(llm_model_label)
         self.llm_model_combo = make_searchable_dropdown(
@@ -1157,8 +1227,10 @@ class PrefsDialog(DraggableDialog):
             "Prompt Prefix:",
             S.LLM_PREFIX or DEFAULT_LLM_PREFIX,
             "Leave empty for default de-ramble prompt...",
-            "Custom prompt prefix for LLM post-processing.\n"
-            "Your text is appended after this prefix.",
+            "Instructions sent to the LLM before your transcript.\n\n"
+            "The LLM receives: [this prompt] + [your transcribed text]\n"
+            "Default removes filler words, fixes stutters, applies\n"
+            "self-corrections. Customize to change how text is cleaned.",
             self._on_llm_prefix_changed,
             height=60,
             default=DEFAULT_LLM_PREFIX
@@ -1237,6 +1309,8 @@ class PrefsDialog(DraggableDialog):
         btn_row.addWidget(ok_btn)
         layout.addLayout(btn_row)
         self.setMinimumWidth(600)  # Wide enough for two-column layout
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.setFocus()  # Don't focus textboxes - allow number keys for themes
 
     def _select_style(self, style_name, clicked_btn):
         """Select a style and apply it immediately, then close dialog."""
@@ -2481,7 +2555,7 @@ class VoiceThingWindow(QWidget):
 
     def _setup_tray(self):
         self.tray = QSystemTrayIcon(self)
-        self.tray.setIcon(load_icon("mic"))
+        self.tray.setIcon(_get_menubar_icon())
         menu = QMenu()
         menu.addAction("Show", self.show)
         menu.addSeparator()
@@ -2886,16 +2960,24 @@ class VoiceThingWindow(QWidget):
             self.wake_word_model.reset()
         self.hide_signal.emit()
 
-    def _get_idle_status(self):
-        """Get the appropriate idle status message based on wake word setting."""
-        return f"Say '{S.WAKE_WORD_MODEL}'" if S.WAKE_WORD_ENABLED else "Double-tap ⌥"
+    def _get_status_text(self):
+        """Get status text based on current state."""
+        if self.state == "idle":
+            return f"Say '{S.WAKE_WORD_MODEL}'" if S.WAKE_WORD_ENABLED else "Double-tap ⌥"
+        elif self.state == "recording":
+            return "Recording"
+        elif self.state == "transcribing":
+            return "Transcribing..."
+        return self.state  # Fallback
+
+    def _update_status(self):
+        """Refresh status label based on current state."""
+        self.status_label.setText(self._get_status_text())
 
     def _set_state(self, state, status=None):
-        """Set app state. If status is None and state is 'idle', uses appropriate idle message."""
+        """Set app state. status overrides the default text for this state."""
         self.state = state
-        if status is None and state == "idle":
-            status = self._get_idle_status()
-        self.status_label.setText(status)
+        self.status_label.setText(status if status else self._get_status_text())
         opacity = 0.9 if state == "recording" else 0.3
         self.timer_label.set_opacity(opacity)
         self._update_buttons()
@@ -2938,8 +3020,7 @@ class VoiceThingWindow(QWidget):
             self._stop_wake_word_listener()
             self._chime([-12, -8, -5, 0], t=0.15)
         print(f"Wake word detection {'ON' if enabled else 'OFF'}")
-        if self.state == "idle":
-            self.status_label.setText(self._get_idle_status())
+        self._update_status()
 
     def _on_wake_word_model_changed(self, model):
         if S.WAKE_WORD_ENABLED:
@@ -2947,6 +3028,7 @@ class VoiceThingWindow(QWidget):
             self.wake_word_model = None
             self._start_wake_word_listener()
         self.wake_word_btn.setToolTip(f"Toggle wake word (say '{model}')")
+        self._update_status()
 
     def toggle_auto_hide(self):
         S.set('AUTO_HIDE', not S.AUTO_HIDE)
@@ -3462,6 +3544,11 @@ def main():
     app = QApplication([APP_NAME])
     app.setApplicationName(APP_NAME)
     app.setApplicationDisplayName(APP_NAME)
+
+    # Set app icon (dock icon on macOS)
+    icon_path = os.path.join(ASSETS_DIR, "icon.png")
+    if os.path.exists(icon_path):
+        app.setWindowIcon(QIcon(icon_path))
 
     # Load Futura font
     global UI_FONT

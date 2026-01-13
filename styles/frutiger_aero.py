@@ -67,6 +67,7 @@ class FrutigerAeroStyle(BaseStyle):
 
     # Colors
     accent = AERO_BLUE
+    accent_css = "rgb(69,128,196)"  # CSS version for sliders
     text_primary = TEXT_DARK
     text_secondary = TEXT_MID
     text_muted = "rgb(100,100,110)"

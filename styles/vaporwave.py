@@ -45,9 +45,9 @@ class VaporwaveStyle(BaseStyle):
     text_link = TEXT_PINK
     border_color = "rgb(100,60,140)"
     border_dark = "rgb(60,20,90)"
-    icon_color_dark = '#ff71ce'   # Hot pink icons (readable on dark)
+    icon_color_dark = '#ff9cdd'   # Lighter hot pink icons (more readable on dark)
     icon_color_light = '#ffffff'
-    icon_color_muted = '#ffb6e1'  # Bright pink (was purple, now brighter)
+    icon_color_muted = '#ffccea'  # Lighter pink for disabled (more visible)
 
     # Waveform - pink on dark purple
     waveform_color = VAPOR_PINK

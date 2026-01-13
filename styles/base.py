@@ -38,6 +38,7 @@ class BaseStyle:
 
     # Colors
     accent = CYAN
+    accent_css = CYAN_CSS  # CSS string version for stylesheets
     text_primary = CHARCOAL
     text_secondary = SLATE
     text_muted = GRAY
