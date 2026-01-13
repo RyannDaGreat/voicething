@@ -115,7 +115,7 @@ WAKE_WORD_START_THRESHOLD = 0.25  # Confidence threshold to start recording (low
 WAKE_WORD_STOP_THRESHOLD = 0.25  # Confidence threshold to stop recording (lower = more sensitive)
 WAKE_WORD_BUFFER_SECONDS = 2  # Seconds of audio to capture before wake word
 WAKE_WORD_FRAME_SAMPLES = 1280  # 80ms chunks for OpenWakeWord (16kHz * 0.08)
-WAKE_WORD_COOLDOWN = 1.0  # Seconds to ignore wake word after triggering (avoids self-detection)
+WAKE_WORD_COOLDOWN = 2.0  # Seconds to ignore wake word after triggering (avoids self-detection)
 
 # Auto-submit settings (for hands-free Claude Code usage)
 PRESS_ENTER_AFTER_PASTE = True  # Press Enter after pasting transcription
@@ -717,20 +717,18 @@ class PrefsDialog(DraggableDialog):
     pets_changed = pyqtSignal(list)  # Emits list of PetType when changed
     simple_mode_changed = pyqtSignal(bool)  # Emits when simple mode toggled
     wake_word_changed = pyqtSignal(str)  # Emits wake word model name
-    cooldown_changed = pyqtSignal(float)  # Emits cooldown seconds
     sensitivity_changed = pyqtSignal(float)  # Emits sensitivity threshold
     auto_enter_changed = pyqtSignal(bool)  # Emits auto enter flag
     enter_delay_changed = pyqtSignal(float)  # Emits enter delay seconds
 
     def __init__(self, current_style, current_pet_types, simple_mode=False, parent=None,
-                 wake_word=None, wake_word_cooldown=None, wake_word_sensitivity=None,
+                 wake_word=None, wake_word_sensitivity=None,
                  auto_enter=None, enter_delay=None):
         super().__init__(parent)
         # Store ORIGINAL values for Cancel revert
         self.original_style = current_style
         self.original_pets = list(current_pet_types) if current_pet_types else []
         self.original_wake_word = wake_word or WAKE_WORD_MODEL
-        self.original_cooldown = wake_word_cooldown if wake_word_cooldown is not None else WAKE_WORD_COOLDOWN
         self.original_sensitivity = wake_word_sensitivity if wake_word_sensitivity is not None else WAKE_WORD_START_THRESHOLD
         self.original_auto_enter = auto_enter if auto_enter is not None else PRESS_ENTER_AFTER_PASTE
         self.original_enter_delay = enter_delay if enter_delay is not None else PRESS_ENTER_DELAY
@@ -742,7 +740,6 @@ class PrefsDialog(DraggableDialog):
         self.simple_mode = simple_mode
         self._style_buttons = {}  # Map button -> style_name
         self.selected_wake_word = self.original_wake_word
-        self.wake_word_cooldown = self.original_cooldown
         self.wake_word_sensitivity = self.original_sensitivity
         self.auto_enter = self.original_auto_enter
         self.enter_delay = self.original_enter_delay
@@ -794,27 +791,6 @@ class PrefsDialog(DraggableDialog):
         self.wake_word_combo.currentIndexChanged.connect(self._on_wake_word_changed)
         ww_row.addWidget(self.wake_word_combo, 1)
         layout.addLayout(ww_row)
-
-        # Cooldown slider
-        cooldown_row = QHBoxLayout()
-        cooldown_row.setSpacing(8)
-        cooldown_label = QLabel("Cooldown:")
-        cooldown_label.setStyleSheet(get_pref_label_css())
-        cooldown_label.setToolTip("Seconds to wait after wake word triggers before it can trigger again.\n\n"
-                                  "0s = No cooldown (may re-trigger immediately)\n"
-                                  "0.5-1s = Typical speech gap\n"
-                                  "2-5s = Prevents accidental re-triggers")
-        cooldown_row.addWidget(cooldown_label)
-        self.cooldown_slider = QSlider(Qt.Orientation.Horizontal)
-        self.cooldown_slider.setRange(0, 50)  # 0.0s to 5.0s in 0.1s steps
-        self.cooldown_slider.setValue(int(self.wake_word_cooldown * 10))
-        self.cooldown_slider.setStyleSheet(get_slider_css())
-        self.cooldown_slider.valueChanged.connect(self._on_cooldown_changed)
-        cooldown_row.addWidget(self.cooldown_slider, 1)
-        self.cooldown_value = QLabel(f"{self.wake_word_cooldown:.1f}s")
-        self.cooldown_value.setStyleSheet(get_pref_label_css() + " min-width: 35px;")
-        cooldown_row.addWidget(self.cooldown_value)
-        layout.addLayout(cooldown_row)
 
         # Sensitivity slider (0.0 to 1.0, lower = more sensitive)
         sens_row = QHBoxLayout()
@@ -943,11 +919,6 @@ class PrefsDialog(DraggableDialog):
     def _on_wake_word_changed(self, index):
         self.selected_wake_word = self.wake_word_combo.itemData(index)
         self.wake_word_changed.emit(self.selected_wake_word)  # Apply immediately
-
-    def _on_cooldown_changed(self, value):
-        self.wake_word_cooldown = value / 10.0
-        self.cooldown_value.setText(f"{self.wake_word_cooldown:.1f}s")
-        self.cooldown_changed.emit(self.wake_word_cooldown)  # Apply immediately
 
     def _on_sensitivity_changed(self, value):
         self.wake_word_sensitivity = value / 100.0
@@ -1881,7 +1852,6 @@ class VoiceThingWindow(QWidget):
         self.wake_word_last_trigger = 0  # Timestamp of last wake word trigger (for cooldown)
         self.current_wake_word = WAKE_WORD_MODEL  # Current wake word model name
         self.auto_enter = PRESS_ENTER_AFTER_PASTE  # Whether to press Enter after pasting
-        self.wake_word_cooldown = WAKE_WORD_COOLDOWN  # Cooldown between wake word triggers
         self.wake_word_sensitivity = WAKE_WORD_START_THRESHOLD  # Detection threshold (lower = more sensitive)
         self.enter_delay = PRESS_ENTER_DELAY  # Delay before pressing Enter
 
@@ -2656,7 +2626,7 @@ class VoiceThingWindow(QWidget):
                 if score > self.wake_word_sensitivity:
                     # Debounce
                     now = time.time()
-                    if now - self.wake_word_last_trigger < self.wake_word_cooldown:
+                    if now - self.wake_word_last_trigger < WAKE_WORD_COOLDOWN:
                         break
                     self.wake_word_last_trigger = now
 
@@ -2758,7 +2728,6 @@ class VoiceThingWindow(QWidget):
         orig_style = STYLE.name
         orig_pets = list(self.current_pet_types)
         orig_wake_word = self.current_wake_word
-        orig_cooldown = self.wake_word_cooldown
         orig_sensitivity = self.wake_word_sensitivity
         orig_auto_enter = self.auto_enter
         orig_enter_delay = self.enter_delay
@@ -2766,17 +2735,12 @@ class VoiceThingWindow(QWidget):
         dialog = PrefsDialog(
             STYLE.name, self.current_pet_types, self.simple_mode, self,
             wake_word=self.current_wake_word,
-            wake_word_cooldown=self.wake_word_cooldown,
             wake_word_sensitivity=self.wake_word_sensitivity,
             auto_enter=self.auto_enter,
             enter_delay=self.enter_delay,
         )
 
         # Connect all signals for IMMEDIATE application (live preview)
-        def set_cooldown(v):
-            self.wake_word_cooldown = v
-            print(f"[Prefs] cooldown -> {v:.1f}s")
-
         def set_sensitivity(v):
             self.wake_word_sensitivity = v
             print(f"[Prefs] sensitivity -> {v:.2f}")
@@ -2789,7 +2753,6 @@ class VoiceThingWindow(QWidget):
         dialog.style_changed.connect(lambda s: self._change_style(s, save=False))
         dialog.pets_changed.connect(lambda p: self._change_pets_nosave(p))
         dialog.wake_word_changed.connect(lambda w: self._change_wake_word_nosave(w))
-        dialog.cooldown_changed.connect(set_cooldown)
         dialog.sensitivity_changed.connect(set_sensitivity)
         dialog.auto_enter_changed.connect(lambda v: self._set_auto_enter(v, save=False))
         dialog.enter_delay_changed.connect(set_enter_delay)
@@ -2807,7 +2770,6 @@ class VoiceThingWindow(QWidget):
                 self._change_pets_nosave(orig_pets)
             if self.current_wake_word != orig_wake_word:
                 self._change_wake_word_nosave(orig_wake_word)
-            self.wake_word_cooldown = orig_cooldown
             self.wake_word_sensitivity = orig_sensitivity
             if self.auto_enter != orig_auto_enter:
                 self._set_auto_enter(orig_auto_enter, save=False)
@@ -2889,8 +2851,6 @@ class VoiceThingWindow(QWidget):
         if 'wake_word_model' in settings:
             self.current_wake_word = settings['wake_word_model']
             self.wake_word_btn.setToolTip(f"Toggle wake word (say '{self.current_wake_word}')")
-        if 'wake_word_cooldown' in settings:
-            self.wake_word_cooldown = settings['wake_word_cooldown']
         if 'wake_word_sensitivity' in settings:
             self.wake_word_sensitivity = settings['wake_word_sensitivity']
         if 'auto_enter' in settings:
@@ -2915,7 +2875,6 @@ class VoiceThingWindow(QWidget):
             'theme': STYLE.name,
             # Wake word settings
             'wake_word_model': self.current_wake_word,
-            'wake_word_cooldown': self.wake_word_cooldown,
             'wake_word_sensitivity': self.wake_word_sensitivity,
             'auto_enter': self.auto_enter,
             'enter_delay': self.enter_delay,
