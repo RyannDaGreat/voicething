@@ -333,6 +333,9 @@ DEFAULTS = dict(
     TMUX_MODE=False,
     LLM_MODEL='OLLAMA:qwen2.5:7b',
     LLM_PREFIX='',  # Empty means use default
+    SILENCE_SKIP_ENABLED=False,  # Skip recording during silence
+    SILENCE_THRESHOLD=-60,  # dB threshold below which audio is considered silence
+    CHIME_VOLUME=0.5,  # Volume for chimes (0.0 to 1.0)
 )
 S = Settings(**DEFAULTS)
 # =============================================================================
@@ -663,7 +666,7 @@ PANEL_BG_FLAT_CSS = STYLE.panel_bg_flat_css()
 CHIME_SHIFT = -12  # Shift all chimes (semitones, -12 = 1 octave lower)
 
 def quiet_sampler(f=None, T=None, samplerate=None):
-    return rp.triangle_tone_sampler(f, T, samplerate) * 0.25
+    return rp.triangle_tone_sampler(f, T, samplerate) * 0.25 * S.CHIME_VOLUME
 
 def chime(*chords, **kwargs):
     shifted = [[n + CHIME_SHIFT for n in chord] for chord in chords]
@@ -1066,8 +1069,30 @@ class PrefsDialog(DraggableDialog):
         content = QHBoxLayout()
         content.setSpacing(15)
 
-        # Left side: Theme
+        # Left side: Volume + Theme
         theme_box = QVBoxLayout()
+
+        # Notification Volume section
+        theme_box.addWidget(make_section("Notification Volume"))
+        vol_row = QHBoxLayout()
+        vol_row.setSpacing(8)
+        self.mute_checkbox = QCheckBox("Mute")
+        self.mute_checkbox.setChecked(not S.SOUND_ENABLED)
+        self.mute_checkbox.setStyleSheet(f"QCheckBox {{ color: {TEXT_PRIMARY}; font-size: 12px; }}")
+        self.mute_checkbox.stateChanged.connect(self._on_mute_changed)
+        vol_row.addWidget(self.mute_checkbox)
+        self.vol_slider = QSlider(Qt.Orientation.Horizontal)
+        self.vol_slider.setRange(0, 100)
+        self.vol_slider.setValue(int(S.CHIME_VOLUME * 100))
+        self.vol_slider.setStyleSheet(get_slider_css())
+        self.vol_slider.setEnabled(S.SOUND_ENABLED)
+        self.vol_slider.valueChanged.connect(self._on_volume_changed)
+        vol_row.addWidget(self.vol_slider, 1)
+        self.vol_value = QLabel(f"{int(S.CHIME_VOLUME * 100)}%")
+        self.vol_value.setStyleSheet(get_pref_label_css() + " min-width: 35px;")
+        vol_row.addWidget(self.vol_value)
+        theme_box.addLayout(vol_row)
+
         theme_box.addWidget(make_section("Theme"))
         style_keys = list(STYLES.keys())
         for i, style_name in enumerate(style_keys):
@@ -1174,6 +1199,47 @@ class PrefsDialog(DraggableDialog):
         self.delay_value.setStyleSheet(get_pref_label_css() + " min-width: 35px;")
         delay_row.addWidget(self.delay_value)
         settings_box.addLayout(delay_row)
+
+        # Recording section
+        settings_box.addWidget(make_section("Recording"))
+
+        # Silence skip toggle
+        silence_row = QHBoxLayout()
+        silence_row.setSpacing(8)
+        silence_label = QLabel("Silence Skip:")
+        silence_label.setStyleSheet(get_pref_label_css())
+        set_tooltip(silence_label, "When enabled, recording pauses during silence.\n\n"
+                                   "Useful for long recordings with gaps - the waveform\n"
+                                   "won't scroll during quiet periods.")
+        silence_row.addWidget(silence_label)
+        self.silence_checkbox = QCheckBox("Skip recording during silence")
+        self.silence_checkbox.setChecked(S.SILENCE_SKIP_ENABLED)
+        self.silence_checkbox.setStyleSheet(f"QCheckBox {{ color: {TEXT_PRIMARY}; font-size: 12px; }}")
+        self.silence_checkbox.stateChanged.connect(self._on_silence_skip_changed)
+        silence_row.addWidget(self.silence_checkbox, 1)
+        settings_box.addLayout(silence_row)
+
+        # Silence threshold slider (-100 to -10 dB)
+        thresh_row = QHBoxLayout()
+        thresh_row.setSpacing(8)
+        thresh_label = QLabel("Threshold:")
+        thresh_label.setStyleSheet(get_pref_label_css())
+        set_tooltip(thresh_label, "Audio level (dB) below which sound is considered silence.\n\n"
+                                  "-100 dB = Extremely sensitive (skip only digital silence)\n"
+                                  "-80 dB = Very sensitive (skip near-total silence)\n"
+                                  "-40 dB = Normal (skip quiet background noise)\n"
+                                  "-20 dB = Aggressive (skip soft speech too)")
+        thresh_row.addWidget(thresh_label)
+        self.thresh_slider = QSlider(Qt.Orientation.Horizontal)
+        self.thresh_slider.setRange(-100, -10)  # dB range
+        self.thresh_slider.setValue(S.SILENCE_THRESHOLD)
+        self.thresh_slider.setStyleSheet(get_slider_css())
+        self.thresh_slider.valueChanged.connect(self._on_threshold_changed)
+        thresh_row.addWidget(self.thresh_slider, 1)
+        self.thresh_value = QLabel(f"{S.SILENCE_THRESHOLD} dB")
+        self.thresh_value.setStyleSheet(get_pref_label_css() + " min-width: 45px;")
+        thresh_row.addWidget(self.thresh_value)
+        settings_box.addLayout(thresh_row)
 
         # Context Words section
         settings_box.addWidget(make_section("Context Words"))
@@ -1343,6 +1409,21 @@ class PrefsDialog(DraggableDialog):
     def _on_delay_changed(self, value):
         S.set('ENTER_DELAY', value / 10.0)
         self.delay_value.setText(f"{S.ENTER_DELAY:.1f}s")
+
+    def _on_silence_skip_changed(self, state):
+        S.SILENCE_SKIP_ENABLED = state == Qt.CheckState.Checked.value
+
+    def _on_threshold_changed(self, value):
+        S.SILENCE_THRESHOLD = value
+        self.thresh_value.setText(f"{value} dB")
+
+    def _on_mute_changed(self, state):
+        S.SOUND_ENABLED = state != Qt.CheckState.Checked.value
+        self.vol_slider.setEnabled(S.SOUND_ENABLED)
+
+    def _on_volume_changed(self, value):
+        S.CHIME_VOLUME = value / 100.0
+        self.vol_value.setText(f"{value}%")
 
     def _on_context_changed(self, text):
         S.CUSTOM_WORDS = text
@@ -3423,7 +3504,14 @@ class VoiceThingWindow(QWidget):
         self._chime([2, 6], [9, 14], t=0.08)  # D key
 
         def callback(indata, frames, time_info, status):
-            self.audio_chunks.append(indata[:, 0].copy())
+            chunk = indata[:, 0].copy()
+            # Silence skip: don't record if audio level is below threshold
+            if S.SILENCE_SKIP_ENABLED:
+                rms = np.sqrt(np.mean(chunk ** 2))
+                db = 20 * np.log10(rms + 1e-10)  # Add epsilon to avoid log(0)
+                if db < S.SILENCE_THRESHOLD:
+                    return  # Skip this chunk
+            self.audio_chunks.append(chunk)
 
         self.stream = sd.InputStream(
             samplerate=SAMPLE_RATE,
