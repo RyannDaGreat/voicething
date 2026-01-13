@@ -78,6 +78,7 @@ from PyQt6.QtWidgets import (
     QSizePolicy,
     QMessageBox,
     QCompleter,
+    QLineEdit,
 )
 from Foundation import NSBundle
 import os.path as osp
@@ -265,6 +266,14 @@ def get_wake_word_display(name):
     """Get display name for a wake word model (e.g. 'hey_marvin' -> 'Hey Marvin')."""
     return name.replace("_", " ").title()
 
+# Alternate transcriptions Whisper produces for wake words (normalized, lowercase)
+# Maps alternate spellings to the canonical wake word name
+WAKE_WORD_ALTERNATES = {
+    "wally": "wall_e",      # Wall-E often transcribed as Wally
+    "wall e": "wall_e",     # With space
+    "walle": "wall_e",      # No space
+}
+
 def get_all_wake_words_normalized():
     """Get set of all wake words in normalized form for blacklist matching."""
     result = set()
@@ -272,6 +281,11 @@ def get_all_wake_words_normalized():
         # Normalize: lowercase, spaces instead of underscores
         normalized = name.replace("_", " ").lower()
         result.add(normalized)
+    for name in BUILTIN_WAKE_WORDS:
+        normalized = name.replace("_", " ").lower()
+        result.add(normalized)
+    # Add alternate transcriptions
+    result.update(WAKE_WORD_ALTERNATES.keys())
     return result
 
 def download_community_wake_word(name):
@@ -1017,6 +1031,33 @@ class PrefsDialog(DraggableDialog):
         delay_row.addWidget(self.delay_value)
         layout.addLayout(delay_row)
 
+        # Context Words section
+        layout.addWidget(make_section("Context Words"))
+        context_row = QHBoxLayout()
+        context_row.setSpacing(8)
+        context_label = QLabel("Words:")
+        context_label.setStyleSheet(get_pref_label_css())
+        context_label.setToolTip(
+            "Comma-separated words to help Whisper recognize.\n\n"
+            "Use for names, jargon, or unusual spellings that Whisper\n"
+            "might not know. These words bias the transcription output.\n\n"
+            "Examples:\n"
+            "  • Names: Ryan, Xiaowen, PyTorch\n"
+            "  • Jargon: CUDA, NumPy, einops\n"
+            "  • Wake words: Wall-E, Wally"
+        )
+        context_row.addWidget(context_label)
+        self.context_edit = QLineEdit()
+        self.context_edit.setPlaceholderText("e.g. Wall-E, Wally, PyTorch, CUDA")
+        self.context_edit.setText(", ".join(S.CUSTOM_WORDS))
+        self.context_edit.setStyleSheet(
+            "QLineEdit { background: white; color: black; border: 1px solid #888; "
+            "padding: 4px 8px; border-radius: 3px; }"
+        )
+        self.context_edit.textChanged.connect(self._on_context_changed)
+        context_row.addWidget(self.context_edit, 1)
+        layout.addLayout(context_row)
+
         # Pet section - checkboxes for multi-select
         layout.addWidget(make_section("Pet Companions"))
         pet_grid = QHBoxLayout()
@@ -1098,6 +1139,11 @@ class PrefsDialog(DraggableDialog):
     def _on_delay_changed(self, value):
         S.set('ENTER_DELAY', value / 10.0)
         self.delay_value.setText(f"{S.ENTER_DELAY:.1f}s")
+
+    def _on_context_changed(self, text):
+        # Parse comma-separated words, strip whitespace, filter empty
+        words = [w.strip() for w in text.split(",") if w.strip()]
+        S.CUSTOM_WORDS = words
 
     def keyPressEvent(self, e):
         key = e.key()
@@ -2387,8 +2433,10 @@ class VoiceThingWindow(QWidget):
             return
         time.sleep(0.1)
         if S.TMUX_MODE:
+            # TMUX mode: send directly to tmux pane (replaces Cmd+V)
             self._do_tmux_paste(text)
         else:
+            # Normal mode: Cmd+V to paste in focused app
             kb = KeyboardController()
             with kb.pressed(Key.cmd):
                 kb.tap("v")
@@ -3093,9 +3141,10 @@ class VoiceThingWindow(QWidget):
         try:
             print(f"Transcribing file: {path}")
             initial_prompt = ", ".join(S.CUSTOM_WORDS) if S.CUSTOM_WORDS else None
+            # Note: carry_initial_prompt not yet exposed in pywhispercpp C bindings
             result = rp.transcribe_audio_file_via_whisper(
                 path, model=S.WHISPER_MODEL, show_progress=True,
-                initial_prompt=initial_prompt, carry_initial_prompt=True
+                initial_prompt=initial_prompt
             )
             self._handle_transcription_result(result.text, audio_path=path)
         except Exception as e:
@@ -3213,9 +3262,10 @@ class VoiceThingWindow(QWidget):
             scipy.io.wavfile.write(wav_path, SAMPLE_RATE, (audio * 32767).astype(np.int16))
             self.last_audio_path = wav_path
             initial_prompt = ", ".join(S.CUSTOM_WORDS) if S.CUSTOM_WORDS else None
+            # Note: carry_initial_prompt not yet exposed in pywhispercpp C bindings
             result = rp.transcribe_audio_file_via_whisper(
                 wav_path, model=S.WHISPER_MODEL, show_progress=True,
-                initial_prompt=initial_prompt, carry_initial_prompt=True
+                initial_prompt=initial_prompt
             )
             self._handle_transcription_result(result.text, txt_path, audio_path=wav_path)
         except Exception as e:
