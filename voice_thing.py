@@ -1038,10 +1038,10 @@ class PrefsDialog(DraggableDialog):
         ww_row.addWidget(ww_label)
         self.wake_word_combo = QComboBox()
         self.wake_word_combo.setStyleSheet(get_combobox_css())
-        wake_word_options = get_wake_words_ordered()  # Featured first, then alphabetical
+        wake_word_options = get_wake_words_ordered()
         for ww in wake_word_options:
             self.wake_word_combo.addItem(get_wake_word_display(ww), ww)
-        idx = wake_word_options.index(self.selected_wake_word) if self.selected_wake_word in wake_word_options else 0
+        idx = wake_word_options.index(S.WAKE_WORD_MODEL) if S.WAKE_WORD_MODEL in wake_word_options else 0
         self.wake_word_combo.setCurrentIndex(idx)
         make_combobox_searchable(self.wake_word_combo)  # Enable search/filter
         self.wake_word_combo.currentIndexChanged.connect(self._on_wake_word_changed)
@@ -1124,8 +1124,8 @@ class PrefsDialog(DraggableDialog):
         )
         context_row.addWidget(context_label)
         self.context_edit = QLineEdit()
-        self.context_edit.setPlaceholderText("e.g. \"Wall-E, Wally, PyTorch, CUDA\"")
         self.context_edit.setText(S.CUSTOM_WORDS)
+        self.context_edit.setPlaceholderText("e.g. \"Wall-E, Wally, PyTorch, CUDA\"")
         self.context_edit.setStyleSheet(
             "QLineEdit { background: white; color: black; border: 1px solid #888; "
             "padding: 4px 8px; border-radius: 3px; }"
@@ -1188,7 +1188,7 @@ class PrefsDialog(DraggableDialog):
 
             # Checkbox
             checkbox = QCheckBox()
-            checkbox.setChecked(pet_type in self.selected_pets)
+            checkbox.setChecked(pet_type in S.PET_TYPES)
             checkbox.setToolTip(pet_type.value.replace("_", " ").title())
             checkbox.stateChanged.connect(lambda state, p=pet_type: self._toggle_pet(p, state))
             checkbox.setStyleSheet("QCheckBox { color: white; }")
@@ -1283,23 +1283,10 @@ class PrefsDialog(DraggableDialog):
         rp.open_file_with_default_application(_VOICETHING_DIR)
 
     def _revert_to_defaults(self):
-        """Revert all settings in the dialog to defaults (doesn't save until OK)."""
-        self._apply_settings(DEFAULTS)
-
-    def _apply_settings(self, d):
-        """Apply a settings dict to the UI widgets."""
-        self._select_style(d['THEME'], None)
-        ww_opts = get_wake_words_ordered()
-        self.wake_word_combo.setCurrentIndex(ww_opts.index(d['WAKE_WORD_MODEL']) if d['WAKE_WORD_MODEL'] in ww_opts else 0)
-        self.sens_slider.setValue(int(d['WAKE_WORD_SENSITIVITY'] * 100))
-        self.enter_checkbox.setChecked(d['AUTO_ENTER'])
-        self.delay_slider.setValue(int(d['ENTER_DELAY'] * 10))
-        self.context_edit.setText(d['CUSTOM_WORDS'])
-        llm_idx = next((i for i, (v, _) in enumerate(LLM_MODELS) if v == d['LLM_MODEL']), 0)
-        self.llm_model_combo.setCurrentIndex(llm_idx)
-        self.llm_prefix_edit.setPlainText(d['LLM_PREFIX'] or DEFAULT_LLM_PREFIX)
-        for pet_type, cb in self.pet_checkboxes.items():
-            cb.setChecked(pet_type in d['PET_TYPES'])
+        """Revert all settings to defaults and re-open dialog."""
+        S.update(DEFAULTS)
+        self.reverted_to_defaults = True
+        self.reject()  # Close, parent will re-open with fresh values from S
 
     def keyPressEvent(self, e):
         key = e.key()
@@ -3135,32 +3122,38 @@ class VoiceThingWindow(QWidget):
 
     def show_prefs(self):
         """Show preferences dialog. Settings apply live, Cancel reverts."""
-        import copy
-        orig = copy.deepcopy(dict(S))  # Snapshot for Cancel
-        orig_style = STYLE.name
+        while True:
+            import copy
+            orig = copy.deepcopy(dict(S))  # Snapshot for Cancel
+            orig_style = STYLE.name
 
-        dialog = PrefsDialog(STYLE.name, S.PET_TYPES, S.SIMPLE_MODE, self,
-                             wake_word=S.WAKE_WORD_MODEL,
-                             wake_word_sensitivity=S.WAKE_WORD_SENSITIVITY,
-                             auto_enter=S.AUTO_ENTER)
+            dialog = PrefsDialog(STYLE.name, S.PET_TYPES, S.SIMPLE_MODE, self,
+                                 wake_word=S.WAKE_WORD_MODEL,
+                                 wake_word_sensitivity=S.WAKE_WORD_SENSITIVITY,
+                                 auto_enter=S.AUTO_ENTER)
 
-        # Live preview connections - all use S.set() to trigger hooks
-        dialog.simple_mode_changed.connect(self._set_simple_mode)
-        dialog.style_changed.connect(lambda s: self._change_style(s, save=False))
-        dialog.pets_changed.connect(lambda p: S.set('PET_TYPES', list(p)))
-        dialog.wake_word_changed.connect(lambda w: S.set('WAKE_WORD_MODEL', w))
-        dialog.sensitivity_changed.connect(lambda v: setattr(S, 'WAKE_WORD_SENSITIVITY', v))
-        dialog.auto_enter_changed.connect(lambda v: S.set('AUTO_ENTER', v))
+            # Live preview connections - all use S.set() to trigger hooks
+            dialog.simple_mode_changed.connect(self._set_simple_mode)
+            dialog.style_changed.connect(lambda s: self._change_style(s, save=False))
+            dialog.pets_changed.connect(lambda p: S.set('PET_TYPES', list(p)))
+            dialog.wake_word_changed.connect(lambda w: S.set('WAKE_WORD_MODEL', w))
+            dialog.sensitivity_changed.connect(lambda v: setattr(S, 'WAKE_WORD_SENSITIVITY', v))
+            dialog.auto_enter_changed.connect(lambda v: S.set('AUTO_ENTER', v))
 
-        dialog.center_on_parent()
+            dialog.center_on_parent()
 
-        if dialog.exec():
-            self._save_settings()
-        else:
-            # Cancel - restore snapshot (hooks handle UI updates)
-            if STYLE.name != orig_style:
-                self._change_style(orig_style, save=False)
-            S.restore(orig)
+            if dialog.exec():
+                self._save_settings()
+                break
+            elif getattr(dialog, 'reverted_to_defaults', False):
+                self._change_style(DEFAULTS['THEME'], save=False)
+                continue  # Re-open dialog with defaults
+            else:
+                # Cancel - restore snapshot (hooks handle UI updates)
+                if STYLE.name != orig_style:
+                    self._change_style(orig_style, save=False)
+                S.restore(orig)
+                break
 
     def _set_simple_mode(self, enabled):
         """Set simple mode on/off (called from prefs dialog)."""
