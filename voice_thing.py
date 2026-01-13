@@ -22,32 +22,6 @@ import rp
 # Suppress ONNX warnings for wake word model
 warnings.filterwarnings('ignore', category=UserWarning, module='onnxruntime')
 
-
-class TeeOutput:
-    """Captures stdout/stderr including C output via fd redirection."""
-
-    def __init__(self):
-        self._buf = []
-        self._orig_fd = os.dup(1)
-        self._pipe_r, self._pipe_w = os.pipe()
-
-    def __enter__(self):
-        os.dup2(self._pipe_w, 1)
-        os.dup2(self._pipe_w, 2)
-        threading.Thread(target=self._read, daemon=True).start()
-        return self
-
-    def _read(self):
-        while True:
-            data = os.read(self._pipe_r, 16)
-            if not data:
-                break
-            self._buf.append(data.decode('utf-8', errors='replace'))
-            os.write(self._orig_fd, data)
-
-    @property
-    def text(self):
-        return ''.join(self._buf)
 import scipy.io.wavfile
 import sounddevice as sd
 from AppKit import NSWorkspace, NSApplicationActivateIgnoringOtherApps
@@ -256,6 +230,32 @@ FEATURED_WAKE_WORDS = [
     "terminator",     # Classic (community)
 ]
 
+class TeeOutput:
+    """Captures stdout/stderr including C output via fd redirection."""
+
+    def __init__(self):
+        self._buf = []
+        self._orig_fd = os.dup(1)
+        self._pipe_r, self._pipe_w = os.pipe()
+
+    def __enter__(self):
+        os.dup2(self._pipe_w, 1)
+        os.dup2(self._pipe_w, 2)
+        threading.Thread(target=self._read, daemon=True).start()
+        return self
+
+    def _read(self):
+        while True:
+            data = os.read(self._pipe_r, 16)
+            if not data:
+                break
+            self._buf.append(data.decode('utf-8', errors='replace'))
+            os.write(self._orig_fd, data)
+
+    @property
+    def text(self):
+        return ''.join(self._buf)
+
 def get_wake_words_ordered():
     """Get all wake words with featured ones first, then rest alphabetically."""
     all_words = set(COMMUNITY_WAKE_WORDS.keys()) | set(BUILTIN_WAKE_WORDS)
@@ -325,12 +325,14 @@ S = Settings(
     LLM_ENABLED=False,
     AUTO_ENTER=True,
     WAKE_WORD_ENABLED=False,
-    SIMPLE_MODE=False,
+    SIMPLE_MODE=True,
     PET_TYPES=[],
     WHISPER_MODEL='medium',
     THEME='macos_2005',
     WAKE_WORD_MODEL='computer',
     TMUX_MODE=False,
+    LLM_MODEL='OLLAMA:qwen2.5:7b',
+    LLM_PREFIX='',  # Empty means use default
 )
 # =============================================================================
 
@@ -387,9 +389,22 @@ def make_close_btn(text="Esc  Close", on_click=None):
     return btn
 
 # LLM post-processing settings
-LLM_MODEL = "OLLAMA:qwen2.5:7b"
+LLM_MODELS = [
+    # Ollama local models (free, private)
+    "OLLAMA:qwen2.5:7b",
+    "OLLAMA:qwen2.5:14b",
+    "OLLAMA:llama3.2:3b",
+    "OLLAMA:llama3.1:8b",
+    "OLLAMA:mistral:7b",
+    "OLLAMA:gemma2:9b",
+    "OLLAMA:codellama:7b",
+    # OpenAI models (requires API key)
+    "gpt-4o-mini",
+    "gpt-4o",
+    "gpt-4-turbo",
+]
 
-LLM_PREFIX = (
+DEFAULT_LLM_PREFIX = (
     "Task: Clean up voice transcript.\n\n"
     "Rules:\n"
     "1. Remove filler words (um, uh, \"you know\", filler \"like\")\n"
@@ -543,6 +558,41 @@ def make_combobox_searchable(combo_box):
     combo_box.setCompleter(completer)
 
     combo_box.lineEdit().textEdited.connect(filter_model.setFilterFixedString)
+
+def make_searchable_dropdown(items, current_value, on_change=None):
+    """Create a searchable dropdown with given items. Returns (combo, layout_with_label)."""
+    combo = QComboBox()
+    combo.setStyleSheet(get_combobox_css())
+    for item in items:
+        combo.addItem(item, item)
+    idx = items.index(current_value) if current_value in items else 0
+    combo.setCurrentIndex(idx)
+    make_combobox_searchable(combo)
+    if on_change:
+        combo.currentIndexChanged.connect(on_change)
+    return combo
+
+def make_labeled_textedit(label_text, value, placeholder, tooltip, on_change=None, height=80):
+    """Create a labeled multiline text edit. Returns (textedit, row_layout)."""
+    row = QVBoxLayout()
+    row.setSpacing(4)
+    label = QLabel(label_text)
+    label.setStyleSheet(get_pref_label_css())
+    if tooltip:
+        label.setToolTip(tooltip)
+    row.addWidget(label)
+    edit = QTextEdit()
+    edit.setPlainText(value)
+    edit.setPlaceholderText(placeholder)
+    edit.setStyleSheet(
+        "QTextEdit { background: white; color: black; border: 1px solid #888; "
+        "padding: 4px 8px; border-radius: 3px; font-family: Menlo, monospace; font-size: 11px; }"
+    )
+    edit.setFixedHeight(height)
+    if on_change:
+        edit.textChanged.connect(on_change)
+    row.addWidget(edit)
+    return edit, row
 
 def get_slider_css():
     """Get slider CSS for preference dialogs."""
@@ -772,6 +822,7 @@ class HelpDialog(DraggableDialog):
             "• ⌘Q to quit\n\n"
             f"Wake word (J): Say \"{S.WAKE_WORD_MODEL}\" to start recording hands-free! "
             "The app captures 2 seconds before you say the wake word so you don't lose any words.\n\n"
+            "Tmux mode (U): Paste directly into your active tmux pane instead of ⌘V.\n\n"
             "100% keyboard-driven - no mouse needed! (hover buttons to see shortcuts)\n\n"
             "Small mode (E or green button): Compact view with just status and timer - "
             "great for keeping visible while using keyboard shortcuts.\n\n"
@@ -790,7 +841,7 @@ class HelpDialog(DraggableDialog):
         # GitHub button
         github_btn = QPushButton("GitHub")
         github_btn.setStyleSheet(get_btn_css())
-        github_btn.clicked.connect(lambda: subprocess.run(["open", GITHUB_URL]))
+        github_btn.clicked.connect(lambda: rp.open_file_with_default_application(GITHUB_URL))
         about_box.addWidget(github_btn)
 
         content.addLayout(about_box)
@@ -1058,6 +1109,37 @@ class PrefsDialog(DraggableDialog):
         context_row.addWidget(self.context_edit, 1)
         layout.addLayout(context_row)
 
+        # LLM section
+        layout.addWidget(make_section("LLM Post-Processing"))
+        # Model dropdown
+        llm_model_row = QHBoxLayout()
+        llm_model_row.setSpacing(8)
+        llm_model_label = QLabel("Model:")
+        llm_model_label.setStyleSheet(get_pref_label_css())
+        llm_model_label.setToolTip(
+            "LLM model to use for post-processing.\n\n"
+            "OLLAMA models run locally (free, private).\n"
+            "OpenAI models require an API key in OPENAI_API_KEY env var."
+        )
+        llm_model_row.addWidget(llm_model_label)
+        self.llm_model_combo = make_searchable_dropdown(
+            LLM_MODELS, S.LLM_MODEL, self._on_llm_model_changed
+        )
+        llm_model_row.addWidget(self.llm_model_combo, 1)
+        layout.addLayout(llm_model_row)
+        # Prompt prefix
+        self.llm_prefix_edit, llm_prefix_layout = make_labeled_textedit(
+            "Prompt Prefix:",
+            S.LLM_PREFIX,
+            "Leave empty for default de-ramble prompt...",
+            "Custom prompt prefix for LLM post-processing.\n\n"
+            "Leave empty to use the built-in de-ramble prompt.\n"
+            "Your text is appended after this prefix.",
+            self._on_llm_prefix_changed,
+            height=60
+        )
+        layout.addLayout(llm_prefix_layout)
+
         # Pet section - checkboxes for multi-select
         layout.addWidget(make_section("Pet Companions"))
         pet_grid = QHBoxLayout()
@@ -1093,6 +1175,14 @@ class PrefsDialog(DraggableDialog):
             self.pet_checkboxes[pet_type] = checkbox
             pet_grid.addWidget(pet_widget)
         layout.addLayout(pet_grid)
+
+        # Open settings folder button
+        folder_btn = QPushButton("  Open Settings Folder")
+        folder_btn.setIcon(load_icon("folder-open", color=ICON_COLOR_DARK))
+        folder_btn.setStyleSheet(get_btn_css())
+        folder_btn.setToolTip(f"Open {_VOICETHING_DIR}")
+        folder_btn.clicked.connect(self._open_settings_folder)
+        layout.addWidget(folder_btn)
 
         # Cancel/OK buttons
         btn_row = QHBoxLayout()
@@ -1144,6 +1234,15 @@ class PrefsDialog(DraggableDialog):
         # Parse comma-separated words, strip whitespace, filter empty
         words = [w.strip() for w in text.split(",") if w.strip()]
         S.CUSTOM_WORDS = words
+
+    def _on_llm_model_changed(self, index):
+        S.LLM_MODEL = self.llm_model_combo.itemData(index)
+
+    def _on_llm_prefix_changed(self):
+        S.LLM_PREFIX = self.llm_prefix_edit.toPlainText()
+
+    def _open_settings_folder(self):
+        rp.open_file_with_default_application(_VOICETHING_DIR)
 
     def keyPressEvent(self, e):
         key = e.key()
@@ -2137,7 +2236,7 @@ class VoiceThingWindow(QWidget):
             self.btn_row.addWidget(btn)
             return btn
 
-        self.record_btn = make_btn("Space", "record", self.toggle_recording)
+        self.record_btn = make_btn("␣", "record", self.toggle_recording)
         self.record_btn.setToolTip("Start/stop recording")
         self.record_btn.setEnabled(True)
         self.cancel_btn = make_btn("X", "cancel", self.cancel_recording)
@@ -2280,7 +2379,7 @@ class VoiceThingWindow(QWidget):
         min_w = STYLE.timer_panel_size[0] + 40  # timer panel + padding for title bar buttons
         min_h = STYLE.timer_panel_size[1] + 55  # timer panel + title bar height
         self.setMinimumSize(min_w, min_h)
-        self.resize(460, 350)
+        self.resize(460, 460)
         self.hide_signal.connect(self._maybe_hide)
         self.toggle_signal.connect(self.toggle_recording)
         self.focus_signal.connect(self._focus_window)
@@ -2312,6 +2411,7 @@ class VoiceThingWindow(QWidget):
         S.hooks['TMUX_MODE'] = self._on_tmux_mode_changed
 
         self._load_settings()
+        self._update_ui()  # Initialize UI layout based on boot size
 
     def _get_action_handler(self, action_id):
         """Get the handler method for an action ID."""
@@ -2566,42 +2666,24 @@ class VoiceThingWindow(QWidget):
         self._flash_button(key)
         if key == Qt.Key.Key_Escape:
             self.hide()
-        elif no_mods and key == Qt.Key.Key_X and self.state == "recording":
-            self.cancel_recording()
-        elif no_mods and key == Qt.Key.Key_Space:
-            self.toggle_recording()
-        elif no_mods and key == Qt.Key.Key_C:
-            self.copy_transcription()
-        elif no_mods and key == Qt.Key.Key_F:
-            self.open_folder()
-        elif no_mods and key == Qt.Key.Key_L:
-            self.load_audio_file()
-        elif no_mods and key == Qt.Key.Key_S:
-            self.toggle_sound()
-        elif no_mods and key == Qt.Key.Key_V:
-            self.toggle_auto_hide()
-        elif no_mods and key == Qt.Key.Key_R:
-            self.toggle_llm()
-        elif no_mods and key == Qt.Key.Key_J:
-            self.toggle_wake_word()
-        elif no_mods and key == Qt.Key.Key_N:
-            self.toggle_auto_enter()
-        elif no_mods and key == Qt.Key.Key_E:
-            self.toggle_small_mode()
-        elif no_mods and key == Qt.Key.Key_W:
-            self.toggle_simple_mode()
-        elif no_mods and key == Qt.Key.Key_Z:
-            self.retranscribe_latest()
-        elif no_mods and key == Qt.Key.Key_O:
-            self._switch_tab(0)
-        elif no_mods and key == Qt.Key.Key_T:
-            self._switch_tab(1)
-        elif no_mods and key == Qt.Key.Key_M:
-            self.show_model_dialog()
-        elif no_mods and key == Qt.Key.Key_P:
-            self.show_prefs()
-        elif key == Qt.Key.Key_Question:
-            self.show_help()
+        elif no_mods and key == Qt.Key.Key_X and self.state == "recording": self.cancel_recording()
+        elif no_mods and key == Qt.Key.Key_Space: self.toggle_recording()
+        elif no_mods and key == Qt.Key.Key_C: self.copy_transcription()
+        elif no_mods and key == Qt.Key.Key_F: self.open_folder()
+        elif no_mods and key == Qt.Key.Key_L: self.load_audio_file()
+        elif no_mods and key == Qt.Key.Key_S: self.toggle_sound()
+        elif no_mods and key == Qt.Key.Key_V: self.toggle_auto_hide()
+        elif no_mods and key == Qt.Key.Key_R: self.toggle_llm()
+        elif no_mods and key == Qt.Key.Key_J: self.toggle_wake_word()
+        elif no_mods and key == Qt.Key.Key_N: self.toggle_auto_enter()
+        elif no_mods and key == Qt.Key.Key_E: self.toggle_small_mode()
+        elif no_mods and key == Qt.Key.Key_W: self.toggle_simple_mode()
+        elif no_mods and key == Qt.Key.Key_Z: self.retranscribe_latest()
+        elif no_mods and key == Qt.Key.Key_O: self._switch_tab(0)
+        elif no_mods and key == Qt.Key.Key_T: self._switch_tab(1)
+        elif no_mods and key == Qt.Key.Key_M: self.show_model_dialog()
+        elif no_mods and key == Qt.Key.Key_P: self.show_prefs()
+        elif key == Qt.Key.Key_Question: self.show_help()
         else:
             super().keyPressEvent(e)
 
@@ -2727,7 +2809,7 @@ class VoiceThingWindow(QWidget):
             ]
         else:
             labels = [
-                (self.record_btn, "Space"), (self.cancel_btn, "X"),
+                (self.record_btn, "␣"), (self.cancel_btn, "X"),
                 (self.retranscribe_btn, "Z"), (self.simple_btn, "W"),
                 (self.copy_btn, "C"), (self.load_btn, "L"), (self.folder_btn, "F"),
                 (self.sound_btn, "S"), (self.eye_btn, "V"), (self.llm_btn, "R"),
@@ -3051,7 +3133,8 @@ class VoiceThingWindow(QWidget):
             if key in data:
                 S.set(key, data[key])
         # Simple settings without hooks (or with trivial hooks)
-        for key in ['ENTER_DELAY', 'WAKE_WORD_SENSITIVITY', 'CUSTOM_WORDS', 'WHISPER_MODEL']:
+        for key in ['ENTER_DELAY', 'WAKE_WORD_SENSITIVITY', 'CUSTOM_WORDS', 'WHISPER_MODEL',
+                    'LLM_MODEL', 'LLM_PREFIX']:
             if key in data:
                 S[key] = data[key]
         # SIMPLE_MODE needs toggle pattern
@@ -3150,10 +3233,7 @@ class VoiceThingWindow(QWidget):
 
     def open_folder(self):
         os.makedirs(RECORDINGS_DIR, exist_ok=True)
-        if self.last_audio_path and os.path.exists(self.last_audio_path):
-            subprocess.run(["open", "-R", self.last_audio_path])
-        else:
-            subprocess.run(["open", RECORDINGS_DIR])
+        rp.open_file_with_default_application(RECORDINGS_DIR)
 
     def load_audio_file(self):
         """Open file dialog to load an audio file for transcription."""
@@ -3236,9 +3316,10 @@ class VoiceThingWindow(QWidget):
     def _run_llm(self, text):
         """Run LLM on text. Returns processed result."""
         self._chime([7, 11], t=0.06)  # LLM processing start
-        print("Processing with LLM...")
-        prompt = LLM_PREFIX + text
-        result = rp.run_llm_api(prompt, model=LLM_MODEL)
+        print(f"Processing with LLM ({S.LLM_MODEL})...")
+        prefix = S.LLM_PREFIX if S.LLM_PREFIX else DEFAULT_LLM_PREFIX
+        prompt = prefix + text
+        result = rp.run_llm_api(prompt, model=S.LLM_MODEL)
         print(f"LLM result: {result!r}")
         self._chime([11, 14, 18], t=0.08)  # LLM processing done
         return result
