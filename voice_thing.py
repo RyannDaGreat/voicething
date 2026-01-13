@@ -315,6 +315,7 @@ S = Settings(
     WHISPER_MODEL='medium',
     THEME='macos_2005',
     WAKE_WORD_MODEL='computer',
+    TMUX_MODE=False,
 )
 # =============================================================================
 
@@ -2133,6 +2134,13 @@ class VoiceThingWindow(QWidget):
         if S.AUTO_ENTER:
             self.enter_btn.setIcon(load_icon("enter", color=ICON_COLOR_LIGHT))
         self.enter_btn.setEnabled(True)
+        self.tmux_btn = make_btn("U", "tmux", self.toggle_tmux_mode)
+        self.tmux_btn.setToolTip("Toggle tmux paste mode (paste to active tmux pane)")
+        self.tmux_btn.setCheckable(True)
+        self.tmux_btn.setChecked(S.TMUX_MODE)
+        if S.TMUX_MODE:
+            self.tmux_btn.setIcon(load_icon("tmux", color=ICON_COLOR_LIGHT))
+        self.tmux_btn.setEnabled(True)
         self.model_btn = make_btn("M", "mic", self.show_model_dialog)
         self.model_btn.setToolTip("Change Whisper model")
         self.model_btn.setEnabled(True)
@@ -2152,6 +2160,7 @@ class VoiceThingWindow(QWidget):
             Qt.Key.Key_F: self.folder_btn, Qt.Key.Key_S: self.sound_btn,
             Qt.Key.Key_V: self.eye_btn, Qt.Key.Key_R: self.llm_btn,
             Qt.Key.Key_J: self.wake_word_btn, Qt.Key.Key_N: self.enter_btn,
+            Qt.Key.Key_U: self.tmux_btn,
             Qt.Key.Key_M: self.model_btn, Qt.Key.Key_P: self.prefs_btn,
             Qt.Key.Key_Question: self.help_btn,
         }
@@ -2236,6 +2245,7 @@ class VoiceThingWindow(QWidget):
         S.hooks['AUTO_ENTER'] = self._on_auto_enter_changed
         S.hooks['WAKE_WORD_ENABLED'] = self._on_wake_word_enabled_changed
         S.hooks['WAKE_WORD_MODEL'] = self._on_wake_word_model_changed
+        S.hooks['TMUX_MODE'] = self._on_tmux_mode_changed
 
         self._load_settings()
 
@@ -2376,15 +2386,34 @@ class VoiceThingWindow(QWidget):
         if self.is_focused:
             return
         time.sleep(0.1)
-        kb = KeyboardController()
-        with kb.pressed(Key.cmd):
-            kb.tap("v")
-        if S.AUTO_ENTER:
-            time.sleep(S.ENTER_DELAY)
-            self._chime([-10], [-14], [-10], t=0.05)  # Low do-ba-do for Enter
-            kb.press(Key.enter)
-            time.sleep(0.1)
-            kb.release(Key.enter)
+        if S.TMUX_MODE:
+            self._do_tmux_paste(text)
+        else:
+            kb = KeyboardController()
+            with kb.pressed(Key.cmd):
+                kb.tap("v")
+            if S.AUTO_ENTER:
+                time.sleep(S.ENTER_DELAY)
+                self._chime([-10], [-14], [-10], t=0.05)  # Low do-ba-do for Enter
+                kb.press(Key.enter)
+                time.sleep(0.1)
+                kb.release(Key.enter)
+
+    def _do_tmux_paste(self, text):
+        """Paste text into the active tmux pane and optionally press enter."""
+        # Use tmux send-keys to paste text into active pane
+        # -l flag sends text literally (no key interpretation)
+        try:
+            subprocess.run(['tmux', 'send-keys', '-l', text], check=True)
+            if S.AUTO_ENTER:
+                time.sleep(S.ENTER_DELAY)
+                self._chime([-10], [-14], [-10], t=0.05)  # Low do-ba-do for Enter
+                subprocess.run(['tmux', 'send-keys', 'Enter'], check=True)
+            print(f"Sent to tmux: {text[:50]}{'...' if len(text) > 50 else ''}")
+        except subprocess.CalledProcessError as e:
+            print(f"tmux send-keys failed: {e}")
+        except FileNotFoundError:
+            print("tmux not found - is tmux installed and running?")
 
     def _update_display(self):
         if self.audio_chunks:
@@ -2680,6 +2709,11 @@ class VoiceThingWindow(QWidget):
         self.enter_btn.setChecked(enabled)
         self._update_checkable_btn_icon(self.enter_btn, "enter" if enabled else "enter-off")
 
+    def _on_tmux_mode_changed(self, enabled):
+        self.tmux_btn.setChecked(enabled)
+        self._update_checkable_btn_icon(self.tmux_btn)  # Uses icon_name from button ("tmux")
+        print(f"Tmux paste mode {'ON' if enabled else 'OFF'}")
+
     def _on_wake_word_enabled_changed(self, enabled):
         self.wake_word_btn.setChecked(enabled)
         self._update_checkable_btn_icon(self.wake_word_btn)
@@ -2739,6 +2773,10 @@ class VoiceThingWindow(QWidget):
 
     def toggle_auto_enter(self):
         S.set('AUTO_ENTER', not S.AUTO_ENTER)
+        self._save_settings()
+
+    def toggle_tmux_mode(self):
+        S.set('TMUX_MODE', not S.TMUX_MODE)
         self._save_settings()
 
     def _load_wake_word_model(self):
@@ -2925,7 +2963,7 @@ class VoiceThingWindow(QWidget):
             data['PET_TYPES'] = [pet_map[v] for v in data['PET_TYPES'] if v in pet_map]
 
         # Apply settings via S.set() to trigger hooks
-        for key in ['AUTO_HIDE', 'SOUND_ENABLED', 'LLM_ENABLED', 'AUTO_ENTER', 'PET_TYPES', 'WAKE_WORD_MODEL']:
+        for key in ['AUTO_HIDE', 'SOUND_ENABLED', 'LLM_ENABLED', 'AUTO_ENTER', 'TMUX_MODE', 'PET_TYPES', 'WAKE_WORD_MODEL']:
             if key in data:
                 S.set(key, data[key])
         # Simple settings without hooks (or with trivial hooks)
@@ -2986,7 +3024,7 @@ class VoiceThingWindow(QWidget):
         for btn in [self.record_btn, self.cancel_btn, self.retranscribe_btn, self.simple_btn,
                     self.copy_btn, self.load_btn, self.folder_btn, self.sound_btn,
                     self.eye_btn, self.llm_btn, self.wake_word_btn,
-                    self.enter_btn, self.model_btn, self.prefs_btn, self.help_btn]:
+                    self.enter_btn, self.tmux_btn, self.model_btn, self.prefs_btn, self.help_btn]:
             btn.setStyleSheet(btn_css)
         # Refresh tab buttons
         self.output_tab.setStyleSheet(get_tab_css())
