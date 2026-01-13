@@ -4,9 +4,10 @@ sounddevice>=0
 pynput>=1
 PyQt6
 pyobjc-framework-Cocoa
+pyobjc-framework-ApplicationServices
 rp
 pywhispercpp
-easydict
+openwakeword
 requests
 cachetools
 lazy-loader
