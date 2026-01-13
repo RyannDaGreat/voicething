@@ -7,7 +7,7 @@ from PyQt6.QtGui import (
     QPainterPath, QPen
 )
 
-from .base import BaseStyle
+from .base import BaseStyle, get_cached_texture
 
 
 # Mahogany wood colors
@@ -46,6 +46,7 @@ class MahoganyWoodStyle(BaseStyle):
 
     # Warm wood theme colors
     accent = QColor(210, 150, 70)  # Amber/gold
+    accent_css = "rgb(210,150,70)"
     text_primary = TEXT_CREAM
     text_secondary = TEXT_IVORY
     text_muted = TEXT_TAN
@@ -56,6 +57,11 @@ class MahoganyWoodStyle(BaseStyle):
     icon_color_dark = '#3e2218'
     icon_color_light = '#fff8eb'
     icon_color_muted = '#a08060'
+
+    # Slider - dark wood groove, amber handle/fill
+    slider_groove = "rgba(45,25,18,0.8)"
+    slider_handle = "rgb(210,150,70)"
+    slider_fill = "rgb(180,120,55)"
 
     # Waveform - warm amber glow
     waveform_color = QColor(210, 150, 70)
@@ -172,9 +178,16 @@ class MahoganyWoodStyle(BaseStyle):
         if MahoganyWoodStyle._wood_cache is not None:
             return MahoganyWoodStyle._wood_cache
 
+        width = 256
+        MahoganyWoodStyle._wood_cache = get_cached_texture(
+            "mahogany", width, height, lambda: self._generate_wood_texture(width, height)
+        )
+        return MahoganyWoodStyle._wood_cache
+
+    def _generate_wood_texture(self, width, height):
+        """Generate the mahogany wood texture (called on cache miss)."""
         from scipy.ndimage import gaussian_filter
 
-        width = 256
         np.random.seed(1842)  # Mahogany discovery year-ish
 
         # Create wood grain pattern
@@ -224,8 +237,7 @@ class MahoganyWoodStyle(BaseStyle):
             img[:, :, c] = gaussian_filter(img[:, :, c].astype(float), sigma=0.8).astype(np.uint8)
 
         qimg = QImage(img.data, width, height, width * 4, QImage.Format.Format_RGBA8888).copy()
-        MahoganyWoodStyle._wood_cache = QPixmap.fromImage(qimg)
-        return MahoganyWoodStyle._wood_cache
+        return QPixmap.fromImage(qimg)
 
     def get_pine_texture(self, width=128, height=32):
         """Generate pine wood horizontal grain texture for buttons - yellowy, smaller grain."""
@@ -234,6 +246,13 @@ class MahoganyWoodStyle(BaseStyle):
             if cached_w >= width and cached_h >= height:
                 return MahoganyWoodStyle._pine_cache
 
+        MahoganyWoodStyle._pine_cache = get_cached_texture(
+            "pine", width, height, lambda: self._generate_pine_texture(width, height)
+        )
+        return MahoganyWoodStyle._pine_cache
+
+    def _generate_pine_texture(self, width, height):
+        """Generate the pine wood texture (called on cache miss)."""
         from scipy.ndimage import gaussian_filter
 
         np.random.seed(3141)
@@ -268,8 +287,7 @@ class MahoganyWoodStyle(BaseStyle):
             img[:, :, c] = gaussian_filter(img[:, :, c].astype(float), sigma=0.5).astype(np.uint8)
 
         qimg = QImage(img.data, width, height, width * 4, QImage.Format.Format_RGBA8888).copy()
-        MahoganyWoodStyle._pine_cache = QPixmap.fromImage(qimg)
-        return MahoganyWoodStyle._pine_cache
+        return QPixmap.fromImage(qimg)
 
     def get_blue_noise(self, width=64, height=64):
         """Generate blue noise texture for gritty/tactile feel on text areas."""
@@ -278,6 +296,13 @@ class MahoganyWoodStyle(BaseStyle):
             if cached_w >= width and cached_h >= height:
                 return MahoganyWoodStyle._blue_noise_cache
 
+        MahoganyWoodStyle._blue_noise_cache = get_cached_texture(
+            "blue_noise", width, height, lambda: self._generate_blue_noise(width, height)
+        )
+        return MahoganyWoodStyle._blue_noise_cache
+
+    def _generate_blue_noise(self, width, height):
+        """Generate the blue noise texture (called on cache miss)."""
         from scipy.ndimage import gaussian_filter
 
         np.random.seed(2718)
@@ -299,8 +324,7 @@ class MahoganyWoodStyle(BaseStyle):
         img[:, :, 3] = 35  # Subtle alpha
 
         qimg = QImage(img.data, width, height, width * 4, QImage.Format.Format_RGBA8888).copy()
-        MahoganyWoodStyle._blue_noise_cache = QPixmap.fromImage(qimg)
-        return MahoganyWoodStyle._blue_noise_cache
+        return QPixmap.fromImage(qimg)
 
     def _draw_vignette(self, painter, rect, width, height, radius=12):
         """Warm vignette - darker at edges for depth."""

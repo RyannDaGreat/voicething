@@ -338,8 +338,9 @@ DEFAULTS = dict(
     SILENCE_SKIP_ENABLED=False,  # Skip recording during silence
     SILENCE_THRESHOLD=-60,  # dB threshold below which audio is considered silence
     CHIME_VOLUME=0.5,  # Volume for chimes (0.0 to 1.0)
-    CHIME_INSTRUMENT='bells',  # Instrument for chimes
+    CHIME_PROGRAM=0,  # Program number (0-127), single source of truth
     CHIME_PITCH=0,  # Pitch shift in semitones (-24 to +24)
+    CHIME_DECAY=0.5,  # Reverb decay (0.0 to 1.0, room size)
 )
 S = Settings(**DEFAULTS)
 # =============================================================================
@@ -617,11 +618,13 @@ def make_labeled_textedit(label_text, value, placeholder, tooltip, on_change=Non
 
 def get_slider_css():
     """Get slider CSS for preference dialogs."""
-    accent = STYLE.accent_css
+    groove = STYLE.slider_groove
+    handle = STYLE.slider_handle or STYLE.accent_css
+    fill = STYLE.slider_fill or STYLE.accent_css
     return f"""
-        QSlider::groove:horizontal {{ background: rgba(60,60,60,0.9); height: 6px; border-radius: 3px; }}
-        QSlider::handle:horizontal {{ background: {accent}; width: 14px; margin: -4px 0; border-radius: 7px; }}
-        QSlider::sub-page:horizontal {{ background: {accent}; border-radius: 3px; }}
+        QSlider::groove:horizontal {{ background: {groove}; height: 6px; border-radius: 3px; }}
+        QSlider::handle:horizontal {{ background: {handle}; width: 14px; margin: -4px 0; border-radius: 7px; }}
+        QSlider::sub-page:horizontal {{ background: {fill}; border-radius: 3px; }}
     """
 
 def get_pref_label_css():
@@ -667,15 +670,15 @@ SCROLLBAR_CSS = STYLE.scrollbar_css()
 PANEL_BG_CSS = STYLE.panel_bg_css()
 PANEL_BG_FLAT_CSS = STYLE.panel_bg_flat_css()
 
-from synth import synth_sequence, play_native
+from synth import synth_sequence, play_native, set_reverb
 
-def chime(*chords, t=0.12, gap=0.0, **kwargs):
+def chime(*chords, t=0.15, gap=0.0, **kwargs):
     """Play chime using native FluidSynth audio (non-blocking, layerable)."""
     if not S.SOUND_ENABLED or S.CHIME_VOLUME <= 0:
         return
     # shift param adds to the base -12 octave shift
     play_native(chords, duration=t, gap=gap, volume=S.CHIME_VOLUME,
-                instrument=S.CHIME_INSTRUMENT, shift=-12 + S.CHIME_PITCH)
+                shift=-12 + S.CHIME_PITCH, program=S.CHIME_PROGRAM)
 
 
 def load_icon(name, color=None):
@@ -1100,32 +1103,78 @@ class PrefsDialog(DraggableDialog):
 
         # Instrument grid with icons (plays demo on click)
         theme_box.addWidget(make_section("Instrument"))
-        # Map instrument names to icon files
-        inst_icons = {
-            'bells': 'inst-bell', 'carillon': 'inst-carillon', 'christmas': 'inst-christmas',
-            'delicate': 'inst-delicate', 'marimba': 'inst-marimba', 'xylophone': 'inst-xylophone',
-            'vibraphone': 'inst-vibes', 'flute': 'inst-flute', 'strings': 'inst-strings', 'organ': 'inst-organ'
-        }
-        instruments = list(inst_icons.keys())
+        from synth import get_preset_name
+        # Map program_number -> icon_file (sorted by program number)
+        preset_icons = [
+            (0, 'inst-bell'), (1, 'inst-carillon'), (5, 'inst-organ'),
+            (17, 'inst-flute'), (18, 'inst-strings'),
+            (25, 'inst-calliope'), (29, 'inst-fantasy'), (32, 'inst-vibes'),
+            (38, 'inst-sparkle'), (44, 'inst-wave'), (48, 'inst-choir'),
+            (60, 'inst-moon'), (68, 'inst-xylophone'), (69, 'inst-triangle'),
+            (79, 'inst-bubble'), (83, 'inst-crystal'), (84, 'inst-prism'),
+            (86, 'inst-harp'), (92, 'inst-aurora'), (99, 'inst-magic'),
+            (103, 'inst-cosmic'), (105, 'inst-dream'), (110, 'inst-delicate'),
+            (120, 'inst-marimba'),
+        ]
         self._inst_buttons = {}
         inst_grid = QGridLayout()
-        inst_grid.setSpacing(4)
-        for i, inst in enumerate(instruments):
+        inst_grid.setSpacing(2)
+        for i, (prog_num, icon_name) in enumerate(preset_icons):
             btn = QPushButton()
-            btn.setFixedSize(36, 36)
-            icon = load_icon(inst_icons[inst], color=ICON_COLOR_LIGHT)
+            btn.setFixedSize(24, 24)
+            icon = load_icon(icon_name, color=ICON_COLOR_LIGHT)
             if icon:
                 btn.setIcon(icon)
-                btn.setIconSize(QSize(20, 20))
-            btn.setToolTip(inst.title())
+                btn.setIconSize(QSize(18, 18))
+            preset_name = get_preset_name(prog_num)
+            btn.setToolTip(f"{preset_name} ({prog_num})")
             base_css = get_btn_css().replace("padding: 3px 8px;", "padding: 0px; margin: 0px;").replace("text-align: left;", "text-align: center;")
             btn.setStyleSheet(base_css)
-            if inst == S.CHIME_INSTRUMENT:
-                btn.setStyleSheet(base_css + f"QPushButton {{ border: 2px solid {CYAN_CSS}; }}")
-            btn.clicked.connect(lambda checked, i=inst, b=btn: self._select_instrument(i, b))
-            self._inst_buttons[btn] = inst
-            inst_grid.addWidget(btn, i // 5, i % 5)  # 5 columns for compact grid
+            btn.clicked.connect(lambda checked, p=prog_num: self._select_program(p))
+            self._inst_buttons[btn] = prog_num
+            inst_grid.addWidget(btn, i // 6, i % 6)  # 6 columns
         theme_box.addLayout(inst_grid)
+        self._update_inst_buttons()  # Highlight current
+
+        # Instrument name label (above program selector)
+        self.prog_name_label = QLabel()
+        self.prog_name_label.setStyleSheet(get_pref_label_css() + f" font-size: 11px; color: {CYAN_CSS};")
+        self.prog_name_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        theme_box.addWidget(self.prog_name_label)
+
+        # Program number selector with mini 7-segment display
+        prog_row = QHBoxLayout()
+        prog_row.setSpacing(4)
+        prog_label = QLabel("Prog:")
+        prog_label.setStyleSheet(get_pref_label_css())
+        set_tooltip(prog_label, "Synth program number (0-127)")
+        prog_row.addWidget(prog_label)
+        # Minus button with icon
+        self.prog_minus = QPushButton()
+        self.prog_minus.setFixedSize(24, 24)
+        minus_icon = load_icon('minus', color=ICON_COLOR_LIGHT)
+        if minus_icon:
+            self.prog_minus.setIcon(minus_icon)
+            self.prog_minus.setIconSize(QSize(16, 16))
+        self.prog_minus.setStyleSheet(get_btn_css().replace("padding: 3px 8px;", "padding: 0px; margin: 0px;"))
+        self.prog_minus.clicked.connect(self._prog_decrement)
+        prog_row.addWidget(self.prog_minus)
+        # 7-segment display
+        self.prog_display = Mini7Segment(S.CHIME_PROGRAM, STYLE.accent)
+        prog_row.addWidget(self.prog_display)
+        # Plus button with icon
+        self.prog_plus = QPushButton()
+        self.prog_plus.setFixedSize(24, 24)
+        plus_icon = load_icon('plus', color=ICON_COLOR_LIGHT)
+        if plus_icon:
+            self.prog_plus.setIcon(plus_icon)
+            self.prog_plus.setIconSize(QSize(16, 16))
+        self.prog_plus.setStyleSheet(get_btn_css().replace("padding: 3px 8px;", "padding: 0px; margin: 0px;"))
+        self.prog_plus.clicked.connect(self._prog_increment)
+        prog_row.addWidget(self.prog_plus)
+        prog_row.addStretch()
+        theme_box.addLayout(prog_row)
+        self._update_prog_display()  # Initialize name label
 
         # Pitch slider (-24 to +24 semitones)
         pitch_row = QHBoxLayout()
@@ -1145,13 +1194,31 @@ class PrefsDialog(DraggableDialog):
         pitch_row.addWidget(self.pitch_value)
         theme_box.addLayout(pitch_row)
 
+        # Decay slider (0.0 to 1.0) - controls reverb room size
+        decay_row = QHBoxLayout()
+        decay_row.setSpacing(8)
+        decay_label = QLabel("Decay:")
+        decay_label.setStyleSheet(get_pref_label_css())
+        set_tooltip(decay_label, "Reverb decay (shorter = dry, longer = wet/sustained)")
+        decay_row.addWidget(decay_label)
+        self.decay_slider = QSlider(Qt.Orientation.Horizontal)
+        self.decay_slider.setRange(0, 100)  # 0.0 to 1.0
+        self.decay_slider.setValue(int(S.CHIME_DECAY * 100))
+        self.decay_slider.setStyleSheet(get_slider_css())
+        self.decay_slider.valueChanged.connect(self._on_decay_changed)
+        decay_row.addWidget(self.decay_slider, 1)
+        self.decay_value = QLabel(f"{int(S.CHIME_DECAY * 100)}%")
+        self.decay_value.setStyleSheet(get_pref_label_css() + " min-width: 35px;")
+        decay_row.addWidget(self.decay_value)
+        theme_box.addLayout(decay_row)
+
         theme_box.addWidget(make_section("Theme"))
         style_keys = list(STYLES.keys())
         for i, style_name in enumerate(style_keys):
             key = str(i + 1)
             display_name = style_name.replace("_", " ").title()
             btn = QPushButton(f"{key}  {display_name}")
-            base_css = get_btn_css().replace("padding: 3px 8px;", "padding: 5px 8px; margin: 0px;")
+            base_css = get_btn_css().replace("padding: 3px 8px;", "padding: 2px 8px; margin: 0px;")
             btn.setStyleSheet(base_css)
             if style_name == current_style:
                 btn.setStyleSheet(base_css + f"QPushButton {{ border: 2px solid {CYAN_CSS}; }}")
@@ -1481,19 +1548,46 @@ class PrefsDialog(DraggableDialog):
         S.CHIME_PITCH = value
         self.pitch_value.setText(f"{value:+d}")
 
-    def _select_instrument(self, inst_name, clicked_btn):
-        """Select instrument, update UI, and play demo chime."""
-        S.CHIME_INSTRUMENT = inst_name
-        # Update button styles
-        base_css = get_btn_css().replace("padding: 3px 8px;", "padding: 0px; margin: 0px;").replace("text-align: left;", "text-align: center;")
-        for btn, inst in self._inst_buttons.items():
-            if inst == inst_name:
-                btn.setStyleSheet(base_css + f"QPushButton {{ border: 2px solid {CYAN_CSS}; }}")
-            else:
-                btn.setStyleSheet(base_css)
+    def _on_decay_changed(self, value):
+        S.CHIME_DECAY = value / 100.0
+        self.decay_value.setText(f"{value}%")
+        # Update reverb in real-time
+        set_reverb(room_size=S.CHIME_DECAY, level=0.3 + S.CHIME_DECAY * 0.4)
+
+    def _select_program(self, prog):
+        """Select program number, update all UI, and play demo."""
+        S.CHIME_PROGRAM = prog
+        self._update_inst_buttons()
+        self._update_prog_display()
         # Play demo chime in background
         import threading
         threading.Thread(target=lambda: chime([2, 6], [9, 14], t=0.12), daemon=True).start()
+
+    def _prog_increment(self):
+        """Increment program number with wrap-around."""
+        prog = (S.CHIME_PROGRAM + 1) % 128  # Wrap 127 -> 0
+        self._select_program(prog)
+
+    def _prog_decrement(self):
+        """Decrement program number with wrap-around."""
+        prog = (S.CHIME_PROGRAM - 1) % 128  # Wrap 0 -> 127
+        self._select_program(prog)
+
+    def _update_inst_buttons(self):
+        """Highlight instrument button matching current program number."""
+        base_css = get_btn_css().replace("padding: 3px 8px;", "padding: 0px; margin: 0px;").replace("text-align: left;", "text-align: center;")
+        for btn, prog_num in self._inst_buttons.items():
+            if prog_num == S.CHIME_PROGRAM:
+                btn.setStyleSheet(base_css + f"QPushButton {{ border: 2px solid {CYAN_CSS}; }}")
+            else:
+                btn.setStyleSheet(base_css)
+
+    def _update_prog_display(self):
+        """Update program display and name label."""
+        self.prog_display.set_value(S.CHIME_PROGRAM)
+        from synth import get_preset_name
+        name = get_preset_name(S.CHIME_PROGRAM)
+        self.prog_name_label.setText(name)
 
     def _on_context_changed(self, text):
         S.CUSTOM_WORDS = text
@@ -1932,6 +2026,71 @@ class TranscriptionList(QScrollArea):
             if item.widget():
                 item.widget().deleteLater()
         self.item_count = 0
+
+
+class Mini7Segment(QWidget):
+    """Mini 3-digit 7-segment display for program number selection."""
+
+    # 7-segment patterns: top, top-right, bottom-right, bottom, bottom-left, top-left, middle
+    SEGMENTS = {
+        '0': (1,1,1,1,1,1,0), '1': (0,1,1,0,0,0,0), '2': (1,1,0,1,1,0,1), '3': (1,1,1,1,0,0,1),
+        '4': (0,1,1,0,0,1,1), '5': (1,0,1,1,0,1,1), '6': (1,0,1,1,1,1,1), '7': (1,1,1,0,0,0,0),
+        '8': (1,1,1,1,1,1,1), '9': (1,1,1,1,0,1,1), '-': (0,0,0,0,0,0,1), ' ': (0,0,0,0,0,0,0),
+    }
+
+    def __init__(self, value=0, color=None):
+        super().__init__()
+        self.value = value
+        self.color = color or STYLE.accent
+        self.setFixedSize(50, 22)
+
+    def set_value(self, val):
+        self.value = val
+        self.update()
+
+    def set_color(self, color):
+        self.color = color
+        self.update()
+
+    def paintEvent(self, event):
+        from PyQt6.QtGui import QPainter, QPen, QColor
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        # Format value as 3 digits
+        text = f"{self.value:3d}" if self.value is not None else "---"
+        text = text[-3:]  # Last 3 chars
+
+        # Draw each digit
+        digit_w, digit_h = 14, 18
+        seg_thick = 2
+        gap = 2
+
+        for i, ch in enumerate(text):
+            x_off = i * (digit_w + gap) + 2
+            y_off = 2
+            segs = self.SEGMENTS.get(ch, self.SEGMENTS[' '])
+
+            # Segment positions (relative to digit origin)
+            # Format: (x1, y1, x2, y2) for each segment
+            seg_coords = [
+                (2, 0, digit_w-2, 0),                    # top
+                (digit_w, 2, digit_w, digit_h//2-1),     # top-right
+                (digit_w, digit_h//2+1, digit_w, digit_h-2),  # bottom-right
+                (2, digit_h, digit_w-2, digit_h),       # bottom
+                (0, digit_h//2+1, 0, digit_h-2),        # bottom-left
+                (0, 2, 0, digit_h//2-1),                # top-left
+                (2, digit_h//2, digit_w-2, digit_h//2), # middle
+            ]
+
+            for j, on in enumerate(segs):
+                if on:
+                    color = self.color if isinstance(self.color, QColor) else QColor(self.color)
+                    p.setPen(QPen(color, seg_thick, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+                else:
+                    p.setPen(QPen(QColor(60, 60, 60, 80), seg_thick, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+                x1, y1, x2, y2 = seg_coords[j]
+                p.drawLine(x_off + x1, y_off + y1, x_off + x2, y_off + y2)
 
 
 class TimerWidget(QWidget):
@@ -3420,8 +3579,8 @@ class VoiceThingWindow(QWidget):
                 S.set(key, data[key])
         # Simple settings without hooks (or with trivial hooks)
         for key in ['ENTER_DELAY', 'WAKE_WORD_SENSITIVITY', 'CUSTOM_WORDS', 'WHISPER_MODEL',
-                    'LLM_MODEL', 'LLM_PREFIX', 'CHIME_VOLUME', 'CHIME_INSTRUMENT', 'CHIME_PITCH',
-                    'SILENCE_SKIP_ENABLED', 'SILENCE_THRESHOLD']:
+                    'LLM_MODEL', 'LLM_PREFIX', 'CHIME_VOLUME', 'CHIME_PITCH',
+                    'CHIME_DECAY', 'CHIME_PROGRAM', 'SILENCE_SKIP_ENABLED', 'SILENCE_THRESHOLD']:
             if key in data:
                 S[key] = data[key]
         # SIMPLE_MODE needs toggle pattern

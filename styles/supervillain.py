@@ -43,6 +43,7 @@ class SupervillainStyle(BaseStyle):
 
     # EVIL theme colors
     accent = BLOOD_RED
+    accent_css = BLOOD_RED_CSS
     text_primary = TEXT_FURY
     text_secondary = TEXT_RAGE
     text_muted = TEXT_DIM
@@ -53,6 +54,9 @@ class SupervillainStyle(BaseStyle):
     icon_color_dark = '#ff2020'
     icon_color_light = '#ff4040'
     icon_color_muted = '#801010'
+
+    # Slider - blood red groove on black void
+    slider_groove = "rgba(200,20,20,0.4)"
 
     # Waveform - blood red pulse
     waveform_color = BLOOD_RED

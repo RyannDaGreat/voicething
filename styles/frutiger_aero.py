@@ -79,6 +79,9 @@ class FrutigerAeroStyle(BaseStyle):
     icon_color_light = '#ffffff'
     icon_color_muted = '#606068'
 
+    # Slider - dark groove on light glass, blue accent
+    slider_groove = "rgba(60,60,70,0.5)"
+
     # Waveform - blue oscilloscope with glow on glass panel
     waveform_color = AERO_BLUE
     waveform_glow = True

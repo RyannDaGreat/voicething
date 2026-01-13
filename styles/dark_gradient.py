@@ -48,6 +48,9 @@ class DarkGradientStyle(BaseStyle):
     icon_color_light = '#ffffff'
     icon_color_muted = '#999999'  # Solid gray for SVG compatibility
 
+    # Slider - semi-transparent cyan groove on dark gradient
+    slider_groove = "rgba(100,200,255,0.25)"
+
     # Waveform - cyan with glow and dark panel with grid
     waveform_color = CYAN
     waveform_glow = True

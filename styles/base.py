@@ -1,7 +1,39 @@
 """Base style - just a plain class with defaults. Override what you need."""
 
+import os
+from pathlib import Path
+
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QColor
+from PyQt6.QtGui import QColor, QPixmap
+
+# Texture cache directory - inside assets/textures/
+_TEXTURE_CACHE_DIR = Path(__file__).parent.parent / "assets" / "textures"
+
+
+def get_cached_texture(name, width, height, generator_func):
+    """Load texture from PNG cache, or generate and cache it.
+
+    Args:
+        name: Unique texture name (e.g. "rust_512", "mahogany_512")
+        width: Texture width
+        height: Texture height
+        generator_func: Callable that returns QPixmap when cache miss
+
+    Returns:
+        QPixmap of the texture
+    """
+    _TEXTURE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    cache_path = _TEXTURE_CACHE_DIR / f"{name}_{width}x{height}.png"
+
+    if cache_path.exists():
+        pixmap = QPixmap(str(cache_path))
+        if not pixmap.isNull():
+            return pixmap
+
+    # Cache miss - generate texture
+    pixmap = generator_func()
+    pixmap.save(str(cache_path), "PNG")
+    return pixmap
 
 
 # Named colors for light themes (macOS 2005, etc.)
@@ -78,6 +110,11 @@ class BaseStyle:
     # Transcription colors
     transcription_text = LIGHT_GRAY
     transcription_text_dimmed = CYAN_MUTED
+
+    # Slider colors (groove is the track, handle/sub-page use accent by default)
+    slider_groove = "rgba(60,60,60,0.9)"  # Dark groove for light themes
+    slider_handle = None  # None = use accent_css
+    slider_fill = None  # None = use accent_css
 
     def title_style(self, size=18):
         return f"color: {self.text_primary}; font-size: {size}px; font-family: {self.font};"

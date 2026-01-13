@@ -45,6 +45,7 @@ class CyberpunkMetalStyle(BaseStyle):
 
     # Dark theme colors
     accent = CYAN
+    accent_css = CYAN_CSS
     text_primary = TEXT_BRIGHT
     text_secondary = TEXT_DIM
     text_muted = LIGHT_GRAY
@@ -55,6 +56,9 @@ class CyberpunkMetalStyle(BaseStyle):
     icon_color_dark = '#00ffff'  # Cyan icons
     icon_color_light = '#00ffff'
     icon_color_muted = '#008888'
+
+    # Slider - bright cyan groove on dark metal
+    slider_groove = "rgba(0,255,255,0.3)"
 
     # Waveform - cyan oscilloscope with glow
     waveform_color = CYAN
