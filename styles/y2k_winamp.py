@@ -46,6 +46,7 @@ class Y2KWinampStyle(BaseStyle):
 
     # Colors
     accent = WINAMP_GREEN
+    accent_css = "rgb(0,255,0)"
     text_primary = TEXT_LIGHT
     text_secondary = "rgba(255,255,255,0.8)"
     text_muted = "rgba(255,255,255,0.5)"
@@ -56,6 +57,9 @@ class Y2KWinampStyle(BaseStyle):
     icon_color_dark = '#00ff00'   # Lime green icons
     icon_color_light = '#ffffff'
     icon_color_muted = '#00cc00'  # Slightly darker green
+
+    # Slider - lime green groove on dark Winamp panel
+    slider_groove = "rgba(0,255,0,0.25)"
 
     # Waveform - classic Winamp lime green on dark
     waveform_color = WINAMP_GREEN

@@ -21,6 +21,10 @@ INSTRUMENTS = {
     'flute': 17,          # Smooth Flute
     'strings': 18,        # Smooth Strings 1
     'organ': 5,           # El Cheapo Organ
+    'harp': 86,           # Sustained Harp
+    'choir': 48,          # Faerie Chorale
+    'fantasy': 29,        # Fantasy
+    'calliope': 25,       # Breezy Calliope
 }
 
 # Effects chain for polish
@@ -86,6 +90,27 @@ def _get_native_synth():
             _native_synth.setting('synth.reverb.level', 0.4)
         init()
     return _native_synth, _native_sfid
+
+
+def get_preset_name(program):
+    """Get the preset name from the soundfont for a given program number."""
+    synth, sfid = _get_synth()
+    try:
+        return synth.sfpreset_name(sfid, 0, program)
+    except:
+        return f"Preset {program}"
+
+
+def set_reverb(room_size=0.5, level=0.4):
+    """Set reverb parameters for decay control.
+
+    Args:
+        room_size: 0.0-1.0, larger = longer decay
+        level: 0.0-1.0, reverb wet level
+    """
+    synth, _ = _get_native_synth()
+    synth.setting('synth.reverb.room-size', room_size)
+    synth.setting('synth.reverb.level', level)
 
 
 def set_instrument(name='bells'):
@@ -185,7 +210,7 @@ def synth_sequence(chords, duration=0.15, gap=0.0, shift=-12, volume=1.0, instru
     return np.concatenate([audio, pad])
 
 
-def play_native(chords, duration=0.15, gap=0.0, shift=-12, volume=1.0, instrument='bells'):
+def play_native(chords, duration=0.15, gap=0.0, shift=-12, volume=1.0, instrument='bells', program=None):
     """Play chords instantly using native FluidSynth audio (non-blocking).
 
     Sounds layer naturally - multiple calls overlap. No GIL issues.
@@ -197,13 +222,17 @@ def play_native(chords, duration=0.15, gap=0.0, shift=-12, volume=1.0, instrumen
         gap: Gap between chords in seconds
         shift: Semitone shift applied to all notes
         volume: Volume (0.0 to 1.0)
-        instrument: Instrument name
+        instrument: Instrument name (ignored if program is set)
+        program: Direct program number (0-135), overrides instrument name
     """
     import threading
     synth, sfid = _get_native_synth()
 
-    # Set instrument
-    prog = INSTRUMENTS.get(instrument, INSTRUMENTS['bells'])
+    # Set instrument - program number takes precedence
+    if program is not None:
+        prog = program
+    else:
+        prog = INSTRUMENTS.get(instrument, INSTRUMENTS['bells'])
     synth.program_select(0, sfid, 0, prog)
 
     velocity = int(100 * volume)  # MIDI velocity 0-127

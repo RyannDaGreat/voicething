@@ -7,7 +7,7 @@ from PyQt6.QtGui import (
     QPainterPath, QPen
 )
 
-from .base import BaseStyle
+from .base import BaseStyle, get_cached_texture
 
 
 # Rust color palette - earthy, corroded metal
@@ -48,6 +48,7 @@ class RustGrungeStyle(BaseStyle):
 
     # Industrial dark theme
     accent = HAZARD_ORANGE
+    accent_css = HAZARD_ORANGE_CSS
     text_primary = TEXT_BRIGHT
     text_secondary = TEXT_DIM
     text_muted = TEXT_MUTED
@@ -58,6 +59,9 @@ class RustGrungeStyle(BaseStyle):
     icon_color_dark = '#ff8c28'  # Hazard orange icons
     icon_color_light = '#ffaa44'
     icon_color_muted = '#8b5a2b'
+
+    # Slider - rust-colored groove on dark metal
+    slider_groove = "rgba(140,65,35,0.6)"
 
     # Waveform - amber/orange on dark
     waveform_color = HAZARD_ORANGE
@@ -169,9 +173,16 @@ class RustGrungeStyle(BaseStyle):
         if RustGrungeStyle._rust_cache is not None:
             return RustGrungeStyle._rust_cache
 
+        width = 256
+        RustGrungeStyle._rust_cache = get_cached_texture(
+            "rust", width, height, lambda: self._generate_rust_texture(width, height)
+        )
+        return RustGrungeStyle._rust_cache
+
+    def _generate_rust_texture(self, width, height):
+        """Generate the rust texture (called on cache miss)."""
         from scipy.ndimage import gaussian_filter, uniform_filter1d
 
-        width = 256
         np.random.seed(1337)
 
         # === SEAMLESS FRACTAL NOISE (tileable) ===
@@ -274,8 +285,7 @@ class RustGrungeStyle(BaseStyle):
         img[:, :, 3] = 255
 
         qimg = QImage(img.data, width, height, width * 4, QImage.Format.Format_RGBA8888).copy()
-        RustGrungeStyle._rust_cache = QPixmap.fromImage(qimg)
-        return RustGrungeStyle._rust_cache
+        return QPixmap.fromImage(qimg)
 
     def _draw_bolt(self, painter, x, y, size=12):
         """Draw a hexagonal bolt/rivet."""

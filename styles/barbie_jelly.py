@@ -7,7 +7,7 @@ from PyQt6.QtGui import (
     QPainterPath, QPen
 )
 
-from .base import BaseStyle
+from .base import BaseStyle, get_cached_texture
 
 
 # Hot pink Barbie colors
@@ -45,6 +45,7 @@ class BarbieJellyStyle(BaseStyle):
 
     # Barbie theme colors
     accent = HOT_PINK
+    accent_css = HOT_PINK_CSS
     text_primary = TEXT_BRIGHT
     text_secondary = TEXT_LIGHT
     text_muted = TEXT_DIM
@@ -55,6 +56,9 @@ class BarbieJellyStyle(BaseStyle):
     icon_color_dark = '#ff69b4'
     icon_color_light = '#ffb6c1'
     icon_color_muted = '#db3082'
+
+    # Slider - magenta groove on pink jelly
+    slider_groove = "rgba(255,0,128,0.4)"
 
     # Waveform - pink pulse
     waveform_color = HOT_PINK
@@ -165,67 +169,39 @@ class BarbieJellyStyle(BaseStyle):
         )
 
     def get_background_pixmap(self, height=512):
-        """Shiny pink jelly plastic texture with cellular gel-cap pattern and glitter."""
+        """Simple pink noise texture for subtle plastic variation."""
         if BarbieJellyStyle._jelly_cache is not None:
             return BarbieJellyStyle._jelly_cache
 
-        from scipy.ndimage import gaussian_filter, distance_transform_edt
-
         width = 256
-        np.random.seed(2000)  # Y2K era
+        BarbieJellyStyle._jelly_cache = get_cached_texture(
+            "barbie_jelly", width, height, lambda: self._generate_jelly_texture(width, height)
+        )
+        return BarbieJellyStyle._jelly_cache
 
-        # === CELLULAR GEL-CAP PATTERN (FilterForge-style Voronoi) ===
-        # Create cell centers for organic blob pattern
-        n_cells = 80
-        cell_x = np.random.randint(0, width, n_cells)
-        cell_y = np.random.randint(0, height, n_cells)
+    def _generate_jelly_texture(self, width, height):
+        """Generate simple pink noise texture (called on cache miss)."""
+        from scipy.ndimage import gaussian_filter
 
-        # Calculate distance to nearest cell center for each pixel
-        yy, xx = np.mgrid[0:height, 0:width]
-        cell_dist = np.full((height, width), np.inf)
-        for cx, cy in zip(cell_x, cell_y):
-            dist = np.sqrt((xx - cx)**2 + (yy - cy)**2)
-            cell_dist = np.minimum(cell_dist, dist)
+        np.random.seed(2000)
 
-        # Normalize and create soft cell edges (gel capsule look)
-        cell_pattern = gaussian_filter(cell_dist, sigma=3)
-        cell_pattern = (cell_pattern - cell_pattern.min()) / (cell_pattern.max() - cell_pattern.min())
-        cell_highlight = np.clip(1.0 - cell_pattern * 2, 0, 1) * 30  # Bright at cell centers
-
-        # === GLOSSY PLASTIC STREAKS ===
-        base = np.random.randint(0, 25, size=(height, width)).astype(np.float32)
-        smooth = gaussian_filter(base, sigma=6)
-        streaks = np.random.randint(0, 20, size=(height, width)).astype(np.float32)
-        streaks = gaussian_filter(streaks, sigma=(2, 40))  # Horizontal injection-mold streaks
-
-        # === GLITTER SPARKLE LAYER ===
-        glitter = np.random.random((height, width))
-        glitter = (glitter > 0.992).astype(np.float32) * 60  # Sparse bright sparkles
-        glitter = gaussian_filter(glitter, sigma=0.8)  # Tiny soft glow
-
-        # === SUBSURFACE DEPTH BLOBS ===
-        depth_blobs = np.random.random((height, width)).astype(np.float32)
-        depth_blobs = gaussian_filter(depth_blobs, sigma=15)
-        depth_blobs = (depth_blobs - 0.5) * 20  # Creates depth variation
-
-        # Combine all layers
-        combined = smooth + streaks * 0.4 + cell_highlight + glitter + depth_blobs * 0.5
+        # Simple blue noise for subtle plastic variation
+        noise = np.random.random((height, width))
+        blurred = gaussian_filter(noise, sigma=1.5)
+        blue_noise = noise - blurred
+        blue_noise = (blue_noise - blue_noise.min()) / (blue_noise.max() - blue_noise.min())
 
         img = np.zeros((height, width, 4), dtype=np.uint8)
 
-        # Base pink color with variations
-        r_base = 220
-        g_base = 60
-        b_base = 140
-
-        img[:, :, 0] = np.clip(r_base + combined - 10, 180, 255).astype(np.uint8)
-        img[:, :, 1] = np.clip(g_base + combined * 0.25, 30, 110).astype(np.uint8)
-        img[:, :, 2] = np.clip(b_base + combined * 0.4, 100, 185).astype(np.uint8)
+        # Base pink with subtle noise variation
+        variation = blue_noise * 25
+        img[:, :, 0] = np.clip(220 + variation, 200, 255).astype(np.uint8)
+        img[:, :, 1] = np.clip(60 + variation * 0.3, 40, 90).astype(np.uint8)
+        img[:, :, 2] = np.clip(140 + variation * 0.5, 120, 170).astype(np.uint8)
         img[:, :, 3] = 255
 
         qimg = QImage(img.data, width, height, width * 4, QImage.Format.Format_RGBA8888).copy()
-        BarbieJellyStyle._jelly_cache = QPixmap.fromImage(qimg)
-        return BarbieJellyStyle._jelly_cache
+        return QPixmap.fromImage(qimg)
 
     def _draw_glossy_highlight(self, painter, rect, width, height, radius=12):
         """Draw glossy plastic shine overlay at top."""

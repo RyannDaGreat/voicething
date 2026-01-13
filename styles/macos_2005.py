@@ -55,6 +55,9 @@ class MacOS2005Style(BaseStyle):
     text_link = "rgb(30,80,140)"  # Darker blue for section headers
     accent_css = "rgb(60,140,220)"  # Darker blue for sliders
 
+    # Slider - dark groove on light brushed metal background
+    slider_groove = "rgba(80,80,90,0.6)"
+
     # Waveform - green oscilloscope with glow and Aqua panel
     waveform_color = GREEN_OSCILLOSCOPE
     waveform_glow = True

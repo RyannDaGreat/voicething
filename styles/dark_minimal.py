@@ -46,6 +46,9 @@ class DarkMinimalStyle(BaseStyle):
     icon_color_light = '#ffffff'
     icon_color_muted = '#999999'  # Solid gray for SVG compatibility
 
+    # Slider - lighter groove visible on dark bg
+    slider_groove = "rgba(255,255,255,0.2)"
+
     # Dark solid background color
     bg_color = DARK_BG
     bg_alpha_focused = 255

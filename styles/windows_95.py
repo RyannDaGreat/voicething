@@ -71,6 +71,11 @@ class Windows95Style(BaseStyle):
     icon_color_light = '#00ff00'  # Green for dark areas
     icon_color_muted = '#808080'  # Gray muted icons
 
+    # Slider - dark groove on Win95 gray, green handle/fill
+    slider_groove = "rgb(64,64,64)"
+    slider_handle = "rgb(0,255,0)"
+    slider_fill = "rgb(0,200,0)"
+
     # Waveform - green on black (classic Winamp/oscilloscope look)
     waveform_color = LCD_GREEN
     waveform_glow = True

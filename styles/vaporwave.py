@@ -38,6 +38,7 @@ class VaporwaveStyle(BaseStyle):
 
     # Colors - pink accent on dark purple background
     accent = VAPOR_PINK
+    accent_css = "rgb(255,113,206)"
     text_primary = TEXT_WHITE
     text_secondary = "rgba(255,255,255,0.85)"
     text_muted = "rgba(255,255,255,0.6)"
@@ -48,6 +49,9 @@ class VaporwaveStyle(BaseStyle):
     icon_color_dark = '#ff9cdd'   # Lighter hot pink icons (more readable on dark)
     icon_color_light = '#ffffff'
     icon_color_muted = '#ffccea'  # Lighter pink for disabled (more visible)
+
+    # Slider - cyan groove on dark purple (contrasts with pink accent)
+    slider_groove = "rgba(1,205,254,0.4)"  # Cyan with transparency
 
     # Waveform - pink on dark purple
     waveform_color = VAPOR_PINK
