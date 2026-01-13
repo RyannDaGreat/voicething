@@ -3,6 +3,7 @@
 
 import collections
 import difflib
+import functools
 import json
 import math
 import os
@@ -663,14 +664,15 @@ SCROLLBAR_CSS = STYLE.scrollbar_css()
 PANEL_BG_CSS = STYLE.panel_bg_css()
 PANEL_BG_FLAT_CSS = STYLE.panel_bg_flat_css()
 
-CHIME_SHIFT = -12  # Shift all chimes (semitones, -12 = 1 octave lower)
+from synth import synth_sequence
 
-def quiet_sampler(f=None, T=None, samplerate=None):
-    return rp.triangle_tone_sampler(f, T, samplerate) * 0.25 * S.CHIME_VOLUME
-
-def chime(*chords, **kwargs):
-    shifted = [[n + CHIME_SHIFT for n in chord] for chord in chords]
-    rp.play_chords(*shifted, gap=0, sampler=quiet_sampler, block=True, **kwargs)
+def chime(*chords, t=0.12, gap=0.0, **kwargs):
+    """Play chime with volume control and ADSR envelope."""
+    if not S.SOUND_ENABLED or S.CHIME_VOLUME <= 0:
+        return
+    audio = synth_sequence(chords, duration=t, gap=gap, volume=S.CHIME_VOLUME)
+    if len(audio) > 0:
+        rp.play_sound_from_samples(audio, blocking=True)
 
 
 def load_icon(name, color=None):
@@ -1418,7 +1420,7 @@ class PrefsDialog(DraggableDialog):
         self.thresh_value.setText(f"{value} dB")
 
     def _on_mute_changed(self, state):
-        S.SOUND_ENABLED = state != Qt.CheckState.Checked.value
+        S.set('SOUND_ENABLED', state != Qt.CheckState.Checked.value)
         self.vol_slider.setEnabled(S.SOUND_ENABLED)
 
     def _on_volume_changed(self, value):
@@ -2456,8 +2458,9 @@ class VoiceThingWindow(QWidget):
         self.sound_btn = make_btn("S", "volume", self.toggle_sound)
         self.sound_btn.setToolTip("Toggle sound effects")
         self.sound_btn.setCheckable(True)
-        self.sound_btn.setChecked(True)  # Sound on by default
-        self.sound_btn.setIcon(load_icon("volume", color=ICON_COLOR_LIGHT))  # Light icon when checked
+        self.sound_btn.setChecked(S.SOUND_ENABLED)
+        self.sound_btn.setIcon(load_icon("volume" if S.SOUND_ENABLED else "volume-off",
+                                         color=ICON_COLOR_LIGHT if S.SOUND_ENABLED else ICON_COLOR_DARK))
         self.sound_btn.setEnabled(True)
         self.eye_btn = make_btn("V", "eye", self.toggle_auto_hide)
         self.eye_btn.setToolTip("Toggle auto-minimize after transcription")
@@ -3260,9 +3263,8 @@ class VoiceThingWindow(QWidget):
         self.wake_word_signal.emit(pre_buffer)
 
     def _chime(self, *args, **kwargs):
-        """Play chime only if sound is enabled."""
-        if S.SOUND_ENABLED:
-            chime(*args, **kwargs)
+        """Play chime (sound check is inside chime())."""
+        chime(*args, **kwargs)
 
     def show_help(self):
         """Show help dialog."""
@@ -3350,7 +3352,7 @@ class VoiceThingWindow(QWidget):
                 S.set(key, data[key])
         # Simple settings without hooks (or with trivial hooks)
         for key in ['ENTER_DELAY', 'WAKE_WORD_SENSITIVITY', 'CUSTOM_WORDS', 'WHISPER_MODEL',
-                    'LLM_MODEL', 'LLM_PREFIX']:
+                    'LLM_MODEL', 'LLM_PREFIX', 'CHIME_VOLUME', 'SILENCE_SKIP_ENABLED', 'SILENCE_THRESHOLD']:
             if key in data:
                 S[key] = data[key]
         # SIMPLE_MODE needs toggle pattern
