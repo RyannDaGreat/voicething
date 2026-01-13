@@ -1,72 +1,107 @@
-"""Simple synthesizer module for chimes and notifications."""
+"""Synthesizer module using FluidSynth for beautiful instrument sounds."""
 
+import os
+import sys
 import numpy as np
+import fluidsynth
+from pedalboard import Pedalboard, Reverb, Chorus, Compressor, Gain
 
 SAMPLERATE = 44100
+SOUNDFONT_PATH = "/opt/homebrew/Cellar/fluid-synth/2.4.7/share/fluid-synth/sf2/VintageDreamsWaves-v2.sf2"
+
+# Instrument presets (bank 0)
+INSTRUMENTS = {
+    'bells': 0,           # FM Bells 1
+    'carillon': 1,        # FM Carillion
+    'christmas': 10,      # FM Christmas Bells
+    'delicate': 119,      # Delicate Bells
+    'marimba': 120,       # Delicate Marimba
+    'xylophone': 68,      # Xylophone
+    'vibraphone': 32,     # Cosmic Vibraphone
+    'flute': 17,          # Smooth Flute
+    'strings': 18,        # Smooth Strings 1
+    'organ': 5,           # El Cheapo Organ
+}
+
+# Effects chain for polish
+EFFECTS = Pedalboard([
+    Chorus(rate_hz=0.8, depth=0.1, mix=0.2),
+    Reverb(room_size=0.5, damping=0.6, wet_level=0.3, dry_level=0.7),
+    Compressor(threshold_db=-15, ratio=2.5),
+    Gain(gain_db=-2),
+])
+
+# Global synth instances (lazy init)
+_synth = None  # For rendering to buffer
+_sfid = None
+_native_synth = None  # For native audio playback (non-blocking)
+_native_sfid = None
 
 
-def make_envelope(n_samples, attack=0.02, decay=0.05, sustain=0.7, release=0.08):
-    """Build ADSR envelope array."""
-    a_samp = int(attack * SAMPLERATE)
-    d_samp = int(decay * SAMPLERATE)
-    r_samp = int(release * SAMPLERATE)
-    s_samp = max(0, n_samples - a_samp - d_samp - r_samp)
-
-    parts = []
-    if a_samp > 0:
-        parts.append(np.linspace(0, 1, a_samp))  # Attack: 0 -> 1
-    if d_samp > 0:
-        parts.append(np.linspace(1, sustain, d_samp))  # Decay: 1 -> sustain
-    if s_samp > 0:
-        parts.append(np.full(s_samp, sustain))  # Sustain
-    if r_samp > 0:
-        parts.append(np.linspace(sustain, 0, r_samp))  # Release: sustain -> 0
-
-    env = np.concatenate(parts) if parts else np.ones(n_samples)
-    if len(env) < n_samples:
-        env = np.concatenate([env, np.zeros(n_samples - len(env))])
-    return env[:n_samples]
+def _suppress_stderr(func):
+    """Suppress FluidSynth C-level warnings during function execution."""
+    def wrapper(*args, **kwargs):
+        stderr_fd = sys.stderr.fileno()
+        devnull = os.open(os.devnull, os.O_WRONLY)
+        old_stderr = os.dup(stderr_fd)
+        os.dup2(devnull, stderr_fd)
+        try:
+            return func(*args, **kwargs)
+        finally:
+            os.dup2(old_stderr, stderr_fd)
+            os.close(old_stderr)
+            os.close(devnull)
+    return wrapper
 
 
-def semitone_to_hz(semitone, a4=440.0):
-    """Convert semitone offset (0 = A4) to frequency in Hz."""
-    return a4 * (2 ** (semitone / 12))
+def _get_synth():
+    """Get or create FluidSynth instance for buffer rendering."""
+    global _synth, _sfid
+    if _synth is None:
+        @_suppress_stderr
+        def init():
+            global _synth, _sfid
+            _synth = fluidsynth.Synth(samplerate=float(SAMPLERATE))
+            _sfid = _synth.sfload(SOUNDFONT_PATH)
+            _synth.program_select(0, _sfid, 0, INSTRUMENTS['bells'])
+        init()
+    return _synth, _sfid
 
 
-def triangle_wave(freq, duration):
-    """Generate triangle wave samples."""
-    n = int(duration * SAMPLERATE)
-    t = np.linspace(0, duration, n, endpoint=False)
-    return (2 / np.pi) * np.arcsin(np.sin(2 * np.pi * freq * t))
+def _get_native_synth():
+    """Get or create FluidSynth with native audio driver (non-blocking)."""
+    global _native_synth, _native_sfid
+    if _native_synth is None:
+        @_suppress_stderr
+        def init():
+            global _native_synth, _native_sfid
+            _native_synth = fluidsynth.Synth(gain=0.5)
+            _native_synth.start(driver='coreaudio')
+            _native_sfid = _native_synth.sfload(SOUNDFONT_PATH)
+            _native_synth.program_select(0, _native_sfid, 0, INSTRUMENTS['bells'])
+            # Enable built-in reverb/chorus (replaces pedalboard effects)
+            _native_synth.setting('synth.reverb.active', 1)
+            _native_synth.setting('synth.chorus.active', 1)
+            _native_synth.setting('synth.reverb.room-size', 0.5)
+            _native_synth.setting('synth.reverb.level', 0.4)
+        init()
+    return _native_synth, _native_sfid
 
 
-def synth_tone(freq, duration, attack=0.02, decay=0.05, sustain=0.7, release=0.08):
-    """Generate a single tone with triangle wave and ADSR envelope."""
-    n = int(duration * SAMPLERATE)
-    wave = triangle_wave(freq, duration)
-    envelope = make_envelope(n, attack, decay, sustain, release)
-    return wave * envelope
+def set_instrument(name='bells'):
+    """Set the instrument for chimes."""
+    synth, sfid = _get_synth()
+    prog = INSTRUMENTS.get(name, INSTRUMENTS['bells'])
+    synth.program_select(0, sfid, 0, prog)
 
 
-def synth_chord(notes, duration, shift=0, **envelope_args):
-    """Generate a chord from semitone offsets."""
-    samples = None
-    for note in notes:
-        freq = semitone_to_hz(note + shift)
-        tone = synth_tone(freq, duration, **envelope_args)
-        if samples is None:
-            samples = tone.copy()
-        else:
-            samples = samples + tone
-    if samples is not None:
-        peak = np.abs(samples).max()
-        if peak > 0:
-            samples = samples / peak
-    return samples
+def semitone_to_midi(semitone):
+    """Convert semitone offset (0 = A4) to MIDI note number (A4 = 69)."""
+    return 69 + semitone
 
 
-def synth_sequence(chords, duration=0.12, gap=0.0, shift=-12, volume=1.0, **envelope_args):
-    """Generate audio for a sequence of chords.
+def synth_sequence(chords, duration=0.15, gap=0.0, shift=-12, volume=1.0, instrument='bells'):
+    """Generate beautiful audio for a sequence of chords using FluidSynth.
 
     Args:
         chords: List of chords, each chord is a list of semitone offsets
@@ -74,22 +109,125 @@ def synth_sequence(chords, duration=0.12, gap=0.0, shift=-12, volume=1.0, **enve
         gap: Gap between chords in seconds
         shift: Semitone shift applied to all notes (default -12 = 1 octave down)
         volume: Volume multiplier (0.0 to 1.0)
-        **envelope_args: ADSR parameters (attack, decay, sustain, release)
+        instrument: Instrument name (bells, carillon, christmas, delicate, etc.)
 
     Returns:
-        numpy array of audio samples
+        numpy array of audio samples (float32)
     """
-    parts = []
-    gap_samples = np.zeros(int(gap * SAMPLERATE))
+    synth, sfid = _get_synth()
+
+    # Set instrument
+    prog = INSTRUMENTS.get(instrument, INSTRUMENTS['bells'])
+    synth.program_select(0, sfid, 0, prog)
+
+    velocity = int(80 * volume)  # MIDI velocity 0-127
+    samples_per_chord = int(duration * SAMPLERATE)
+    gap_samples = int(gap * SAMPLERATE)
+
+    # Calculate total length needed
+    total_chords = len(chords)
+    # Add extra time for note release/reverb tail
+    tail_time = 0.5
+    total_samples = total_chords * (samples_per_chord + gap_samples) + int(tail_time * SAMPLERATE)
+
+    # Render all notes
+    all_audio = []
 
     for i, chord in enumerate(chords):
-        chord_samples = synth_chord(chord, duration, shift=shift, **envelope_args)
-        if chord_samples is not None:
-            chord_samples = chord_samples * 0.3 * volume
-            parts.append(chord_samples)
-        if i < len(chords) - 1 and gap > 0:
-            parts.append(gap_samples)
+        # Note on for all notes in chord
+        for note in chord:
+            midi_note = semitone_to_midi(note + shift)
+            midi_note = max(0, min(127, midi_note))  # Clamp to valid range
+            synth.noteon(0, midi_note, velocity)
 
-    if not parts:
-        return np.array([])
-    return np.concatenate(parts) if len(parts) > 1 else parts[0]
+        # Render this chord's duration
+        samples = synth.get_samples(samples_per_chord)
+        all_audio.append(np.array(samples, dtype=np.float32))
+
+        # Note off
+        for note in chord:
+            midi_note = semitone_to_midi(note + shift)
+            midi_note = max(0, min(127, midi_note))
+            synth.noteoff(0, midi_note)
+
+        # Render gap
+        if gap_samples > 0 and i < len(chords) - 1:
+            samples = synth.get_samples(gap_samples)
+            all_audio.append(np.array(samples, dtype=np.float32))
+
+    # Render tail (let notes decay naturally)
+    tail_samples = synth.get_samples(int(tail_time * SAMPLERATE))
+    all_audio.append(np.array(tail_samples, dtype=np.float32))
+
+    # Combine all audio
+    audio = np.concatenate(all_audio)
+
+    # FluidSynth returns interleaved stereo, convert to mono
+    if len(audio) % 2 == 0:
+        audio = (audio[0::2] + audio[1::2]) / 2
+
+    # Normalize
+    audio = audio / 32768.0  # FluidSynth returns int16 range
+
+    # Apply effects
+    audio = audio.astype(np.float32)
+    audio_2d = audio.reshape(1, -1)
+    processed = EFFECTS(audio_2d, SAMPLERATE)
+    audio = processed.flatten()
+
+    # Final normalize with headroom
+    peak = np.abs(audio).max()
+    if peak > 0:
+        audio = audio / peak * 0.7 * volume
+
+    # Pad end to prevent crackle
+    pad = np.zeros(int(0.05 * SAMPLERATE), dtype=np.float32)
+    return np.concatenate([audio, pad])
+
+
+def play_native(chords, duration=0.15, gap=0.0, shift=-12, volume=1.0, instrument='bells'):
+    """Play chords instantly using native FluidSynth audio (non-blocking).
+
+    Sounds layer naturally - multiple calls overlap. No GIL issues.
+    Uses FluidSynth's built-in reverb/chorus instead of pedalboard effects.
+
+    Args:
+        chords: List of chords, each chord is a list of semitone offsets
+        duration: Duration per note in seconds (for scheduling note-offs)
+        gap: Gap between chords in seconds
+        shift: Semitone shift applied to all notes
+        volume: Volume (0.0 to 1.0)
+        instrument: Instrument name
+    """
+    import threading
+    synth, sfid = _get_native_synth()
+
+    # Set instrument
+    prog = INSTRUMENTS.get(instrument, INSTRUMENTS['bells'])
+    synth.program_select(0, sfid, 0, prog)
+
+    velocity = int(100 * volume)  # MIDI velocity 0-127
+
+    def play_chord_sequence():
+        import time
+        for i, chord in enumerate(chords):
+            # Note on
+            midi_notes = []
+            for note in chord:
+                midi_note = semitone_to_midi(note + shift)
+                midi_note = max(0, min(127, midi_note))
+                midi_notes.append(midi_note)
+                synth.noteon(0, midi_note, velocity)
+
+            time.sleep(duration)
+
+            # Note off
+            for midi_note in midi_notes:
+                synth.noteoff(0, midi_note)
+
+            if gap > 0 and i < len(chords) - 1:
+                time.sleep(gap)
+
+    # Run in background thread so it doesn't block
+    t = threading.Thread(target=play_chord_sequence, daemon=True)
+    t.start()

@@ -36,6 +36,7 @@ from PyQt6.QtWidgets import (
     QWidget,
     QVBoxLayout,
     QHBoxLayout,
+    QGridLayout,
     QLabel,
     QSystemTrayIcon,
     QMenu,
@@ -337,6 +338,8 @@ DEFAULTS = dict(
     SILENCE_SKIP_ENABLED=False,  # Skip recording during silence
     SILENCE_THRESHOLD=-60,  # dB threshold below which audio is considered silence
     CHIME_VOLUME=0.5,  # Volume for chimes (0.0 to 1.0)
+    CHIME_INSTRUMENT='bells',  # Instrument for chimes
+    CHIME_PITCH=0,  # Pitch shift in semitones (-24 to +24)
 )
 S = Settings(**DEFAULTS)
 # =============================================================================
@@ -664,15 +667,15 @@ SCROLLBAR_CSS = STYLE.scrollbar_css()
 PANEL_BG_CSS = STYLE.panel_bg_css()
 PANEL_BG_FLAT_CSS = STYLE.panel_bg_flat_css()
 
-from synth import synth_sequence
+from synth import synth_sequence, play_native
 
 def chime(*chords, t=0.12, gap=0.0, **kwargs):
-    """Play chime with volume control and ADSR envelope."""
+    """Play chime using native FluidSynth audio (non-blocking, layerable)."""
     if not S.SOUND_ENABLED or S.CHIME_VOLUME <= 0:
         return
-    audio = synth_sequence(chords, duration=t, gap=gap, volume=S.CHIME_VOLUME)
-    if len(audio) > 0:
-        rp.play_sound_from_samples(audio, blocking=True)
+    # shift param adds to the base -12 octave shift
+    play_native(chords, duration=t, gap=gap, volume=S.CHIME_VOLUME,
+                instrument=S.CHIME_INSTRUMENT, shift=-12 + S.CHIME_PITCH)
 
 
 def load_icon(name, color=None):
@@ -687,7 +690,7 @@ def load_icon(name, color=None):
     # Read and recolor SVG
     with open(path, 'r') as f:
         svg = f.read()
-    svg = svg.replace('#ffffff', color).replace('#FFFFFF', color)
+    svg = svg.replace('#ffffff', color).replace('#FFFFFF', color).replace('currentColor', color)
     # Create pixmap from recolored SVG
     renderer = QSvgRenderer(svg.encode())
     pixmap = QPixmap(256, 256)
@@ -1095,6 +1098,53 @@ class PrefsDialog(DraggableDialog):
         vol_row.addWidget(self.vol_value)
         theme_box.addLayout(vol_row)
 
+        # Instrument grid with icons (plays demo on click)
+        theme_box.addWidget(make_section("Instrument"))
+        # Map instrument names to icon files
+        inst_icons = {
+            'bells': 'inst-bell', 'carillon': 'inst-carillon', 'christmas': 'inst-christmas',
+            'delicate': 'inst-delicate', 'marimba': 'inst-marimba', 'xylophone': 'inst-xylophone',
+            'vibraphone': 'inst-vibes', 'flute': 'inst-flute', 'strings': 'inst-strings', 'organ': 'inst-organ'
+        }
+        instruments = list(inst_icons.keys())
+        self._inst_buttons = {}
+        inst_grid = QGridLayout()
+        inst_grid.setSpacing(4)
+        for i, inst in enumerate(instruments):
+            btn = QPushButton()
+            btn.setFixedSize(36, 36)
+            icon = load_icon(inst_icons[inst], color=ICON_COLOR_LIGHT)
+            if icon:
+                btn.setIcon(icon)
+                btn.setIconSize(QSize(20, 20))
+            btn.setToolTip(inst.title())
+            base_css = get_btn_css().replace("padding: 3px 8px;", "padding: 0px; margin: 0px;").replace("text-align: left;", "text-align: center;")
+            btn.setStyleSheet(base_css)
+            if inst == S.CHIME_INSTRUMENT:
+                btn.setStyleSheet(base_css + f"QPushButton {{ border: 2px solid {CYAN_CSS}; }}")
+            btn.clicked.connect(lambda checked, i=inst, b=btn: self._select_instrument(i, b))
+            self._inst_buttons[btn] = inst
+            inst_grid.addWidget(btn, i // 5, i % 5)  # 5 columns for compact grid
+        theme_box.addLayout(inst_grid)
+
+        # Pitch slider (-24 to +24 semitones)
+        pitch_row = QHBoxLayout()
+        pitch_row.setSpacing(8)
+        pitch_label = QLabel("Pitch:")
+        pitch_label.setStyleSheet(get_pref_label_css())
+        set_tooltip(pitch_label, "Pitch shift in semitones (-24 to +24)")
+        pitch_row.addWidget(pitch_label)
+        self.pitch_slider = QSlider(Qt.Orientation.Horizontal)
+        self.pitch_slider.setRange(-24, 24)
+        self.pitch_slider.setValue(S.CHIME_PITCH)
+        self.pitch_slider.setStyleSheet(get_slider_css())
+        self.pitch_slider.valueChanged.connect(self._on_pitch_changed)
+        pitch_row.addWidget(self.pitch_slider, 1)
+        self.pitch_value = QLabel(f"{S.CHIME_PITCH:+d}")
+        self.pitch_value.setStyleSheet(get_pref_label_css() + " min-width: 30px;")
+        pitch_row.addWidget(self.pitch_value)
+        theme_box.addLayout(pitch_row)
+
         theme_box.addWidget(make_section("Theme"))
         style_keys = list(STYLES.keys())
         for i, style_name in enumerate(style_keys):
@@ -1426,6 +1476,24 @@ class PrefsDialog(DraggableDialog):
     def _on_volume_changed(self, value):
         S.CHIME_VOLUME = value / 100.0
         self.vol_value.setText(f"{value}%")
+
+    def _on_pitch_changed(self, value):
+        S.CHIME_PITCH = value
+        self.pitch_value.setText(f"{value:+d}")
+
+    def _select_instrument(self, inst_name, clicked_btn):
+        """Select instrument, update UI, and play demo chime."""
+        S.CHIME_INSTRUMENT = inst_name
+        # Update button styles
+        base_css = get_btn_css().replace("padding: 3px 8px;", "padding: 0px; margin: 0px;").replace("text-align: left;", "text-align: center;")
+        for btn, inst in self._inst_buttons.items():
+            if inst == inst_name:
+                btn.setStyleSheet(base_css + f"QPushButton {{ border: 2px solid {CYAN_CSS}; }}")
+            else:
+                btn.setStyleSheet(base_css)
+        # Play demo chime in background
+        import threading
+        threading.Thread(target=lambda: chime([2, 6], [9, 14], t=0.12), daemon=True).start()
 
     def _on_context_changed(self, text):
         S.CUSTOM_WORDS = text
@@ -3352,7 +3420,8 @@ class VoiceThingWindow(QWidget):
                 S.set(key, data[key])
         # Simple settings without hooks (or with trivial hooks)
         for key in ['ENTER_DELAY', 'WAKE_WORD_SENSITIVITY', 'CUSTOM_WORDS', 'WHISPER_MODEL',
-                    'LLM_MODEL', 'LLM_PREFIX', 'CHIME_VOLUME', 'SILENCE_SKIP_ENABLED', 'SILENCE_THRESHOLD']:
+                    'LLM_MODEL', 'LLM_PREFIX', 'CHIME_VOLUME', 'CHIME_INSTRUMENT', 'CHIME_PITCH',
+                    'SILENCE_SKIP_ENABLED', 'SILENCE_THRESHOLD']:
             if key in data:
                 S[key] = data[key]
         # SIMPLE_MODE needs toggle pattern
