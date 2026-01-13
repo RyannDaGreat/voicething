@@ -1,4 +1,4 @@
-#!/usr/bin/env /opt/homebrew/opt/python@3.10/bin/python3.10
+#!/usr/bin/env python3
 """Voice transcription: double-tap Option to record, transcribe, and type."""
 
 import collections
@@ -758,7 +758,7 @@ ACTIONS = [
 
 # Tab definitions
 TABS = [
-    ("O", "Output", "Show console output"),
+    ("O", "Console", "Show console output"),
     ("T", "Transcriptions", "Show transcription history"),
 ]
 
@@ -2455,7 +2455,7 @@ class VoiceThingWindow(QWidget):
         tab_row.setSpacing(8)
         tab_row.setContentsMargins(0, 4, 0, 0)
         # Tab buttons with dark icons (light when checked)
-        self.output_tab = QPushButton("O  Output")
+        self.output_tab = QPushButton("O  Console")
         self.output_tab.setIconSize(QSize(14, 14))
         self.output_tab.setCheckable(True)
         self.output_tab.setChecked(True)
@@ -2708,6 +2708,12 @@ class VoiceThingWindow(QWidget):
             self.timer_label.set_text(f"{int(secs // 60)}:{secs % 60:04.1f}")
 
     def _update_log(self):
+        # Fast check: only process if buffer grew
+        buf_len = len(self.tee._buf)
+        if buf_len == getattr(self, '_last_log_buf_len', 0):
+            return
+        self._last_log_buf_len = buf_len
+
         new_text = rp.strip_ansi_escapes(self.tee.text)
         if new_text != self.output_panel.toPlainText():
             self.output_panel.setPlainText(new_text)
