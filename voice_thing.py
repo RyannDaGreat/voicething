@@ -316,7 +316,7 @@ class Settings(dict):
             if self.get(k) != v:
                 self.set(k, v)
 
-S = Settings(
+DEFAULTS = dict(
     ENTER_DELAY=0.1,
     WAKE_WORD_SENSITIVITY=0.25,
     CUSTOM_WORDS="",
@@ -334,6 +334,7 @@ S = Settings(
     LLM_MODEL='OLLAMA:qwen2.5:7b',
     LLM_PREFIX='',  # Empty means use default
 )
+S = Settings(**DEFAULTS)
 # =============================================================================
 
 # Import style system - all UI styling comes from here
@@ -572,15 +573,26 @@ def make_searchable_dropdown(items, current_value, on_change=None):
         combo.currentIndexChanged.connect(on_change)
     return combo
 
-def make_labeled_textedit(label_text, value, placeholder, tooltip, on_change=None, height=80):
+def make_labeled_textedit(label_text, value, placeholder, tooltip, on_change=None, height=80, default=None):
     """Create a labeled multiline text edit. Returns (textedit, row_layout)."""
     row = QVBoxLayout()
     row.setSpacing(4)
+    header = QHBoxLayout()
     label = QLabel(label_text)
     label.setStyleSheet(get_pref_label_css())
     if tooltip:
         label.setToolTip(tooltip)
-    row.addWidget(label)
+    header.addWidget(label)
+    if default is not None:
+        reset_btn = QPushButton()
+        reset_btn.setIcon(load_icon("reset", ICON_COLOR_DARK))
+        reset_btn.setFixedSize(20, 20)
+        reset_btn.setIconSize(QSize(14, 14))
+        reset_btn.setToolTip("Reset to default")
+        reset_btn.setStyleSheet("QPushButton { padding: 0; border: none; background: transparent; }")
+        header.addWidget(reset_btn)
+    header.addStretch()
+    row.addLayout(header)
     edit = QTextEdit()
     edit.setPlainText(value)
     edit.setPlaceholderText(placeholder)
@@ -591,6 +603,8 @@ def make_labeled_textedit(label_text, value, placeholder, tooltip, on_change=Non
     edit.setFixedHeight(height)
     if on_change:
         edit.textChanged.connect(on_change)
+    if default is not None:
+        reset_btn.clicked.connect(lambda: edit.setPlainText(default))
     row.addWidget(edit)
     return edit, row
 
@@ -980,29 +994,40 @@ class PrefsDialog(DraggableDialog):
 
         layout.addWidget(make_title("Preferences"))
 
-        # Theme section
-        layout.addWidget(make_section("Theme"))
+        # Main content: Theme | Settings
+        content = QHBoxLayout()
+        content.setSpacing(15)
+
+        # Left side: Theme
+        theme_box = QVBoxLayout()
+        theme_box.addWidget(make_section("Theme"))
         style_keys = list(STYLES.keys())
-        theme_container = QWidget()
-        theme_layout = QVBoxLayout(theme_container)
-        theme_layout.setContentsMargins(0, 0, 0, 0)
-        theme_layout.setSpacing(3)
         for i, style_name in enumerate(style_keys):
             key = str(i + 1)
             display_name = style_name.replace("_", " ").title()
             btn = QPushButton(f"{key}  {display_name}")
-            # Add visual margin via padding, but keep hitbox contiguous
             base_css = get_btn_css().replace("padding: 3px 8px;", "padding: 5px 8px; margin: 0px;")
             btn.setStyleSheet(base_css)
             if style_name == current_style:
                 btn.setStyleSheet(base_css + f"QPushButton {{ border: 2px solid {CYAN_CSS}; }}")
             btn.clicked.connect(lambda checked, s=style_name, b=btn: self._select_style(s, b))
             self._style_buttons[btn] = style_name
-            theme_layout.addWidget(btn)
-        layout.addWidget(theme_container)
+            theme_box.addWidget(btn)
+        theme_box.addStretch()
+        content.addLayout(theme_box)
+
+        # Separator
+        sep = QLabel()
+        sep.setFixedWidth(1)
+        sep.setStyleSheet(f"background: {BORDER_COLOR};")
+        content.addWidget(sep)
+
+        # Right side: All other settings
+        settings_box = QVBoxLayout()
+        settings_box.setSpacing(10)
 
         # Wake Word section
-        layout.addWidget(make_section("Wake Word"))
+        settings_box.addWidget(make_section("Wake Word"))
 
         # Wake word model dropdown
         ww_row = QHBoxLayout()
@@ -1021,7 +1046,7 @@ class PrefsDialog(DraggableDialog):
         make_combobox_searchable(self.wake_word_combo)  # Enable search/filter
         self.wake_word_combo.currentIndexChanged.connect(self._on_wake_word_changed)
         ww_row.addWidget(self.wake_word_combo, 1)
-        layout.addLayout(ww_row)
+        settings_box.addLayout(ww_row)
 
         # Sensitivity slider (0.0 to 1.0, lower = more sensitive)
         sens_row = QHBoxLayout()
@@ -1042,10 +1067,10 @@ class PrefsDialog(DraggableDialog):
         self.sens_value = QLabel(f"{S.WAKE_WORD_SENSITIVITY:.2f}")
         self.sens_value.setStyleSheet(get_pref_label_css() + " min-width: 35px;")
         sens_row.addWidget(self.sens_value)
-        layout.addLayout(sens_row)
+        settings_box.addLayout(sens_row)
 
         # Paste Behavior section (separate from wake word)
-        layout.addWidget(make_section("Paste Behavior"))
+        settings_box.addWidget(make_section("Paste Behavior"))
 
         # Auto-enter toggle
         enter_row = QHBoxLayout()
@@ -1059,7 +1084,7 @@ class PrefsDialog(DraggableDialog):
         self.enter_checkbox.setStyleSheet(f"QCheckBox {{ color: {TEXT_PRIMARY}; font-size: 12px; }}")
         self.enter_checkbox.stateChanged.connect(self._on_enter_changed)
         enter_row.addWidget(self.enter_checkbox, 1)
-        layout.addLayout(enter_row)
+        settings_box.addLayout(enter_row)
 
         # Enter delay slider
         delay_row = QHBoxLayout()
@@ -1080,10 +1105,10 @@ class PrefsDialog(DraggableDialog):
         self.delay_value = QLabel(f"{S.ENTER_DELAY:.1f}s")
         self.delay_value.setStyleSheet(get_pref_label_css() + " min-width: 35px;")
         delay_row.addWidget(self.delay_value)
-        layout.addLayout(delay_row)
+        settings_box.addLayout(delay_row)
 
         # Context Words section
-        layout.addWidget(make_section("Context Words"))
+        settings_box.addWidget(make_section("Context Words"))
         context_row = QHBoxLayout()
         context_row.setSpacing(8)
         context_label = QLabel("Words:")
@@ -1099,7 +1124,7 @@ class PrefsDialog(DraggableDialog):
         )
         context_row.addWidget(context_label)
         self.context_edit = QLineEdit()
-        self.context_edit.setPlaceholderText("e.g. Wall-E, Wally, PyTorch, CUDA")
+        self.context_edit.setPlaceholderText("e.g. \"Wall-E, Wally, PyTorch, CUDA\"")
         self.context_edit.setText(S.CUSTOM_WORDS)
         self.context_edit.setStyleSheet(
             "QLineEdit { background: white; color: black; border: 1px solid #888; "
@@ -1107,10 +1132,10 @@ class PrefsDialog(DraggableDialog):
         )
         self.context_edit.textChanged.connect(self._on_context_changed)
         context_row.addWidget(self.context_edit, 1)
-        layout.addLayout(context_row)
+        settings_box.addLayout(context_row)
 
         # LLM section
-        layout.addWidget(make_section("LLM Post-Processing"))
+        settings_box.addWidget(make_section("LLM Post-Processing"))
         # Model dropdown
         llm_model_row = QHBoxLayout()
         llm_model_row.setSpacing(8)
@@ -1126,22 +1151,22 @@ class PrefsDialog(DraggableDialog):
             LLM_MODELS, S.LLM_MODEL, self._on_llm_model_changed
         )
         llm_model_row.addWidget(self.llm_model_combo, 1)
-        layout.addLayout(llm_model_row)
+        settings_box.addLayout(llm_model_row)
         # Prompt prefix
         self.llm_prefix_edit, llm_prefix_layout = make_labeled_textedit(
             "Prompt Prefix:",
-            S.LLM_PREFIX,
+            S.LLM_PREFIX or DEFAULT_LLM_PREFIX,
             "Leave empty for default de-ramble prompt...",
-            "Custom prompt prefix for LLM post-processing.\n\n"
-            "Leave empty to use the built-in de-ramble prompt.\n"
+            "Custom prompt prefix for LLM post-processing.\n"
             "Your text is appended after this prefix.",
             self._on_llm_prefix_changed,
-            height=60
+            height=60,
+            default=DEFAULT_LLM_PREFIX
         )
-        layout.addLayout(llm_prefix_layout)
+        settings_box.addLayout(llm_prefix_layout)
 
         # Pet section - checkboxes for multi-select
-        layout.addWidget(make_section("Pet Companions"))
+        settings_box.addWidget(make_section("Pet Companions"))
         pet_grid = QHBoxLayout()
         pet_grid.setSpacing(4)
         for pet_type in ALL_PET_TYPES:
@@ -1174,15 +1199,30 @@ class PrefsDialog(DraggableDialog):
 
             self.pet_checkboxes[pet_type] = checkbox
             pet_grid.addWidget(pet_widget)
-        layout.addLayout(pet_grid)
+        settings_box.addLayout(pet_grid)
 
+        # Bottom buttons row
+        bottom_row = QHBoxLayout()
+        bottom_row.setSpacing(8)
+        # Revert to defaults button
+        revert_btn = QPushButton("  Revert to Defaults")
+        revert_btn.setIcon(load_icon("reset", color=ICON_COLOR_DARK))
+        revert_btn.setStyleSheet(get_btn_css())
+        revert_btn.setToolTip("Reset all settings to defaults")
+        revert_btn.clicked.connect(self._revert_to_defaults)
+        bottom_row.addWidget(revert_btn)
         # Open settings folder button
         folder_btn = QPushButton("  Open Settings Folder")
         folder_btn.setIcon(load_icon("folder-open", color=ICON_COLOR_DARK))
         folder_btn.setStyleSheet(get_btn_css())
         folder_btn.setToolTip(f"Open {_VOICETHING_DIR}")
         folder_btn.clicked.connect(self._open_settings_folder)
-        layout.addWidget(folder_btn)
+        bottom_row.addWidget(folder_btn)
+        settings_box.addLayout(bottom_row)
+
+        settings_box.addStretch()
+        content.addLayout(settings_box)
+        layout.addLayout(content)
 
         # Cancel/OK buttons
         btn_row = QHBoxLayout()
@@ -1196,7 +1236,7 @@ class PrefsDialog(DraggableDialog):
         ok_btn.clicked.connect(self.accept)
         btn_row.addWidget(ok_btn)
         layout.addLayout(btn_row)
-        self.setMinimumWidth(max(280, 48 * len(ALL_PET_TYPES)))  # Width only, height auto-sizes
+        self.setMinimumWidth(600)  # Wide enough for two-column layout
 
     def _select_style(self, style_name, clicked_btn):
         """Select a style and apply it immediately, then close dialog."""
@@ -1241,6 +1281,25 @@ class PrefsDialog(DraggableDialog):
 
     def _open_settings_folder(self):
         rp.open_file_with_default_application(_VOICETHING_DIR)
+
+    def _revert_to_defaults(self):
+        """Revert all settings in the dialog to defaults (doesn't save until OK)."""
+        self._apply_settings(DEFAULTS)
+
+    def _apply_settings(self, d):
+        """Apply a settings dict to the UI widgets."""
+        self._select_style(d['THEME'], None)
+        ww_opts = get_wake_words_ordered()
+        self.wake_word_combo.setCurrentIndex(ww_opts.index(d['WAKE_WORD_MODEL']) if d['WAKE_WORD_MODEL'] in ww_opts else 0)
+        self.sens_slider.setValue(int(d['WAKE_WORD_SENSITIVITY'] * 100))
+        self.enter_checkbox.setChecked(d['AUTO_ENTER'])
+        self.delay_slider.setValue(int(d['ENTER_DELAY'] * 10))
+        self.context_edit.setText(d['CUSTOM_WORDS'])
+        llm_idx = next((i for i, (v, _) in enumerate(LLM_MODELS) if v == d['LLM_MODEL']), 0)
+        self.llm_model_combo.setCurrentIndex(llm_idx)
+        self.llm_prefix_edit.setPlainText(d['LLM_PREFIX'] or DEFAULT_LLM_PREFIX)
+        for pet_type, cb in self.pet_checkboxes.items():
+            cb.setChecked(pet_type in d['PET_TYPES'])
 
     def keyPressEvent(self, e):
         key = e.key()
