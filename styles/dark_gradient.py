@@ -21,12 +21,12 @@ CYAN_35 = "rgba(100,200,255,0.35)"
 CYAN_20 = "rgba(100,180,230,0.2)"
 CYAN_8 = "rgba(100,180,230,0.08)"
 
-# Glass effect borders
-GLASS_BORDER = "rgba(90,90,105,0.8)"
-GLASS_BORDER_DARK = "rgba(60,60,70,0.6)"
-GLASS_BORDER_HOVER = "rgba(100,180,230,0.4)"
-PANEL_BORDER = "rgba(70,75,90,0.7)"
-PANEL_BORDER_DARK = "rgba(60,65,80,0.6)"
+# Glass effect borders - 100% alpha for crisp outlines
+GLASS_BORDER = "rgb(90,90,105)"
+GLASS_BORDER_DARK = "rgb(60,60,70)"
+GLASS_BORDER_HOVER = "rgb(100,180,230)"
+PANEL_BORDER = "rgb(70,75,90)"
+PANEL_BORDER_DARK = "rgb(60,65,80)"
 
 # Gradient definitions kept inline since they're complex multi-stop
 
