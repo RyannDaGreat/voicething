@@ -3350,7 +3350,7 @@ class VoiceThingWindow(QWidget):
         elif no_mods and key == Qt.Key.Key_M: self.show_model_dialog()
         elif no_mods and key == Qt.Key.Key_P: self.show_prefs()
         elif key == Qt.Key.Key_Question: self.show_help()
-        elif ctrl and key == Qt.Key.Key_L: dump_chime_log()  # Ctrl+L: dump chime log
+        elif mods == Qt.KeyboardModifier.ControlModifier and key == Qt.Key.Key_L: dump_chime_log()  # Ctrl+L: dump chime log
         else:
             super().keyPressEvent(e)
 
