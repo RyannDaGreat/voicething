@@ -1,15 +1,26 @@
 {
-  "ENTER_DELAY": 0.3,
-  "WAKE_WORD_SENSITIVITY": 0.05,
-  "CUSTOM_WORDS": [],
+  "ENTER_DELAY": 0.1,
+  "WAKE_WORD_SENSITIVITY": 0.12,
+  "CUSTOM_WORDS": "Claude, Vace, T2I, ",
   "AUTO_HIDE": false,
   "SOUND_ENABLED": true,
   "LLM_ENABLED": false,
   "AUTO_ENTER": false,
   "WAKE_WORD_ENABLED": true,
-  "SIMPLE_MODE": false,
-  "PET_TYPES": [],
+  "SIMPLE_MODE": true,
+  "PET_TYPES": [
+    "lpc_dog_white"
+  ],
   "WHISPER_MODEL": "medium",
-  "THEME": "macos_2005",
-  "WAKE_WORD_MODEL": "hey_luna"
+  "THEME": "cyberpunk_metal",
+  "WAKE_WORD_MODEL": "scooby",
+  "TMUX_MODE": true,
+  "LLM_MODEL": "OLLAMA:qwen2.5:7b",
+  "LLM_PREFIX": "",
+  "SILENCE_SKIP_ENABLED": true,
+  "SILENCE_THRESHOLD": -66,
+  "CHIME_VOLUME": 0.58,
+  "CHIME_PROGRAM": 127,
+  "CHIME_PITCH": 12,
+  "CHIME_THEME": "bright"
 }
