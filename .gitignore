@@ -22,3 +22,4 @@ __pycache__/
 .frenzy
 scratchpad.py
 .claude_todo.md
+.wake_word_cache
