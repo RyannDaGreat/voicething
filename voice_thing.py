@@ -1421,14 +1421,19 @@ class PrefsDialog(DraggableDialog):
         theme_box.addLayout(prog_row)
         self._update_prog_display()  # Initialize name label
 
-        # Mini piano keyboard (2 octaves, centered on current pitch)
+        # Mini piano keyboard (3 octaves, shifts with pitch)
         # Width matches instrument grid: 6 columns * 26px = 156px
-        self.piano = PianoWidget(width=156, height=36)
+        self.piano_hint = QLabel("")
+        self.piano_hint.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 9px;")
+        self.piano_hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.piano = PianoWidget(width=156, height=36, hint_label=self.piano_hint,
+                                  pitch_getter=lambda: S.CHIME_PITCH)
         piano_row = QHBoxLayout()
         piano_row.addStretch()
         piano_row.addWidget(self.piano)
         piano_row.addStretch()
         theme_box.addLayout(piano_row)
+        theme_box.addWidget(self.piano_hint)
 
         # Chime theme dropdown
         chime_theme_row = QHBoxLayout()
@@ -1789,6 +1794,7 @@ class PrefsDialog(DraggableDialog):
     def _on_pitch_changed(self, value):
         S.CHIME_PITCH = value
         self.pitch_value.setText(f"{value:+d}")
+        self.piano.update()  # Redraw piano with shifted keys
 
     def _on_chime_theme_changed(self, index):
         theme = self.chime_theme_combo.currentData()
@@ -1870,18 +1876,24 @@ class PrefsDialog(DraggableDialog):
 
     def keyPressEvent(self, e):
         key = e.key()
-        style_keys = list(STYLES.keys())
-        # 1-9 keys select styles
-        if Qt.Key.Key_1 <= key <= Qt.Key.Key_9:
-            idx = key - Qt.Key.Key_1
-            if idx < len(style_keys):
-                self._select_style(style_keys[idx], None)
-        elif key == Qt.Key.Key_Escape:
+        # Forward piano keys to piano widget (always active)
+        if key in PianoWidget.KEYBOARD_MAP:
+            self.piano.keyPressEvent(e)
+            return
+        if key == Qt.Key.Key_Escape:
             self.reject()
         elif key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
             self.accept()
         else:
             super().keyPressEvent(e)
+
+    def keyReleaseEvent(self, e):
+        key = e.key()
+        # Forward piano key releases to piano widget
+        if key in PianoWidget.KEYBOARD_MAP:
+            self.piano.keyReleaseEvent(e)
+            return
+        super().keyReleaseEvent(e)
 
 
 class PermissionDialog(DraggableDialog):
@@ -2355,11 +2367,12 @@ class Mini7Segment(QWidget):
 
 
 class PianoWidget(QWidget):
-    """Two-octave piano keyboard that transposes based on pitch setting.
+    """Interactive piano keyboard with mouse and keyboard input.
 
-    White and black keys are clickable to play notes. The displayed octaves
-    shift based on the current pitch setting so the piano "slides" left/right.
-    Keys also light up when notes are played externally (e.g., chimes).
+    Features:
+    - Click/drag to play notes
+    - QWERTY keyboard input when focused (with sustain)
+    - Visual feedback for external chime playback
     """
 
     # Signal for thread-safe key triggering (from synth callback thread)
@@ -2368,30 +2381,105 @@ class PianoWidget(QWidget):
     # Which semitones in an octave are black keys (0=C, 1=C#, 2=D, etc.)
     BLACK_KEYS = {1, 3, 6, 8, 10}  # C#, D#, F#, G#, A#
 
+    # Keyboard mapping: key -> semitone offset
+    # Mac keyboard layout - black keys sit between white keys:
+    #
+    #  2 3   5 6 7   9 0   =      <- black keys (number row)
+    # Q W E R T Y U I O P [ ] \   <- white keys (top row)
+    #  S D   G H J   L ;          <- black keys (home row)
+    # Z X C V B N M , . /         <- white keys (bottom row)
+    #
+    # Piano notes (semitones from A4=0):
+    # White: A  B  C  D  E  F  G  A  B  C  D  E  F  G  A  B  C  D  E  F
+    #        0  2  3  5  7  8  10 12 14 15 17 19 20 ...
+    # Black: A# C# D# F# G# A# C# D# F# G# ...
+    #        1  4  6  9  11 13 16 18 21 23 ...
+    KEYBOARD_MAP = {
+        # Lower white keys (zxcvbnm,./)
+        Qt.Key.Key_Z: -12,      # A3
+        Qt.Key.Key_X: -10,      # B3
+        Qt.Key.Key_C: -9,       # C4
+        Qt.Key.Key_V: -7,       # D4
+        Qt.Key.Key_B: -5,       # E4
+        Qt.Key.Key_N: -4,       # F4
+        Qt.Key.Key_M: -2,       # G4
+        Qt.Key.Key_Comma: 0,    # A4
+        Qt.Key.Key_Period: 2,   # B4
+        Qt.Key.Key_Slash: 3,    # C5
+        # Upper white keys (qwertyuiop[]\)
+        Qt.Key.Key_Q: 3,        # C5
+        Qt.Key.Key_W: 5,        # D5
+        Qt.Key.Key_E: 7,        # E5
+        Qt.Key.Key_R: 8,        # F5
+        Qt.Key.Key_T: 10,       # G5
+        Qt.Key.Key_Y: 12,       # A5
+        Qt.Key.Key_U: 14,       # B5
+        Qt.Key.Key_I: 15,       # C6
+        Qt.Key.Key_O: 17,       # D6
+        Qt.Key.Key_P: 19,       # E6
+        Qt.Key.Key_BracketLeft: 20,   # F6
+        Qt.Key.Key_BracketRight: 22,  # G6
+        Qt.Key.Key_Backslash: 24,     # A6
+        # Lower black keys (asdfghjkl;') - between lower white keys
+        Qt.Key.Key_A: -11,      # A#3/Bb3 (between Z and X)
+        Qt.Key.Key_S: -8,       # C#4/Db4 (between C and V)
+        Qt.Key.Key_D: -6,       # D#4/Eb4 (between V and B)
+        Qt.Key.Key_F: -3,       # F#4/Gb4 (between N and M)
+        Qt.Key.Key_G: -1,       # G#4/Ab4 (between M and ,)
+        Qt.Key.Key_H: 1,        # A#4/Bb4 (between , and .)
+        Qt.Key.Key_J: 4,        # C#5/Db5 (between / and next)
+        Qt.Key.Key_K: 6,        # D#5/Eb5
+        Qt.Key.Key_L: 9,        # F#5/Gb5
+        Qt.Key.Key_Semicolon: 11,     # G#5/Ab5
+        Qt.Key.Key_Apostrophe: 13,    # A#5/Bb5
+        # Upper black keys (1234567890-=) - between upper white keys
+        Qt.Key.Key_1: 4,        # C#5/Db5 (between Q and W)
+        Qt.Key.Key_2: 6,        # D#5/Eb5 (between W and E)
+        Qt.Key.Key_3: 9,        # F#5/Gb5 (between R and T)
+        Qt.Key.Key_4: 11,       # G#5/Ab5 (between T and Y)
+        Qt.Key.Key_5: 13,       # A#5/Bb5 (between Y and U)
+        Qt.Key.Key_6: 16,       # C#6/Db6 (between U and I)
+        Qt.Key.Key_7: 18,       # D#6/Eb6 (between I and O)
+        Qt.Key.Key_8: 21,       # F#6/Gb6 (between O and P)
+        Qt.Key.Key_9: 23,       # G#6/Ab6 (between P and [)
+        Qt.Key.Key_0: 25,       # A#6/Bb6 (between [ and ])
+        Qt.Key.Key_Minus: 28,   # C#7/Db7
+        Qt.Key.Key_Equal: 30,   # D#7/Eb7
+    }
+
     # Global instance for note callbacks (set when preferences dialog opens)
     _instance = None
 
-    def __init__(self, width=154, height=40):
+    def __init__(self, width=154, height=40, hint_label=None, pitch_getter=None):
         super().__init__()
         self.width_px = width
         self.height_px = height
+        self.hint_label = hint_label  # QLabel to show keyboard hint
+        self.pitch_getter = pitch_getter or (lambda: 0)
         self.setFixedSize(width, height)
         self.setMouseTracking(True)
+        self.setFocusPolicy(Qt.FocusPolicy.ClickFocus)  # Enable keyboard focus
         self._hover_key = None
-        self._pressed_keys = set()  # Now a set to support multiple keys
+        self._pressed_keys = set()  # Visually pressed keys
+        self._sustained_notes = {}  # semitone -> midi_note (for sustain)
         self._dragging = False
         self._last_drag_key = None
         self._trigger_key_signal.connect(self._do_trigger_key)
         PianoWidget._instance = self  # Register for global callbacks
 
     def _get_key_layout(self):
-        """Calculate key positions for 3 octaves (36 semitones) centered on A4.
+        """Calculate key positions for 3 octaves (36 semitones) that shift with pitch.
 
-        Piano is fixed at -18 to +17 (E3 to F#5) so chime notes are always visible.
-        Pitch slider affects sound frequency, not which keys are displayed.
+        The piano visually shifts based on pitch setting, rounded to nearest octave
+        so keyboard input always matches the displayed keys.
         """
-        # Fixed range: show 36 semitones to cover typical chime range (-14 to +20)
-        start_semitone = -18  # 1.5 octaves below A4
+        pitch = self.pitch_getter()
+        # Round to nearest octave so display matches keyboard input
+        octave_shift = round(pitch / 12) * 12
+        # Base range: 36 semitones centered on A4 (0), shifted by octave
+        # When pitch=0: show -18 to +17
+        # When pitch=+12: show -6 to +29 (shifted up one octave)
+        start_semitone = -18 + octave_shift
         num_semitones = 36
 
         white_keys = []
@@ -2435,40 +2523,121 @@ class PianoWidget(QWidget):
                 return semitone
         return None
 
+    def focusInEvent(self, event):
+        """Show keyboard hint when focused."""
+        if self.hint_label:
+            self.hint_label.setText("QWERTY to play, hold to sustain")
+        self.update()
+
+    def focusOutEvent(self, event):
+        """Hide keyboard hint and release all sustained notes."""
+        if self.hint_label:
+            self.hint_label.setText("")
+        # Release all sustained notes
+        self._release_all_sustained()
+        self.update()
+
+    def _key_to_semitone(self, key):
+        """Convert keyboard key to semitone, adjusted for current pitch display."""
+        if key not in self.KEYBOARD_MAP:
+            return None
+        # KEYBOARD_MAP values are relative to base display (pitch=0)
+        # Round pitch to nearest octave so keyboard always plays "correct" notes
+        base_semitone = self.KEYBOARD_MAP[key]
+        pitch = self.pitch_getter()
+        octave_shift = round(pitch / 12) * 12  # Round to nearest octave
+        return base_semitone + octave_shift
+
+    def keyPressEvent(self, event):
+        """Handle keyboard input for playing notes with sustain."""
+        if event.isAutoRepeat():
+            return  # Ignore key repeat
+        key = event.key()
+        semitone = self._key_to_semitone(key)
+        if semitone is not None:
+            if semitone not in self._sustained_notes:
+                self._start_sustained_note(semitone)
+        else:
+            super().keyPressEvent(event)
+
+    def keyReleaseEvent(self, event):
+        """Stop sustained note when key released."""
+        if event.isAutoRepeat():
+            return
+        key = event.key()
+        semitone = self._key_to_semitone(key)
+        if semitone is not None:
+            self._stop_sustained_note(semitone)
+        else:
+            super().keyReleaseEvent(event)
+
+    def _start_sustained_note(self, semitone):
+        """Start a sustained note (keyboard input)."""
+        from synth import note_on
+        midi_note = note_on(
+            semitone,
+            shift=-12 + S.CHIME_PITCH,
+            volume=S.CHIME_VOLUME,
+            program=S.CHIME_PROGRAM
+        )
+        self._sustained_notes[semitone] = midi_note
+        self._pressed_keys.add(semitone)
+        self.update()
+
+    def _stop_sustained_note(self, semitone):
+        """Stop a sustained note (keyboard input)."""
+        if semitone in self._sustained_notes:
+            from synth import note_off
+            note_off(self._sustained_notes[semitone])
+            del self._sustained_notes[semitone]
+            self._pressed_keys.discard(semitone)
+            self.update()
+
+    def _release_all_sustained(self):
+        """Release all sustained notes (e.g., on focus loss)."""
+        from synth import note_off
+        for midi_note in self._sustained_notes.values():
+            note_off(midi_note)
+        self._sustained_notes.clear()
+        self._pressed_keys.clear()
+
     def mouseMoveEvent(self, event):
         key = self._key_at_pos(event.pos())
         if key != self._hover_key:
             self._hover_key = key
             self.update()
-        # Handle dragging - play new key when dragged onto it
+        # Handle dragging - sustain new key when dragged onto it
         if self._dragging and key is not None and key != self._last_drag_key:
+            # Stop previous drag note
+            if self._last_drag_key is not None:
+                self._stop_sustained_note(self._last_drag_key)
             self._last_drag_key = key
-            self._pressed_keys.add(key)
-            self.update()
-            self._play_note(key)
+            self._start_sustained_note(key)
 
     def leaveEvent(self, event):
         self._hover_key = None
+        if self._dragging:
+            self._release_all_sustained()
         self._dragging = False
         self._last_drag_key = None
         self.update()
 
     def mousePressEvent(self, event):
+        self.setFocus()  # Take keyboard focus on click
         if event.button() == Qt.MouseButton.LeftButton:
             key = self._key_at_pos(event.pos())
             if key is not None:
                 self._dragging = True
                 self._last_drag_key = key
-                self._pressed_keys.add(key)
-                self.update()
-                self._play_note(key)
+                self._start_sustained_note(key)
 
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
+            # Stop all mouse-initiated notes
+            if self._last_drag_key is not None:
+                self._stop_sustained_note(self._last_drag_key)
             self._dragging = False
             self._last_drag_key = None
-            self._pressed_keys.clear()
-            self.update()
 
     def trigger_key(self, semitone, duration=0.15):
         """Trigger a key visually (called when notes play externally).
@@ -2485,23 +2654,11 @@ class PianoWidget(QWidget):
         QTimer.singleShot(int(duration * 1000), lambda s=semitone: self._release_key(s))
 
     def _release_key(self, semitone):
-        """Release a key after external trigger."""
-        self._pressed_keys.discard(semitone)
-        self.update()
-
-    def _play_note(self, semitone):
-        """Play a single note using the synth."""
-        from synth import play_native
-        # semitone is relative to A4 (0 = A4)
-        # Apply the current pitch shift and program
-        # Note: Don't trigger_key here - the synth callback will do it
-        play_native(
-            [[semitone]],
-            duration=0.3,
-            shift=-12 + S.CHIME_PITCH,
-            volume=S.CHIME_VOLUME,
-            program=S.CHIME_PROGRAM
-        )
+        """Release a key after external trigger (not sustained notes)."""
+        # Only release if not currently sustained by keyboard/mouse
+        if semitone not in self._sustained_notes:
+            self._pressed_keys.discard(semitone)
+            self.update()
 
     def paintEvent(self, event):
         p = QPainter(self)
