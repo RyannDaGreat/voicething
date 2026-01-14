@@ -1551,6 +1551,7 @@ class PrefsDialog(DraggableDialog):
         self.copy_checkbox = QCheckBox("Copy to clipboard")
         self.copy_checkbox.setChecked(S.AUTO_COPY)
         self.copy_checkbox.setStyleSheet(f"QCheckBox {{ color: {TEXT_PRIMARY}; font-size: 11px; }}")
+        self.copy_checkbox.setToolTip("Copy transcription to clipboard after recording")
         self.copy_checkbox.stateChanged.connect(self._on_auto_copy_pref_changed)
         auto_row.addWidget(self.copy_checkbox)
         # Paste
@@ -1562,6 +1563,7 @@ class PrefsDialog(DraggableDialog):
         self.paste_checkbox = QCheckBox("⌘V paste")
         self.paste_checkbox.setChecked(S.AUTO_PASTE)
         self.paste_checkbox.setStyleSheet(f"QCheckBox {{ color: {TEXT_PRIMARY}; font-size: 11px; }}")
+        self.paste_checkbox.setToolTip("Automatically paste transcription via ⌘V")
         self.paste_checkbox.stateChanged.connect(self._on_auto_paste_pref_changed)
         auto_row.addWidget(self.paste_checkbox)
         # Enter
@@ -1573,8 +1575,20 @@ class PrefsDialog(DraggableDialog):
         self.enter_checkbox = QCheckBox("Enter after paste")
         self.enter_checkbox.setChecked(S.AUTO_ENTER)
         self.enter_checkbox.setStyleSheet(f"QCheckBox {{ color: {TEXT_PRIMARY}; font-size: 11px; }}")
+        self.enter_checkbox.setToolTip("Press Enter after pasting transcription")
         self.enter_checkbox.stateChanged.connect(self._on_enter_changed)
         auto_row.addWidget(self.enter_checkbox)
+        # Tmux
+        tmux_icon_label = QLabel()
+        tmux_icon = load_icon("tmux", color=ICON_COLOR_DARK)
+        if tmux_icon:
+            tmux_icon_label.setPixmap(tmux_icon.pixmap(14, 14))
+        auto_row.addWidget(tmux_icon_label)
+        self.tmux_checkbox = QCheckBox("Tmux paste")
+        self.tmux_checkbox.setChecked(S.TMUX_MODE)
+        self.tmux_checkbox.setStyleSheet(f"QCheckBox {{ color: {TEXT_PRIMARY}; font-size: 11px; }}")
+        self.tmux_checkbox.stateChanged.connect(self._on_tmux_pref_changed)
+        auto_row.addWidget(self.tmux_checkbox)
         auto_row.addStretch()
         settings_box.addLayout(auto_row)
 
@@ -1816,6 +1830,9 @@ class PrefsDialog(DraggableDialog):
 
     def _on_auto_paste_pref_changed(self, state):
         S.set('AUTO_PASTE', state == Qt.CheckState.Checked.value)
+
+    def _on_tmux_pref_changed(self, state):
+        S.set('TMUX_MODE', state == Qt.CheckState.Checked.value)
 
     def _on_threshold_changed(self, value):
         S.SILENCE_THRESHOLD = value
