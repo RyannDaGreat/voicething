@@ -476,6 +476,8 @@ DEFAULTS = dict(
     THEME='macos_2005',
     WAKE_WORD_MODEL='computer',
     TMUX_MODE=False,
+    AUTO_COPY=True,   # Copy transcription to clipboard before paste
+    AUTO_PASTE=True,  # Use ⌘V to paste after copying
     LLM_MODEL='OLLAMA:qwen2.5:7b',
     LLM_PREFIX='Claude Haiku Veo',  # Empty means use default
     SILENCE_SKIP_ENABLED=False,  # Skip recording during silence
@@ -594,7 +596,7 @@ PERMISSION_ERROR_MSG = (
 )
 
 # Whisper hallucinations when given silence/noise - normalized (lowercase, no punctuation)
-BLACKLISTED_TRANSCRIPTIONS = {"thank you", "blank audio"}
+BLACKLISTED_TRANSCRIPTIONS = {"thank you", "blank audio",'music'}
 
 def _normalize_text(text):
     """Normalize text for comparison: lowercase, non-alphanumeric to spaces, collapse whitespace.
@@ -1305,12 +1307,12 @@ class PrefsDialog(DraggableDialog):
         content = QHBoxLayout()
         content.setSpacing(15)
 
-        # Left side: Notification Instrument + Theme
+        # Left side: Notification Chime Instrument + Theme
         theme_box = QVBoxLayout()
         theme_box.setSpacing(4)  # Reduced vertical spacing (was default ~12)
 
-        # Notification Instrument section (merged volume + instrument)
-        theme_box.addWidget(make_section("Notification Instrument"))
+        # Notification Chime Instrument section (merged volume + instrument)
+        theme_box.addWidget(make_section("Notification Chime Instrument"))
 
         # Volume slider with mute (at top)
         vol_row = QHBoxLayout()
@@ -1537,19 +1539,44 @@ class PrefsDialog(DraggableDialog):
         # Paste Behavior section (separate from wake word)
         settings_box.addWidget(make_section("Paste Behavior"))
 
-        # Auto-enter toggle
-        enter_row = QHBoxLayout()
-        enter_row.setSpacing(8)
-        enter_label = QLabel("Auto-Enter:")
-        enter_label.setStyleSheet(get_pref_label_css())
-        set_tooltip(enter_label, "After pasting transcription, automatically press Enter.\nUseful for hands-free Claude Code interaction.")
-        enter_row.addWidget(enter_label)
-        self.enter_checkbox = QCheckBox("Press Enter after paste")
+        # All three checkboxes in one horizontal row with icons
+        auto_row = QHBoxLayout()
+        auto_row.setSpacing(12)
+        # Copy
+        copy_icon_label = QLabel()
+        copy_icon = load_icon("copy", color=ICON_COLOR_DARK)
+        if copy_icon:
+            copy_icon_label.setPixmap(copy_icon.pixmap(14, 14))
+        auto_row.addWidget(copy_icon_label)
+        self.copy_checkbox = QCheckBox("Copy to clipboard")
+        self.copy_checkbox.setChecked(S.AUTO_COPY)
+        self.copy_checkbox.setStyleSheet(f"QCheckBox {{ color: {TEXT_PRIMARY}; font-size: 11px; }}")
+        self.copy_checkbox.stateChanged.connect(self._on_auto_copy_pref_changed)
+        auto_row.addWidget(self.copy_checkbox)
+        # Paste
+        paste_icon_label = QLabel()
+        paste_icon = load_icon("layers", color=ICON_COLOR_DARK)
+        if paste_icon:
+            paste_icon_label.setPixmap(paste_icon.pixmap(14, 14))
+        auto_row.addWidget(paste_icon_label)
+        self.paste_checkbox = QCheckBox("⌘V paste")
+        self.paste_checkbox.setChecked(S.AUTO_PASTE)
+        self.paste_checkbox.setStyleSheet(f"QCheckBox {{ color: {TEXT_PRIMARY}; font-size: 11px; }}")
+        self.paste_checkbox.stateChanged.connect(self._on_auto_paste_pref_changed)
+        auto_row.addWidget(self.paste_checkbox)
+        # Enter
+        enter_icon_label = QLabel()
+        enter_icon = load_icon("enter", color=ICON_COLOR_DARK)
+        if enter_icon:
+            enter_icon_label.setPixmap(enter_icon.pixmap(14, 14))
+        auto_row.addWidget(enter_icon_label)
+        self.enter_checkbox = QCheckBox("Enter after paste")
         self.enter_checkbox.setChecked(S.AUTO_ENTER)
-        self.enter_checkbox.setStyleSheet(f"QCheckBox {{ color: {TEXT_PRIMARY}; font-size: 12px; }}")
+        self.enter_checkbox.setStyleSheet(f"QCheckBox {{ color: {TEXT_PRIMARY}; font-size: 11px; }}")
         self.enter_checkbox.stateChanged.connect(self._on_enter_changed)
-        enter_row.addWidget(self.enter_checkbox, 1)
-        settings_box.addLayout(enter_row)
+        auto_row.addWidget(self.enter_checkbox)
+        auto_row.addStretch()
+        settings_box.addLayout(auto_row)
 
         # Enter delay slider
         delay_row = QHBoxLayout()
@@ -1578,7 +1605,7 @@ class PrefsDialog(DraggableDialog):
         # Silence skip toggle
         silence_row = QHBoxLayout()
         silence_row.setSpacing(8)
-        silence_label = QLabel("Silence Skip:")
+        silence_label = QLabel("Skip Silence:")
         silence_label.setStyleSheet(get_pref_label_css())
         set_tooltip(silence_label, "When enabled, recording pauses during silence.\n\n"
                                    "Useful for long recordings with gaps - the waveform\n"
@@ -1775,8 +1802,7 @@ class PrefsDialog(DraggableDialog):
         self.sensitivity_changed.emit(S.WAKE_WORD_SENSITIVITY)  # Apply immediately
 
     def _on_enter_changed(self, state):
-        S.AUTO_ENTER = state == Qt.CheckState.Checked.value
-        S.AUTO_ENTER_changed.emit(S.AUTO_ENTER)  # Apply immediately
+        S.set('AUTO_ENTER', state == Qt.CheckState.Checked.value)
 
     def _on_delay_changed(self, value):
         S.set('ENTER_DELAY', value / 10.0)
@@ -1784,6 +1810,12 @@ class PrefsDialog(DraggableDialog):
 
     def _on_silence_skip_changed(self, state):
         S.SILENCE_SKIP_ENABLED = state == Qt.CheckState.Checked.value
+
+    def _on_auto_copy_pref_changed(self, state):
+        S.set('AUTO_COPY', state == Qt.CheckState.Checked.value)
+
+    def _on_auto_paste_pref_changed(self, state):
+        S.set('AUTO_PASTE', state == Qt.CheckState.Checked.value)
 
     def _on_threshold_changed(self, value):
         S.SILENCE_THRESHOLD = value
@@ -3248,14 +3280,15 @@ class VoiceThingWindow(QWidget):
         self._transcribe_file(audio_path)
 
     def _do_paste(self, text):
-        self._copy_to_clipboard(text)
+        if S.AUTO_COPY:
+            self._copy_to_clipboard(text)
         if self.is_focused:
             return
         time.sleep(0.1)
         if S.TMUX_MODE:
             # TMUX mode: send directly to tmux pane (replaces Cmd+V)
             self._do_tmux_paste(text)
-        else:
+        elif S.AUTO_PASTE:
             # Normal mode: Cmd+V to paste in focused app
             kb = KeyboardController()
             with kb.pressed(Key.cmd):
@@ -3655,6 +3688,12 @@ class VoiceThingWindow(QWidget):
     def toggle_auto_enter(self):
         S.set('AUTO_ENTER', not S.AUTO_ENTER)
 
+    def toggle_auto_copy(self):
+        S.set('AUTO_COPY', not S.AUTO_COPY)
+
+    def toggle_auto_paste(self):
+        S.set('AUTO_PASTE', not S.AUTO_PASTE)
+
     def toggle_tmux_mode(self):
         S.set('TMUX_MODE', not S.TMUX_MODE)
 
@@ -3777,7 +3816,7 @@ class VoiceThingWindow(QWidget):
     def _on_permission_error(self):
         """Handle accessibility permission error."""
         self.permission_error = True
-        self._set_auto_hide(False, save=False)  # Disable auto-hide since global shortcuts won't work
+        S.set('AUTO_HIDE', False)  # Disable auto-hide since global shortcuts won't work (don't save - temporary)
         self.warning_btn.show()
 
     def show_model_dialog(self):
@@ -3843,7 +3882,7 @@ class VoiceThingWindow(QWidget):
             data['PET_TYPES'] = [pet_map[v] for v in data['PET_TYPES'] if v in pet_map]
 
         # Apply settings via S.set() to trigger hooks
-        for key in ['AUTO_HIDE', 'SOUND_ENABLED', 'LLM_ENABLED', 'AUTO_ENTER', 'TMUX_MODE', 'PET_TYPES', 'WAKE_WORD_MODEL']:
+        for key in ['AUTO_HIDE', 'SOUND_ENABLED', 'LLM_ENABLED', 'AUTO_ENTER', 'AUTO_COPY', 'AUTO_PASTE', 'TMUX_MODE', 'PET_TYPES', 'WAKE_WORD_MODEL']:
             if key in data:
                 S.set(key, data[key])
         # Simple settings without hooks (or with trivial hooks)
