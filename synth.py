@@ -282,3 +282,37 @@ def play_native(chords, duration=0.15, gap=0.0, shift=-12, volume=1.0, instrumen
     # Run in background thread so it doesn't block
     t = threading.Thread(target=play_chord_sequence, daemon=True)
     t.start()
+
+
+def note_on(semitone, shift=-12, volume=1.0, program=None):
+    """Start a sustained note (call note_off to stop it).
+
+    Args:
+        semitone: Semitone offset from A4 (0 = A4)
+        shift: Pitch shift in semitones
+        volume: Volume (0.0 to 1.0)
+        program: Program number (0-127)
+
+    Returns:
+        MIDI note number (for use with note_off)
+    """
+    synth, sfid = _get_native_synth()
+
+    if program is not None:
+        synth.program_select(0, sfid, 0, program)
+
+    velocity = int(100 * volume)
+    midi_note = semitone_to_midi(semitone + shift)
+    midi_note = max(0, min(127, midi_note))
+    synth.noteon(0, midi_note, velocity)
+    return midi_note
+
+
+def note_off(midi_note):
+    """Stop a sustained note.
+
+    Args:
+        midi_note: MIDI note number returned by note_on
+    """
+    synth, _ = _get_native_synth()
+    synth.noteoff(0, midi_note)
