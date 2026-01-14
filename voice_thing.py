@@ -189,16 +189,16 @@ CHIME_THEMES = {
         'copy':           (([12, 16],), 0.04),          # A5+C#6 bright
         'delete':         (([-8, -5],), 0.05),          # C#4+E4
         'enter':          (([4], [7], [12]), 0.04),     # C#→E→A arp
-        'cancel':         (([-4, -9],), 0.05),          # F#4+C#4
+        'cancel':         (([-5, -8],), 0.05),          # E4+C#4 (record rhyme)
         'record_start':   (([0, 4, 7],), 0.12),         # A major
         'record_stop':    (([-12, -8, -5],), 0.12),     # A major low
-        'loading_start':  (([5, 9, 14],), 0.08),        # D+F#+B (D add9)
-        'loading_done':   (([7, 11, 16],), 0.1),        # E+G#+C# (E maj)
+        'loading_start':  (([0, 7],), 0.08),             # A+E (5th buildup)
+        'loading_done':   (([5, 9, 12],), 0.1),        # D+F#+A (resolution)
         'start_rec':      (([0, 4, 11],), 0.06),        # A+C#+G# (Amaj7 no5)
         'stop_rec':       (([2, 7, 11],), 0.06),        # B+E+G# (E/B)
         'transcribe':     (([7, 11, 14],), 0.05),       # E+G#+B (E)
-        'llm_start':      (([4, 7, 11],), 0.05),        # C#+E+G# (Emaj/C#)
-        'llm_done':       (([12, 16, 19, 23],), 0.06),  # A5+C#6+E6+G#6 Amaj7
+        'llm_start':      (([-5, 2],), 0.05),            # E4+B (5th buildup)
+        'llm_done':       (([0, 4, 7],), 0.06),         # A+C#+E (resolution)
     },
     # Jazzy: Extended chords, 7ths, 9ths, 13ths
     'jazzy': {
@@ -462,12 +462,12 @@ class Settings(dict):
 
 DEFAULTS = dict(
     ENTER_DELAY=0.1,
-    WAKE_WORD_SENSITIVITY=0.25,
+    WAKE_WORD_SENSITIVITY=0.2,
     CUSTOM_WORDS="",
     AUTO_HIDE=False,
     SOUND_ENABLED=True,
     LLM_ENABLED=False,
-    AUTO_ENTER=True,
+    AUTO_ENTER=False,
     WAKE_WORD_ENABLED=False,
     SIMPLE_MODE=True,
     PET_TYPES=[],
@@ -476,13 +476,13 @@ DEFAULTS = dict(
     WAKE_WORD_MODEL='computer',
     TMUX_MODE=False,
     LLM_MODEL='OLLAMA:qwen2.5:7b',
-    LLM_PREFIX='',  # Empty means use default
+    LLM_PREFIX='Claude Haiku Veo',  # Empty means use default
     SILENCE_SKIP_ENABLED=False,  # Skip recording during silence
-    SILENCE_THRESHOLD=-60,  # dB threshold below which audio is considered silence
+    SILENCE_THRESHOLD=-65,  # dB threshold below which audio is considered silence
     CHIME_VOLUME=0.5,  # Volume for chimes (0.0 to 1.0)
-    CHIME_PROGRAM=38,  # Program number (0-127), single source of truth
-    CHIME_PITCH=0,  # Pitch shift in semitones (-24 to +24)
-    CHIME_THEME='ethereal',  # Chime theme (default, blues, melancholy, bright)
+    CHIME_PROGRAM=127,  # Program number (0-127), single source of truth
+    CHIME_PITCH=12,  # Pitch shift in semitones (-24 to +24)
+    CHIME_THEME='bright',  # Chime theme (default, blues, melancholy, bright)
 )
 S = Settings(**DEFAULTS)
 # =============================================================================
@@ -1269,6 +1269,10 @@ class PrefsDialog(DraggableDialog):
                  wake_word=None, wake_word_sensitivity=None,
                  auto_enter=None):
         super().__init__(parent)
+        # Register note callback for piano visualization
+        from synth import set_note_callback
+        set_note_callback(self._on_notes_played)
+
         # Store ORIGINAL values for Cancel revert
         self.original_style = current_style
         self.original_pets = list(current_pet_types) if current_pet_types else []
@@ -1416,6 +1420,15 @@ class PrefsDialog(DraggableDialog):
         prog_row.addStretch()
         theme_box.addLayout(prog_row)
         self._update_prog_display()  # Initialize name label
+
+        # Mini piano keyboard (2 octaves, centered on current pitch)
+        # Width matches instrument grid: 6 columns * 26px = 156px
+        self.piano = PianoWidget(width=156, height=36)
+        piano_row = QHBoxLayout()
+        piano_row.addStretch()
+        piano_row.addWidget(self.piano)
+        piano_row.addStretch()
+        theme_box.addLayout(piano_row)
 
         # Chime theme dropdown
         chime_theme_row = QHBoxLayout()
@@ -1818,6 +1831,24 @@ class PrefsDialog(DraggableDialog):
         from synth import get_preset_name
         name = get_preset_name(S.CHIME_PROGRAM)
         self.prog_name_label.setText(name)
+
+    def _on_notes_played(self, semitones, duration, shift):
+        """Called when any notes are played - triggers piano keys visually."""
+        if hasattr(self, 'piano') and self.piano:
+            for semitone in semitones:
+                self.piano.trigger_key(semitone, duration)
+
+    def accept(self):
+        """Clear note callback when dialog closes."""
+        from synth import set_note_callback
+        set_note_callback(None)
+        super().accept()
+
+    def reject(self):
+        """Clear note callback when dialog closes."""
+        from synth import set_note_callback
+        set_note_callback(None)
+        super().reject()
 
     def _on_context_changed(self, text):
         S.CUSTOM_WORDS = text
@@ -2321,6 +2352,197 @@ class Mini7Segment(QWidget):
                     p.setPen(QPen(QColor(60, 60, 60, 80), seg_thick, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
                 x1, y1, x2, y2 = seg_coords[j]
                 p.drawLine(x_off + x1, y_off + y1, x_off + x2, y_off + y2)
+
+
+class PianoWidget(QWidget):
+    """Two-octave piano keyboard that transposes based on pitch setting.
+
+    White and black keys are clickable to play notes. The displayed octaves
+    shift based on the current pitch setting so the piano "slides" left/right.
+    Keys also light up when notes are played externally (e.g., chimes).
+    """
+
+    # Signal for thread-safe key triggering (from synth callback thread)
+    _trigger_key_signal = pyqtSignal(int, float)  # semitone, duration
+
+    # Which semitones in an octave are black keys (0=C, 1=C#, 2=D, etc.)
+    BLACK_KEYS = {1, 3, 6, 8, 10}  # C#, D#, F#, G#, A#
+
+    # Global instance for note callbacks (set when preferences dialog opens)
+    _instance = None
+
+    def __init__(self, width=154, height=40):
+        super().__init__()
+        self.width_px = width
+        self.height_px = height
+        self.setFixedSize(width, height)
+        self.setMouseTracking(True)
+        self._hover_key = None
+        self._pressed_keys = set()  # Now a set to support multiple keys
+        self._dragging = False
+        self._last_drag_key = None
+        self._trigger_key_signal.connect(self._do_trigger_key)
+        PianoWidget._instance = self  # Register for global callbacks
+
+    def _get_key_layout(self):
+        """Calculate key positions for 3 octaves (36 semitones) centered on A4.
+
+        Piano is fixed at -18 to +17 (E3 to F#5) so chime notes are always visible.
+        Pitch slider affects sound frequency, not which keys are displayed.
+        """
+        # Fixed range: show 36 semitones to cover typical chime range (-14 to +20)
+        start_semitone = -18  # 1.5 octaves below A4
+        num_semitones = 36
+
+        white_keys = []
+        black_keys = []
+
+        # Count white keys in our range to calculate width
+        white_count = sum(1 for i in range(num_semitones) if (start_semitone + i) % 12 not in self.BLACK_KEYS)
+        white_width = self.width_px / white_count
+        black_width = white_width * 0.6
+        black_height = self.height_px * 0.6
+
+        white_idx = 0
+        for i in range(num_semitones):
+            semitone = start_semitone + i
+            note_in_octave = semitone % 12
+
+            if note_in_octave in self.BLACK_KEYS:
+                # Black key - position between surrounding white keys
+                x = white_idx * white_width - black_width / 2
+                black_keys.append((x, 0, black_width, black_height, semitone))
+            else:
+                # White key
+                x = white_idx * white_width
+                white_keys.append((x, 0, white_width, self.height_px, semitone))
+                white_idx += 1
+
+        return white_keys, black_keys
+
+    def _key_at_pos(self, pos):
+        """Return semitone of key at position, or None."""
+        white_keys, black_keys = self._get_key_layout()
+        x, y = pos.x(), pos.y()
+
+        # Check black keys first (they're on top)
+        for kx, ky, kw, kh, semitone in black_keys:
+            if kx <= x < kx + kw and ky <= y < ky + kh:
+                return semitone
+        # Then white keys
+        for kx, ky, kw, kh, semitone in white_keys:
+            if kx <= x < kx + kw and ky <= y < ky + kh:
+                return semitone
+        return None
+
+    def mouseMoveEvent(self, event):
+        key = self._key_at_pos(event.pos())
+        if key != self._hover_key:
+            self._hover_key = key
+            self.update()
+        # Handle dragging - play new key when dragged onto it
+        if self._dragging and key is not None and key != self._last_drag_key:
+            self._last_drag_key = key
+            self._pressed_keys.add(key)
+            self.update()
+            self._play_note(key)
+
+    def leaveEvent(self, event):
+        self._hover_key = None
+        self._dragging = False
+        self._last_drag_key = None
+        self.update()
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            key = self._key_at_pos(event.pos())
+            if key is not None:
+                self._dragging = True
+                self._last_drag_key = key
+                self._pressed_keys.add(key)
+                self.update()
+                self._play_note(key)
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._dragging = False
+            self._last_drag_key = None
+            self._pressed_keys.clear()
+            self.update()
+
+    def trigger_key(self, semitone, duration=0.15):
+        """Trigger a key visually (called when notes play externally).
+
+        Thread-safe: emits signal to marshal to main Qt thread.
+        """
+        self._trigger_key_signal.emit(semitone, duration)
+
+    def _do_trigger_key(self, semitone, duration):
+        """Slot: actually trigger the key (runs on main thread)."""
+        self._pressed_keys.add(semitone)
+        self.update()
+        # Schedule key release
+        QTimer.singleShot(int(duration * 1000), lambda s=semitone: self._release_key(s))
+
+    def _release_key(self, semitone):
+        """Release a key after external trigger."""
+        self._pressed_keys.discard(semitone)
+        self.update()
+
+    def _play_note(self, semitone):
+        """Play a single note using the synth."""
+        from synth import play_native
+        # semitone is relative to A4 (0 = A4)
+        # Apply the current pitch shift and program
+        # Note: Don't trigger_key here - the synth callback will do it
+        play_native(
+            [[semitone]],
+            duration=0.3,
+            shift=-12 + S.CHIME_PITCH,
+            volume=S.CHIME_VOLUME,
+            program=S.CHIME_PROGRAM
+        )
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        white_keys, black_keys = self._get_key_layout()
+
+        # Colors
+        white_color = QColor(250, 250, 250)
+        white_hover = QColor(230, 240, 255)
+        white_pressed = QColor(200, 220, 255)
+        black_color = QColor(30, 30, 30)
+        black_hover = QColor(60, 60, 80)
+        black_pressed = QColor(80, 80, 120)
+        border_color = QColor(180, 180, 180)
+        gap_color = QColor(160, 160, 160)
+
+        # Draw white keys first
+        for kx, ky, kw, kh, semitone in white_keys:
+            if semitone in self._pressed_keys:
+                p.setBrush(QBrush(white_pressed))
+            elif semitone == self._hover_key:
+                p.setBrush(QBrush(white_hover))
+            else:
+                p.setBrush(QBrush(white_color))
+            p.setPen(QPen(border_color, 0.5))
+            p.drawRect(QRectF(kx, ky, kw - 0.5, kh))
+            # Thin gray separator line
+            p.setPen(QPen(gap_color, 0.5))
+            p.drawLine(QPointF(kx + kw - 0.5, ky), QPointF(kx + kw - 0.5, kh))
+
+        # Draw black keys on top
+        for kx, ky, kw, kh, semitone in black_keys:
+            if semitone in self._pressed_keys:
+                p.setBrush(QBrush(black_pressed))
+            elif semitone == self._hover_key:
+                p.setBrush(QBrush(black_hover))
+            else:
+                p.setBrush(QBrush(black_color))
+            p.setPen(QPen(QColor(20, 20, 20), 0.5))
+            p.drawRoundedRect(QRectF(kx, ky, kw, kh), 1, 1)
 
 
 class TimerWidget(QWidget):
