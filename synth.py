@@ -41,6 +41,23 @@ _sfid = None
 _native_synth = None  # For native audio playback (non-blocking)
 _native_sfid = None
 
+# Global note callback - called when notes are played (for piano visualization)
+# Signature: callback(semitones: list[int], duration: float, shift: int)
+_note_callback = None
+
+
+def set_note_callback(callback):
+    """Set a callback to be invoked when notes are played.
+
+    Args:
+        callback: Function(semitones, duration, shift) or None to clear.
+                  semitones: list of semitone offsets from A4
+                  duration: note duration in seconds
+                  shift: pitch shift applied to notes
+    """
+    global _note_callback
+    _note_callback = callback
+
 
 def _suppress_stderr(func):
     """Suppress FluidSynth C-level warnings during function execution."""
@@ -236,6 +253,11 @@ def play_native(chords, duration=0.15, gap=0.0, shift=-12, volume=1.0, instrumen
     synth.program_select(0, sfid, 0, prog)
 
     velocity = int(100 * volume)  # MIDI velocity 0-127
+
+    # Fire note callback for piano visualization (if registered)
+    if _note_callback is not None:
+        for chord in chords:
+            _note_callback(chord, duration, shift)
 
     def play_chord_sequence():
         import time
