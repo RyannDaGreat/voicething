@@ -54,7 +54,7 @@ class MahoganyWoodStyle(BaseStyle):
     text_link = AMBER_LIGHT
     border_color = BORDER_MID
     border_dark = BORDER_DARK
-    icon_color_dark = '#3e2218'
+    icon_color_dark = '#78645d'
     icon_color_light = '#fff8eb'
     icon_color_muted = '#a08060'
 
