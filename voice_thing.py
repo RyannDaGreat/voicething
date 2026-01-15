@@ -82,7 +82,7 @@ BLOCKSIZE = 256
 TRAY_ICON_SIZE = 44  # Menu bar icon size (2x for retina)
 WAVEFORM_DURATION_SECONDS = 10  # Duration of audio shown in waveform display
 MIN_TOOLBAR_BUTTON_WIDTH = 28  # Minimum button width before toolbar wraps/collapses
-RESIZE_MARGIN = 60  # Pixels from edge for resize detection
+RESIZE_MARGIN = 20  # Pixels from edge for resize detection
 
 # Chime themes - each theme defines sounds for various events
 # Format: {theme_name: {event_name: (chords_tuple, duration)}}
@@ -1071,13 +1071,17 @@ class DraggableResizableMixin:
                                     -self._paint_inset, -self._paint_inset)
 
     def _edge_at(self, pos):
-        """Check if position is on a resize edge (bottom-right corner)."""
+        """Check if position is on a resize edge (any edge or corner)."""
         r = self._painted_rect()
         if not r.contains(pos):
             return None
         edge = ""
+        if pos.y() <= r.top() + RESIZE_MARGIN:
+            edge += "t"
         if pos.y() >= r.bottom() - RESIZE_MARGIN:
             edge += "b"
+        if pos.x() <= r.left() + RESIZE_MARGIN:
+            edge += "l"
         if pos.x() >= r.right() - RESIZE_MARGIN:
             edge += "r"
         return edge or None
@@ -1095,10 +1099,17 @@ class DraggableResizableMixin:
         if e.buttons() & Qt.MouseButton.LeftButton:
             if self.resize_edge:
                 gpos, geo = e.globalPosition().toPoint(), self.geometry()
-                if "r" in self.resize_edge:
-                    geo.setRight(gpos.x())
+                min_w, min_h = self.minimumWidth() or 100, self.minimumHeight() or 100
+                if "t" in self.resize_edge:
+                    new_top = min(gpos.y(), geo.bottom() - min_h)
+                    geo.setTop(new_top)
                 if "b" in self.resize_edge:
-                    geo.setBottom(gpos.y())
+                    geo.setBottom(max(gpos.y(), geo.top() + min_h))
+                if "l" in self.resize_edge:
+                    new_left = min(gpos.x(), geo.right() - min_w)
+                    geo.setLeft(new_left)
+                if "r" in self.resize_edge:
+                    geo.setRight(max(gpos.x(), geo.left() + min_w))
                 self.setGeometry(geo)
             elif self.drag_pos:
                 self.move(e.globalPosition().toPoint() - self.drag_pos)
@@ -1106,9 +1117,14 @@ class DraggableResizableMixin:
             edge = self._edge_at(e.position().toPoint())
             if edge:
                 cursors = {
-                    "br": Qt.CursorShape.SizeFDiagCursor,
+                    "t": Qt.CursorShape.SizeVerCursor,
                     "b": Qt.CursorShape.SizeVerCursor,
+                    "l": Qt.CursorShape.SizeHorCursor,
                     "r": Qt.CursorShape.SizeHorCursor,
+                    "tl": Qt.CursorShape.SizeFDiagCursor,
+                    "br": Qt.CursorShape.SizeFDiagCursor,
+                    "tr": Qt.CursorShape.SizeBDiagCursor,
+                    "bl": Qt.CursorShape.SizeBDiagCursor,
                 }
                 self.setCursor(cursors.get(edge, Qt.CursorShape.ArrowCursor))
             else:
