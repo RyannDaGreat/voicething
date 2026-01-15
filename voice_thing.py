@@ -3893,6 +3893,7 @@ class VoiceThingWindow(QWidget):
         elif no_mods and key == Qt.Key.Key_R: self.toggle_llm()
         elif no_mods and key == Qt.Key.Key_J: self.toggle_wake_word()
         elif no_mods and key == Qt.Key.Key_N: self.toggle_auto_enter()
+        elif no_mods and key == Qt.Key.Key_U: self.show_tmux_selection()
         elif no_mods and key == Qt.Key.Key_E: self.toggle_small_mode()
         elif no_mods and key == Qt.Key.Key_W: self.toggle_simple_mode()
         elif no_mods and key == Qt.Key.Key_Z: self.retranscribe_latest()
