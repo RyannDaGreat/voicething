@@ -1063,7 +1063,8 @@ class DraggableDialog(QDialog):
 
     def _edge_at(self, pos):
         """Check if position is on a resize edge (bottom-right corner)."""
-        m, r = 8, self.rect()
+        # Use 9px margin, inside content margin so clicks land on painted area
+        m, r = 9, self.rect()
         edge = ""
         if pos.y() >= r.height() - m:
             edge += "b"
@@ -3829,7 +3830,9 @@ class VoiceThingWindow(QWidget):
             sb.setValue(sb.maximum())
 
     def _edge_at(self, pos):
-        m, r = 8, self.rect()
+        # Use 9px margin, inside the 10px content margin so clicks
+        # always land on painted area (not transparent pixels that pass through)
+        m, r = 9, self.rect()
         edge = ""
         if pos.y() >= r.height() - m:
             edge += "b"
