@@ -28,7 +28,7 @@ import sounddevice as sd
 from AppKit import NSWorkspace, NSApplicationActivateIgnoringOtherApps
 from pynput import keyboard
 from pynput.keyboard import Controller as KeyboardController, Key
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QSize, QPointF, QRectF, QPropertyAnimation, QEasingCurve, pyqtProperty, QEvent, QSortFilterProxyModel
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QSize, QPointF, QRect, QRectF, QPropertyAnimation, QEasingCurve, pyqtProperty, QEvent, QSortFilterProxyModel
 from PyQt6.QtGui import QPainter, QColor, QPen, QIcon, QFont, QFontDatabase, QPolygonF, QLinearGradient, QBrush, QPainterPath, QPixmap, QCursor
 from PyQt6.QtSvg import QSvgRenderer
 from PyQt6.QtWidgets import (
@@ -1063,6 +1063,8 @@ class DraggableResizableMixin:
         """Call this in __init__ after super().__init__."""
         self.drag_pos = None
         self.resize_edge = None
+        self.resize_start_geo = None  # Geometry when resize started
+        self.resize_start_pos = None  # Mouse position when resize started
         self.setMouseTracking(True)
 
     def _painted_rect(self):
@@ -1092,24 +1094,31 @@ class DraggableResizableMixin:
             if not self._painted_rect().contains(pos):
                 return
             self.resize_edge = self._edge_at(pos)
-            if not self.resize_edge:
+            if self.resize_edge:
+                self.resize_start_geo = self.geometry()
+                self.resize_start_pos = e.globalPosition().toPoint()
+            else:
                 self.drag_pos = e.globalPosition().toPoint() - self.frameGeometry().topLeft()
 
     def mouseMoveEvent(self, e):
         if e.buttons() & Qt.MouseButton.LeftButton:
-            if self.resize_edge:
-                gpos, geo = e.globalPosition().toPoint(), self.geometry()
+            if self.resize_edge and self.resize_start_geo and self.resize_start_pos:
+                gpos = e.globalPosition().toPoint()
+                delta = gpos - self.resize_start_pos
+                geo = QRect(self.resize_start_geo)  # Copy original geometry
                 min_w, min_h = self.minimumWidth() or 100, self.minimumHeight() or 100
                 if "t" in self.resize_edge:
-                    new_top = min(gpos.y(), geo.bottom() - min_h)
-                    geo.setTop(new_top)
+                    new_top = self.resize_start_geo.top() + delta.y()
+                    geo.setTop(min(new_top, self.resize_start_geo.bottom() - min_h))
                 if "b" in self.resize_edge:
-                    geo.setBottom(max(gpos.y(), geo.top() + min_h))
+                    new_bottom = self.resize_start_geo.bottom() + delta.y()
+                    geo.setBottom(max(new_bottom, self.resize_start_geo.top() + min_h))
                 if "l" in self.resize_edge:
-                    new_left = min(gpos.x(), geo.right() - min_w)
-                    geo.setLeft(new_left)
+                    new_left = self.resize_start_geo.left() + delta.x()
+                    geo.setLeft(min(new_left, self.resize_start_geo.right() - min_w))
                 if "r" in self.resize_edge:
-                    geo.setRight(max(gpos.x(), geo.left() + min_w))
+                    new_right = self.resize_start_geo.right() + delta.x()
+                    geo.setRight(max(new_right, self.resize_start_geo.left() + min_w))
                 self.setGeometry(geo)
             elif self.drag_pos:
                 self.move(e.globalPosition().toPoint() - self.drag_pos)
