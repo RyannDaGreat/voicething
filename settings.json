@@ -22,10 +22,10 @@
     "dog"
   ],
   "WHISPER_MODEL": "base",
-  "THEME": "dark_gradient",
+  "THEME": "macos_2005",
   "WAKE_WORD_MODEL": "jarvis",
-  "TMUX_MODE": false,
-  "TMUX_TARGET": "%",
+  "TMUX_MODE": true,
+  "TMUX_TARGET": "VoiceThing",
   "AUTO_COPY": true,
   "AUTO_PASTE": true,
   "LLM_MODEL": "OLLAMA:qwen2.5:7b",
@@ -33,8 +33,8 @@
   "SILENCE_SKIP_ENABLED": true,
   "SILENCE_THRESHOLD": -65,
   "CHIME_VOLUME": 1.0,
-  "CHIME_PROGRAM": 105,
+  "CHIME_PROGRAM": 127,
   "CHIME_PITCH": -4,
-  "CHIME_THEME": "bright",
+  "CHIME_THEME": "default",
   "RECORDINGS_DIR": "/var/folders/pm/461ntwb12b7bbqcjw1s6t0kw0000gn/T/VoiceThing"
 }

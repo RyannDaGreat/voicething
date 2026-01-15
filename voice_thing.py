@@ -491,6 +491,7 @@ DEFAULTS = dict(
     CHIME_PITCH=12,  # Pitch shift in semitones (-24 to +24)
     CHIME_THEME='bright',  # Chime theme (default, blues, melancholy, bright)
     RECORDINGS_DIR=DEFAULT_RECORDINGS_DIR,  # Folder for audio recordings and transcripts
+    ALWAYS_ON_TOP=True,  # Keep window above other windows
 )
 S = Settings(**DEFAULTS)
 # =============================================================================
@@ -1342,10 +1343,10 @@ class TmuxSelectionDialog(DraggableDialog):
             f"border: 1px solid {BORDER_COLOR}; font-family: Menlo, monospace; font-size: 11px; }}"
             f"QTreeWidget::item:hover {{ background: rgba(180,210,240,0.5); }}"
             f"QTreeWidget::item:selected {{ background: rgba(180,210,240,0.7); color: black; }}"
-            f"QTreeWidget::branch {{ border-image: none; image: none; }}"
+            f"QTreeWidget::branch {{ background: transparent; border: none; image: none; }}"
             + SCROLLBAR_CSS
         )
-        self.tree.setIndentation(16)
+        self.tree.setIndentation(0)
         self.tree.itemClicked.connect(self._on_item_clicked)
         self.tree.itemDoubleClicked.connect(self._on_item_double_clicked)
         self.tree.itemExpanded.connect(self._on_item_expanded)
@@ -2137,6 +2138,19 @@ class PrefsDialog(DraggableDialog):
             pet_grid.addWidget(pet_widget)
         settings_box.addLayout(pet_grid)
 
+        # Window section
+        settings_box.addWidget(make_section("Window"))
+        window_row = QHBoxLayout()
+        window_row.setSpacing(8)
+        self.always_on_top_checkbox = QCheckBox("Always on Top")
+        self.always_on_top_checkbox.setChecked(S.ALWAYS_ON_TOP)
+        self.always_on_top_checkbox.setStyleSheet(f"QCheckBox {{ color: {TEXT_PRIMARY}; font-size: 11px; }}")
+        self.always_on_top_checkbox.setToolTip("Keep window above other windows")
+        self.always_on_top_checkbox.stateChanged.connect(self._on_always_on_top_changed)
+        window_row.addWidget(self.always_on_top_checkbox)
+        window_row.addStretch()
+        settings_box.addLayout(window_row)
+
         settings_box.addStretch()
         content.addLayout(settings_box)
         layout.addLayout(content)
@@ -2216,6 +2230,9 @@ class PrefsDialog(DraggableDialog):
 
     def _on_silence_skip_changed(self, state):
         S.SILENCE_SKIP_ENABLED = state == Qt.CheckState.Checked.value
+
+    def _on_always_on_top_changed(self, state):
+        S.set('ALWAYS_ON_TOP', state == Qt.CheckState.Checked.value)
 
     def _on_auto_copy_pref_changed(self, state):
         S.set('AUTO_COPY', state == Qt.CheckState.Checked.value)
@@ -3355,9 +3372,7 @@ class VoiceThingWindow(QWidget):
         self.wake_word_last_trigger = 0  # Timestamp of last wake word trigger (for cooldown)
 
         self.setWindowTitle(APP_NAME)
-        self.setWindowFlags(
-            Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.FramelessWindowHint
-        )
+        self._apply_window_flags(show=False)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAcceptDrops(True)
 
@@ -3609,6 +3624,7 @@ class VoiceThingWindow(QWidget):
         S.hooks['WAKE_WORD_MODEL'] = self._on_wake_word_model_changed
         S.hooks['TMUX_MODE'] = self._on_tmux_mode_changed
         S.hooks['SIMPLE_MODE'] = self._on_simple_mode_changed
+        S.hooks['ALWAYS_ON_TOP'] = self._on_always_on_top_setting_changed
 
         self._load_settings()
         self._update_ui()  # Initialize UI layout based on boot size
@@ -4110,6 +4126,19 @@ class VoiceThingWindow(QWidget):
     def _on_simple_mode_changed(self, enabled):
         self._update_ui()
 
+    def _on_always_on_top_setting_changed(self, enabled):
+        self._apply_window_flags(show=True)
+        print(f"Always on top {'ON' if enabled else 'OFF'}")
+
+    def _apply_window_flags(self, show=True):
+        """Apply window flags based on ALWAYS_ON_TOP setting."""
+        flags = Qt.WindowType.FramelessWindowHint
+        if S.ALWAYS_ON_TOP:
+            flags |= Qt.WindowType.WindowStaysOnTopHint
+        self.setWindowFlags(flags)
+        if show:
+            self.show()  # Required after changing window flags
+
     def _on_wake_word_enabled_changed(self, enabled):
         self.wake_word_btn.setChecked(enabled)
         self._update_checkable_btn_icon(self.wake_word_btn)
@@ -4371,7 +4400,7 @@ class VoiceThingWindow(QWidget):
             data['PET_TYPES'] = [pet_map[v] for v in data['PET_TYPES'] if v in pet_map]
 
         # Apply settings via S.set() to trigger hooks
-        for key in ['AUTO_HIDE', 'SOUND_ENABLED', 'LLM_ENABLED', 'AUTO_ENTER', 'AUTO_COPY', 'AUTO_PASTE', 'TMUX_MODE', 'PET_TYPES', 'WAKE_WORD_MODEL']:
+        for key in ['AUTO_HIDE', 'SOUND_ENABLED', 'LLM_ENABLED', 'AUTO_ENTER', 'AUTO_COPY', 'AUTO_PASTE', 'TMUX_MODE', 'PET_TYPES', 'WAKE_WORD_MODEL', 'ALWAYS_ON_TOP']:
             if key in data:
                 S.set(key, data[key])
         # Simple settings without hooks (or with trivial hooks)
