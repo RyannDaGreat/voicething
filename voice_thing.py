@@ -82,6 +82,7 @@ BLOCKSIZE = 256
 TRAY_ICON_SIZE = 44  # Menu bar icon size (2x for retina)
 WAVEFORM_DURATION_SECONDS = 10  # Duration of audio shown in waveform display
 MIN_TOOLBAR_BUTTON_WIDTH = 28  # Minimum button width before toolbar wraps/collapses
+RESIZE_MARGIN = 60  # Pixels from edge for resize detection
 
 # Chime themes - each theme defines sounds for various events
 # Format: {theme_name: {event_name: (chords_tuple, duration)}}
@@ -1042,39 +1043,51 @@ class TrafficLightButton(QPushButton):
         super().leaveEvent(event)
 
 
-class DraggableDialog(QDialog):
-    """Base class for frameless, draggable, resizable dialogs."""
+class DraggableResizableMixin:
+    """Mixin for frameless, draggable, resizable windows. Requires QWidget base."""
+    # Override in subclass to inset the painted area (for transparent borders)
+    _paint_inset = 0
 
-    def __init__(self, parent=None):
-        super().__init__(parent)
+    def _paint_hitbox_rect(self, painter):
+        """Paint nearly-invisible rect to catch mouse events in transparent areas.
+
+        On macOS, WA_TranslucentBackground ignores setMask() for hit-testing.
+        Workaround: paint a rect with alpha=1 (invisible but catches clicks).
+        Call this FIRST in paintEvent before painting the visible content.
+        """
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(0, 0, 0, 1))  # alpha=1: invisible but clickable
+        painter.drawRect(self.rect())
+
+    def _init_draggable(self):
+        """Call this in __init__ after super().__init__."""
         self.drag_pos = None
         self.resize_edge = None
-        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setMouseTracking(True)
-        self.setStyleSheet("QToolTip { background: #333; color: white; border: 1px solid #555; border-radius: 4px; }")
 
-    def center_on_parent(self):
-        self.adjustSize()
-        if self.parent():
-            p = self.parent()
-            self.move(p.x() + (p.width() - self.width()) // 2,
-                      p.y() + (p.height() - self.height()) // 2)
+    def _painted_rect(self):
+        """Get the painted (non-transparent) area rect."""
+        return self.rect().adjusted(self._paint_inset, self._paint_inset,
+                                    -self._paint_inset, -self._paint_inset)
 
     def _edge_at(self, pos):
         """Check if position is on a resize edge (bottom-right corner)."""
-        # Use 9px margin, inside content margin so clicks land on painted area
-        m, r = 9, self.rect()
+        r = self._painted_rect()
+        if not r.contains(pos):
+            return None
         edge = ""
-        if pos.y() >= r.height() - m:
+        if pos.y() >= r.bottom() - RESIZE_MARGIN:
             edge += "b"
-        if pos.x() >= r.width() - m:
+        if pos.x() >= r.right() - RESIZE_MARGIN:
             edge += "r"
         return edge or None
 
     def mousePressEvent(self, e):
         if e.button() == Qt.MouseButton.LeftButton:
-            self.resize_edge = self._edge_at(e.position().toPoint())
+            pos = e.position().toPoint()
+            if not self._painted_rect().contains(pos):
+                return
+            self.resize_edge = self._edge_at(pos)
             if not self.resize_edge:
                 self.drag_pos = e.globalPosition().toPoint() - self.frameGeometry().topLeft()
 
@@ -1090,33 +1103,55 @@ class DraggableDialog(QDialog):
             elif self.drag_pos:
                 self.move(e.globalPosition().toPoint() - self.drag_pos)
         else:
-            # Update cursor based on position (only set resize cursors on edges)
             edge = self._edge_at(e.position().toPoint())
             if edge:
-                cursor = {
+                cursors = {
                     "br": Qt.CursorShape.SizeFDiagCursor,
                     "b": Qt.CursorShape.SizeVerCursor,
                     "r": Qt.CursorShape.SizeHorCursor,
-                }[edge]
-                self.setCursor(cursor)
+                }
+                self.setCursor(cursors.get(edge, Qt.CursorShape.ArrowCursor))
             else:
-                self.unsetCursor()  # Let child widgets show their own cursor
+                self.unsetCursor()
 
     def mouseReleaseEvent(self, e):
         self.drag_pos = self.resize_edge = None
 
+    def paintEvent(self, e):
+        """Paint with hitbox rect first, then content."""
+        p = QPainter(self)
+        self._paint_hitbox_rect(p)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        self._paint_content(p)
+
+    def _paint_content(self, painter):
+        """Override to paint window content. Default: paint_window with adjusted rect."""
+        rect = self.rect().adjusted(2, 2, -2, -2)
+        STYLE.paint_window(painter, rect, self.width(), self.height())
+
+
+class DraggableDialog(DraggableResizableMixin, QDialog):
+    """Base class for frameless, draggable, resizable dialogs."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._init_draggable()
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setStyleSheet("QToolTip { background: #333; color: white; border: 1px solid #555; border-radius: 4px; }")
+
+    def center_on_parent(self):
+        self.adjustSize()
+        if self.parent():
+            p = self.parent()
+            self.move(p.x() + (p.width() - self.width()) // 2,
+                      p.y() + (p.height() - self.height()) // 2)
+
     def keyPressEvent(self, e):
-        # Cmd+Q quits app from any dialog
         if e.key() == Qt.Key.Key_Q and e.modifiers() == Qt.KeyboardModifier.ControlModifier:
             QApplication.quit()
         else:
             super().keyPressEvent(e)
-
-    def paintEvent(self, e):
-        p = QPainter(self)
-        p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        rect = self.rect().adjusted(2, 2, -2, -2)
-        STYLE.paint_window(p, rect, self.width(), self.height())
 
 
 class HelpDialog(DraggableDialog):
@@ -3337,7 +3372,7 @@ class WaveformWidget(QWidget):
         p.drawLine(0, int(cy), w, int(cy))
 
 
-class VoiceThingWindow(QWidget):
+class VoiceThingWindow(DraggableResizableMixin, QWidget):
     hide_signal = pyqtSignal()
     toggle_signal = pyqtSignal()
     focus_signal = pyqtSignal()
@@ -3349,16 +3384,17 @@ class VoiceThingWindow(QWidget):
     finish_signal = pyqtSignal()  # Signal to call _finish on main thread
     stop_signal = pyqtSignal()  # Signal to stop recording from wake word
 
+    _paint_inset = 0
+
     def __init__(self):
         super().__init__()
+        self._init_draggable()
         self.state = "idle"
         self._state_lock = threading.Lock()  # Protects state transitions from audio callback thread
         self.audio_chunks = []
         self.stream = None
         self.tee = TeeOutput()
         self.tee.__enter__()
-        self.drag_pos = None
-        self.resize_edge = None
         self.is_focused = False
         self.first_show = True
         self.last_audio_path = None
@@ -3829,51 +3865,6 @@ class VoiceThingWindow(QWidget):
             sb = self.output_panel.verticalScrollBar()
             sb.setValue(sb.maximum())
 
-    def _edge_at(self, pos):
-        # Use 9px margin, inside the 10px content margin so clicks
-        # always land on painted area (not transparent pixels that pass through)
-        m, r = 9, self.rect()
-        edge = ""
-        if pos.y() >= r.height() - m:
-            edge += "b"
-        if pos.x() >= r.width() - m:
-            edge += "r"
-        return edge or None
-
-    def mousePressEvent(self, e):
-        if e.button() == Qt.MouseButton.LeftButton:
-            self.resize_edge = self._edge_at(e.position().toPoint())
-            if not self.resize_edge:
-                self.drag_pos = (
-                    e.globalPosition().toPoint() - self.frameGeometry().topLeft()
-                )
-
-    def mouseMoveEvent(self, e):
-        if e.buttons() & Qt.MouseButton.LeftButton:
-            if self.resize_edge:
-                gpos, geo = e.globalPosition().toPoint(), self.geometry()
-                if "r" in self.resize_edge:
-                    geo.setRight(gpos.x())
-                if "b" in self.resize_edge:
-                    geo.setBottom(gpos.y())
-                self.setGeometry(geo)
-            elif self.drag_pos:
-                self.move(e.globalPosition().toPoint() - self.drag_pos)
-        else:
-            cursors = {
-                "br": Qt.CursorShape.SizeFDiagCursor,
-                "r": Qt.CursorShape.SizeHorCursor,
-                "b": Qt.CursorShape.SizeVerCursor,
-            }
-            self.setCursor(
-                cursors.get(
-                    self._edge_at(e.position().toPoint()), Qt.CursorShape.ArrowCursor
-                )
-            )
-
-    def mouseReleaseEvent(self, e):
-        self.drag_pos = self.resize_edge = None
-
     def changeEvent(self, e):
         if e.type() == e.Type.ActivationChange:
             self.is_focused = self.isActiveWindow()
@@ -3925,14 +3916,12 @@ class VoiceThingWindow(QWidget):
         else:
             super().keyPressEvent(e)
 
-    def paintEvent(self, e):
-        p = QPainter(self)
-        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    def _paint_content(self, painter):
         rect = self.rect().adjusted(2, 2, -2, -2)
-        STYLE.paint_window(p, rect, self.width(), self.height(), self.isActiveWindow())
+        STYLE.paint_window(painter, rect, self.width(), self.height(), self.isActiveWindow())
 
     def resizeEvent(self, e):
-        """Handle resize - delegate to unified UI update."""
+        """Handle resize - update UI."""
         super().resizeEvent(e)
         self._update_ui()
 
