@@ -55,6 +55,9 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QCompleter,
     QLineEdit,
+    QTreeWidget,
+    QTreeWidgetItem,
+    QSplitter,
 )
 from Foundation import NSBundle
 import os.path as osp
@@ -69,7 +72,7 @@ _VOICETHING_DIR       = os.path.dirname(__file__)
 SETTINGS_FILE         = os.path.join(_VOICETHING_DIR, "settings.json")
 ASSETS_DIR            = os.path.join(_VOICETHING_DIR, "assets")
 WAKE_WORD_CACHE_DIR   = os.path.join(_VOICETHING_DIR, ".wake_word_cache")
-RECORDINGS_DIR        = os.path.join(tempfile.gettempdir(), APP_NAME)
+DEFAULT_RECORDINGS_DIR = os.path.join(tempfile.gettempdir(), APP_NAME)
 
 # Audio settings
 SAMPLE_RATE = 16000
@@ -476,6 +479,7 @@ DEFAULTS = dict(
     THEME='macos_2005',
     WAKE_WORD_MODEL='computer',
     TMUX_MODE=False,
+    TMUX_TARGET='%',  # Tmux pane target (% = current pane)
     AUTO_COPY=True,   # Copy transcription to clipboard before paste
     AUTO_PASTE=True,  # Use ⌘V to paste after copying
     LLM_MODEL='OLLAMA:qwen2.5:7b',
@@ -486,6 +490,7 @@ DEFAULTS = dict(
     CHIME_PROGRAM=127,  # Program number (0-127), single source of truth
     CHIME_PITCH=12,  # Pitch shift in semitones (-24 to +24)
     CHIME_THEME='bright',  # Chime theme (default, blues, melancholy, bright)
+    RECORDINGS_DIR=DEFAULT_RECORDINGS_DIR,  # Folder for audio recordings and transcripts
 )
 S = Settings(**DEFAULTS)
 # =============================================================================
@@ -820,12 +825,12 @@ from synth import synth_sequence, play_native, set_reverb
 # Chime debug log - records (timestamp, name, chords, duration, theme, program, pitch)
 _chime_log = []
 _CHIME_DEBUG = True  # Set to False to disable logging
-CHIME_LOG_FILE = os.path.join(RECORDINGS_DIR, "chime_log.jsonl")
+CHIME_LOG_FILE = os.path.join(DEFAULT_RECORDINGS_DIR, "chime_log.jsonl")  # Uses default, not configurable
 
 def _log_chime_to_file(entry):
     """Append chime entry to persistent log file (JSONL format)."""
     import json
-    os.makedirs(RECORDINGS_DIR, exist_ok=True)
+    os.makedirs(DEFAULT_RECORDINGS_DIR, exist_ok=True)
     with open(CHIME_LOG_FILE, 'a') as f:
         f.write(json.dumps(entry) + '\n')
 
@@ -1261,6 +1266,335 @@ class ModelDialog(DraggableDialog):
             super().keyPressEvent(e)
 
 
+# AI coder process names - panes running these get a star
+AI_CODER_PROCESSES = ['claude', 'opencode', 'gemini', 'aider', 'cursor']
+
+# Scrollback cache with 30 second TTL
+try:
+    from cachetools import TTLCache, cached
+    _scrollback_cache = TTLCache(maxsize=100, ttl=30)
+except ImportError:
+    _scrollback_cache = {}  # Fallback to simple dict (no expiry)
+
+
+def _get_tmux_scrollback(target, lines=50):
+    """Get scrollback from tmux pane with caching."""
+    # Check cache first
+    if target in _scrollback_cache:
+        return _scrollback_cache[target]
+
+    try:
+        result = subprocess.run(
+            ['tmux', 'capture-pane', '-t', target, '-p', '-S', f'-{lines}'],
+            capture_output=True, text=True, timeout=2
+        )
+        if result.returncode == 0:
+            text = result.stdout
+            _scrollback_cache[target] = text
+            return text
+        return None
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return None
+
+
+class TmuxSelectionDialog(DraggableDialog):
+    """Dialog to select tmux pane target with tree hierarchy and preview."""
+
+    def __init__(self, current_target='%', parent=None):
+        super().__init__(parent)
+        self.selected_target = current_target
+        self._hover_target = None
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(15, 15, 15, 15)
+        layout.setSpacing(4)  # Reduced spacing
+
+        layout.addWidget(make_title("Select Tmux Pane"))
+
+        # Target text box at top
+        target_row = QHBoxLayout()
+        target_row.setSpacing(8)
+        target_label = QLabel("Target:")
+        target_label.setStyleSheet(get_pref_label_css())
+        target_row.addWidget(target_label)
+        self.target_edit = QLineEdit()
+        self.target_edit.setText(current_target)
+        self.target_edit.setStyleSheet(
+            "QLineEdit { background: white; color: black; border: 1px solid #888; "
+            "padding: 4px 8px; border-radius: 3px; font-family: Menlo, monospace; }"
+        )
+        self.target_edit.textChanged.connect(self._on_target_changed)
+        target_row.addWidget(self.target_edit, 1)
+        # Validation label inline
+        self.validation_label = QLabel("")
+        self.validation_label.setStyleSheet(f"color: #cc4444; font-size: 11px; min-width: 120px;")
+        target_row.addWidget(self.validation_label)
+        layout.addLayout(target_row)
+
+        # Main content: tree on left, preview on right
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+
+        # Tree widget
+        self.tree = QTreeWidget()
+        self.tree.setHeaderHidden(True)
+        self.tree.setStyleSheet(
+            f"QTreeWidget {{ {PANEL_BG_FLAT_CSS} color: {TEXT_PRIMARY}; "
+            f"border: 1px solid {BORDER_COLOR}; font-family: Menlo, monospace; font-size: 11px; }}"
+            f"QTreeWidget::item:hover {{ background: rgba(180,210,240,0.5); }}"
+            f"QTreeWidget::item:selected {{ background: rgba(180,210,240,0.7); color: black; }}"
+            f"QTreeWidget::branch {{ border-image: none; image: none; }}"
+            + SCROLLBAR_CSS
+        )
+        self.tree.setIndentation(16)
+        self.tree.itemClicked.connect(self._on_item_clicked)
+        self.tree.itemDoubleClicked.connect(self._on_item_double_clicked)
+        self.tree.itemExpanded.connect(self._on_item_expanded)
+        self.tree.itemCollapsed.connect(self._on_item_collapsed)
+        self.tree.setMouseTracking(True)
+        self.tree.itemEntered.connect(self._on_item_hover)
+        # Clear hover when mouse leaves tree
+        self.tree.leaveEvent = lambda e: self._on_tree_leave()
+        splitter.addWidget(self.tree)
+
+        # Right side: label + preview
+        preview_container = QWidget()
+        preview_layout = QVBoxLayout(preview_container)
+        preview_layout.setContentsMargins(0, 0, 0, 0)
+        preview_layout.setSpacing(2)
+
+        # Preview source label
+        self.preview_label = QLabel("")
+        self.preview_label.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 10px; font-family: Menlo, monospace;")
+        preview_layout.addWidget(self.preview_label)
+
+        # Preview panel
+        self.preview = QTextEdit()
+        self.preview.setReadOnly(True)
+        self.preview.setStyleSheet(
+            f"QTextEdit {{ background: #1a1a1a; color: #cccccc; "
+            f"border: 1px solid {BORDER_COLOR}; font-family: Menlo, monospace; "
+            f"font-size: 10px; padding: 4px; }}"
+            + SCROLLBAR_CSS
+        )
+        self.preview.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
+        self.preview.setMinimumWidth(300)
+        preview_layout.addWidget(self.preview, 1)
+
+        splitter.addWidget(preview_container)
+        splitter.setSizes([250, 350])
+        layout.addWidget(splitter, 1)
+
+        # Not running message (hidden by default)
+        self.not_running_label = QLabel("tmux is not running")
+        self.not_running_label.setStyleSheet(
+            f"color: {TEXT_SECONDARY}; font-size: 14px; padding: 20px;"
+        )
+        self.not_running_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.not_running_label.hide()
+        layout.addWidget(self.not_running_label)
+
+        # Buttons
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(8)
+        cancel_btn = QPushButton("Esc  Cancel")
+        cancel_btn.setStyleSheet(get_btn_css())
+        cancel_btn.clicked.connect(self.reject)
+        btn_row.addWidget(cancel_btn)
+        ok_btn = QPushButton("Enter  OK")
+        ok_btn.setStyleSheet(get_btn_css())
+        ok_btn.clicked.connect(self._accept_selection)
+        btn_row.addWidget(ok_btn)
+        layout.addLayout(btn_row)
+
+        self.setMinimumSize(650, 450)
+
+        # Populate tree
+        self._refresh_tree()
+        self._validate_target()
+        self._update_preview()
+
+    def _get_tmux_hierarchy(self):
+        """Get tmux sessions/windows/panes hierarchy."""
+        try:
+            # Get all panes with their session, window, pane info and command
+            result = subprocess.run(
+                ['tmux', 'list-panes', '-a', '-F',
+                 '#{session_name}\t#{window_index}\t#{window_name}\t#{pane_index}\t#{pane_current_command}\t#{pane_id}'],
+                capture_output=True, text=True, timeout=2
+            )
+            if result.returncode != 0:
+                return None
+
+            hierarchy = {}  # session -> window_idx -> {name, panes: [{idx, cmd, id}]}
+            for line in result.stdout.strip().split('\n'):
+                if not line:
+                    continue
+                parts = line.split('\t')
+                if len(parts) < 6:
+                    continue
+                session, win_idx, win_name, pane_idx, cmd, pane_id = parts
+                if session not in hierarchy:
+                    hierarchy[session] = {}
+                if win_idx not in hierarchy[session]:
+                    hierarchy[session][win_idx] = {'name': win_name, 'panes': []}
+                hierarchy[session][win_idx]['panes'].append({
+                    'idx': pane_idx, 'cmd': cmd, 'id': pane_id
+                })
+            return hierarchy
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            return None
+
+    def _refresh_tree(self):
+        """Populate the tree with tmux hierarchy."""
+        self.tree.clear()
+        hierarchy = self._get_tmux_hierarchy()
+
+        if hierarchy is None:
+            # tmux not running
+            self.tree.hide()
+            self.preview.hide()
+            self.preview_label.hide()
+            self.not_running_label.show()
+            self.target_edit.setEnabled(False)
+            return
+
+        self.not_running_label.hide()
+        self.tree.show()
+        self.preview.show()
+        self.preview_label.show()
+        self.target_edit.setEnabled(True)
+
+        for session_name in sorted(hierarchy.keys()):
+            session_item = QTreeWidgetItem([f"▼ 📁 {session_name}"])
+            session_item.setData(0, Qt.ItemDataRole.UserRole, session_name)
+
+            for win_idx in sorted(hierarchy[session_name].keys(), key=int):
+                win_data = hierarchy[session_name][win_idx]
+                win_target = f"{session_name}:{win_idx}"
+                win_item = QTreeWidgetItem([f"▼ 🪟 {win_idx}: {win_data['name']}"])
+                win_item.setData(0, Qt.ItemDataRole.UserRole, win_target)
+
+                for pane in win_data['panes']:
+                    pane_target = f"{session_name}:{win_idx}.{pane['idx']}"
+                    # Check if AI coder
+                    is_ai = any(ai in pane['cmd'].lower() for ai in AI_CODER_PROCESSES)
+                    star = " ⭐" if is_ai else ""
+                    pane_item = QTreeWidgetItem([f"    {pane['idx']}: {pane['cmd']}{star}"])
+                    pane_item.setData(0, Qt.ItemDataRole.UserRole, pane_target)
+                    pane_item.setToolTip(0, pane_target)
+                    win_item.addChild(pane_item)
+
+                session_item.addChild(win_item)
+
+            self.tree.addTopLevelItem(session_item)
+
+        # Expand all by default
+        self.tree.expandAll()
+
+    def _on_item_clicked(self, item, column):
+        """When tree item clicked, update target text box."""
+        target = item.data(0, Qt.ItemDataRole.UserRole)
+        if target:
+            self.target_edit.setText(target)
+
+    def _on_item_hover(self, item, column):
+        """When hovering over tree item, show preview."""
+        target = item.data(0, Qt.ItemDataRole.UserRole)
+        if target:
+            self._hover_target = target
+            self._update_preview()
+
+    def _on_tree_leave(self):
+        """When mouse leaves tree, revert to showing current target."""
+        self._hover_target = None
+        self._update_preview()
+
+    def _on_item_double_clicked(self, item, column):
+        """Toggle expand/collapse on double-click."""
+        if item.childCount() > 0:
+            item.setExpanded(not item.isExpanded())
+
+    def _on_item_expanded(self, item):
+        """Update indicator when item expands."""
+        text = item.text(0)
+        if text.startswith("▶"):
+            item.setText(0, "▼" + text[1:])
+
+    def _on_item_collapsed(self, item):
+        """Update indicator when item collapses."""
+        text = item.text(0)
+        if text.startswith("▼"):
+            item.setText(0, "▶" + text[1:])
+
+    def _on_target_changed(self, text):
+        """When target text changes, validate and update preview."""
+        self.selected_target = text
+        self._hover_target = None
+        self._validate_target()
+        self._update_preview()
+
+    def _validate_target(self):
+        """Check if current target is valid."""
+        target = self.target_edit.text().strip()
+        if not target:
+            self.validation_label.setText("Target cannot be empty")
+            return False
+
+        if target == '%':
+            self.validation_label.setText("")
+            return True
+
+        # Try to get pane info
+        try:
+            result = subprocess.run(
+                ['tmux', 'display-message', '-t', target, '-p', '#{pane_id}'],
+                capture_output=True, text=True, timeout=1
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                self.validation_label.setText("")
+                return True
+            else:
+                self.validation_label.setText(f"Invalid: {target}")
+                return False
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            self.validation_label.setText("tmux unavailable")
+            return False
+
+    def _update_preview(self):
+        """Update preview panel with scrollback from target."""
+        target = self._hover_target or self.target_edit.text().strip()
+        if not target:
+            self.preview_label.setText("")
+            self.preview.setPlainText("")
+            return
+
+        # Update label
+        self.preview_label.setText(f"Preview: {target}")
+
+        # Get scrollback (cached)
+        text = _get_tmux_scrollback(target)
+        if text is not None:
+            self.preview.setPlainText(text)
+            # Scroll to bottom
+            sb = self.preview.verticalScrollBar()
+            sb.setValue(sb.maximum())
+        else:
+            self.preview.setPlainText(f"(cannot preview {target})")
+
+    def _accept_selection(self):
+        """Accept current selection if valid."""
+        if self._validate_target():
+            self.selected_target = self.target_edit.text().strip()
+            self.accept()
+
+    def keyPressEvent(self, e):
+        if e.key() == Qt.Key.Key_Escape:
+            self.reject()
+        elif e.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            self._accept_selection()
+        else:
+            super().keyPressEvent(e)
+
 class PrefsDialog(DraggableDialog):
     """Preferences dialog with theme, wake word settings, and pet selection.
 
@@ -1539,9 +1873,14 @@ class PrefsDialog(DraggableDialog):
         # Paste Behavior section (separate from wake word)
         settings_box.addWidget(make_section("Paste Behavior"))
 
-        # All three checkboxes in one horizontal row with icons
+        # All four checkboxes in one horizontal row with icons
+        # Order: Copy, ⌘V paste, Tmux paste, Enter after paste
         auto_row = QHBoxLayout()
         auto_row.setSpacing(12)
+
+        # Store icon labels for graying out
+        self._paste_icon_labels = []
+
         # Copy
         copy_icon_label = QLabel()
         copy_icon = load_icon("copy", color=ICON_COLOR_DARK)
@@ -1551,46 +1890,65 @@ class PrefsDialog(DraggableDialog):
         self.copy_checkbox = QCheckBox("Copy to clipboard")
         self.copy_checkbox.setChecked(S.AUTO_COPY)
         self.copy_checkbox.setStyleSheet(f"QCheckBox {{ color: {TEXT_PRIMARY}; font-size: 11px; }}")
-        self.copy_checkbox.setToolTip("Copy transcription to clipboard after recording")
+        self.copy_checkbox.setToolTip("Copy transcription to clipboard after recording.\n\n"
+                                       "Other paste options require this to be enabled.")
         self.copy_checkbox.stateChanged.connect(self._on_auto_copy_pref_changed)
         auto_row.addWidget(self.copy_checkbox)
-        # Paste
+
+        # ⌘V Paste
         paste_icon_label = QLabel()
         paste_icon = load_icon("layers", color=ICON_COLOR_DARK)
         if paste_icon:
             paste_icon_label.setPixmap(paste_icon.pixmap(14, 14))
         auto_row.addWidget(paste_icon_label)
+        self._paste_icon_labels.append(paste_icon_label)
         self.paste_checkbox = QCheckBox("⌘V paste")
         self.paste_checkbox.setChecked(S.AUTO_PASTE)
         self.paste_checkbox.setStyleSheet(f"QCheckBox {{ color: {TEXT_PRIMARY}; font-size: 11px; }}")
-        self.paste_checkbox.setToolTip("Automatically paste transcription via ⌘V")
+        self.paste_checkbox.setToolTip("Automatically paste transcription via ⌘V.\n\n"
+                                        "Requires 'Copy to clipboard' to be enabled.")
         self.paste_checkbox.stateChanged.connect(self._on_auto_paste_pref_changed)
         auto_row.addWidget(self.paste_checkbox)
-        # Enter
-        enter_icon_label = QLabel()
-        enter_icon = load_icon("enter", color=ICON_COLOR_DARK)
-        if enter_icon:
-            enter_icon_label.setPixmap(enter_icon.pixmap(14, 14))
-        auto_row.addWidget(enter_icon_label)
-        self.enter_checkbox = QCheckBox("Enter after paste")
-        self.enter_checkbox.setChecked(S.AUTO_ENTER)
-        self.enter_checkbox.setStyleSheet(f"QCheckBox {{ color: {TEXT_PRIMARY}; font-size: 11px; }}")
-        self.enter_checkbox.setToolTip("Press Enter after pasting transcription")
-        self.enter_checkbox.stateChanged.connect(self._on_enter_changed)
-        auto_row.addWidget(self.enter_checkbox)
-        # Tmux
+
+        # Tmux Paste
         tmux_icon_label = QLabel()
         tmux_icon = load_icon("tmux", color=ICON_COLOR_DARK)
         if tmux_icon:
             tmux_icon_label.setPixmap(tmux_icon.pixmap(14, 14))
         auto_row.addWidget(tmux_icon_label)
+        self._paste_icon_labels.append(tmux_icon_label)
         self.tmux_checkbox = QCheckBox("Tmux paste")
         self.tmux_checkbox.setChecked(S.TMUX_MODE)
         self.tmux_checkbox.setStyleSheet(f"QCheckBox {{ color: {TEXT_PRIMARY}; font-size: 11px; }}")
+        self.tmux_checkbox.setToolTip("Paste directly into active tmux pane using send-keys.\n\n"
+                                       "Requires 'Copy to clipboard' to be enabled.\n"
+                                       "When enabled, replaces ⌘V paste.")
         self.tmux_checkbox.stateChanged.connect(self._on_tmux_pref_changed)
         auto_row.addWidget(self.tmux_checkbox)
+
+        # Enter after paste
+        enter_icon_label = QLabel()
+        enter_icon = load_icon("enter", color=ICON_COLOR_DARK)
+        if enter_icon:
+            enter_icon_label.setPixmap(enter_icon.pixmap(14, 14))
+        auto_row.addWidget(enter_icon_label)
+        self._paste_icon_labels.append(enter_icon_label)
+        self.enter_checkbox = QCheckBox("Enter after paste")
+        self.enter_checkbox.setChecked(S.AUTO_ENTER)
+        self.enter_checkbox.setStyleSheet(f"QCheckBox {{ color: {TEXT_PRIMARY}; font-size: 11px; }}")
+        self.enter_checkbox.setToolTip("Press Enter after pasting transcription.\n\n"
+                                        "With ⌘V paste: sends keyboard Enter key\n"
+                                        "With Tmux paste: uses tmux send-keys Enter\n"
+                                        "Both use the Enter Delay setting below.\n\n"
+                                        "Has no effect if neither paste mode is enabled.")
+        self.enter_checkbox.stateChanged.connect(self._on_enter_changed)
+        auto_row.addWidget(self.enter_checkbox)
+
         auto_row.addStretch()
         settings_box.addLayout(auto_row)
+
+        # Initial state update for grayed out options
+        self._update_paste_options_state()
 
         # Enter delay slider
         delay_row = QHBoxLayout()
@@ -1716,6 +2074,33 @@ class PrefsDialog(DraggableDialog):
         )
         settings_box.addLayout(llm_prefix_layout)
 
+        # Recordings Folder section
+        settings_box.addWidget(make_section("Recordings Folder"))
+        folder_row = QHBoxLayout()
+        folder_row.setSpacing(8)
+        self.folder_label = QLabel(S.RECORDINGS_DIR)
+        self.folder_label.setStyleSheet(
+            f"QLabel {{ color: {TEXT_PRIMARY}; font-size: 11px; font-family: Menlo, monospace; "
+            f"background: rgba(255,255,255,0.1); padding: 4px 8px; border-radius: 3px; }}"
+        )
+        self.folder_label.setToolTip("Folder where audio recordings and transcripts are saved.\n\n"
+                                      "Click 'Select' to choose a different folder.\n"
+                                      "Click the reset arrow to revert to the default temp folder.")
+        folder_row.addWidget(self.folder_label, 1)
+        select_folder_btn = QPushButton("Select")
+        select_folder_btn.setStyleSheet(get_btn_css())
+        select_folder_btn.setToolTip("Choose a folder for recordings")
+        select_folder_btn.clicked.connect(self._select_recordings_folder)
+        folder_row.addWidget(select_folder_btn)
+        revert_folder_btn = QPushButton()
+        revert_folder_btn.setIcon(load_icon("reset", color=ICON_COLOR_DARK))
+        revert_folder_btn.setFixedSize(28, 28)
+        revert_folder_btn.setStyleSheet(get_btn_css())
+        revert_folder_btn.setToolTip(f"Revert to default folder:\n{DEFAULT_RECORDINGS_DIR}")
+        revert_folder_btn.clicked.connect(self._revert_recordings_folder)
+        folder_row.addWidget(revert_folder_btn)
+        settings_box.addLayout(folder_row)
+
         # Pet section - checkboxes for multi-select
         settings_box.addWidget(make_section("Pet Companions"))
         pet_grid = QHBoxLayout()
@@ -1752,28 +2137,35 @@ class PrefsDialog(DraggableDialog):
             pet_grid.addWidget(pet_widget)
         settings_box.addLayout(pet_grid)
 
-        # Bottom buttons row
-        bottom_row = QHBoxLayout()
-        bottom_row.setSpacing(8)
+        settings_box.addStretch()
+        content.addLayout(settings_box)
+        layout.addLayout(content)
+
+        # Bottom action buttons row (3 equally spaced)
+        action_row = QHBoxLayout()
+        action_row.setSpacing(8)
+        # Select Whisper Model button
+        self.model_select_btn = QPushButton("  Select Whisper Model")
+        self.model_select_btn.setIcon(load_icon("mic", color=ICON_COLOR_DARK))
+        self.model_select_btn.setStyleSheet(get_btn_css())
+        self.model_select_btn.setToolTip("Change Whisper transcription model")
+        self.model_select_btn.clicked.connect(self._select_whisper_model)
+        action_row.addWidget(self.model_select_btn, 1)
         # Revert to defaults button
         revert_btn = QPushButton("  Revert to Defaults")
         revert_btn.setIcon(load_icon("reset", color=ICON_COLOR_DARK))
         revert_btn.setStyleSheet(get_btn_css())
         revert_btn.setToolTip("Reset all settings to defaults")
         revert_btn.clicked.connect(self._revert_to_defaults)
-        bottom_row.addWidget(revert_btn)
+        action_row.addWidget(revert_btn, 1)
         # Open settings folder button
         folder_btn = QPushButton("  Open Settings Folder")
         folder_btn.setIcon(load_icon("folder-open", color=ICON_COLOR_DARK))
         folder_btn.setStyleSheet(get_btn_css())
         folder_btn.setToolTip(f"Open {_VOICETHING_DIR}")
         folder_btn.clicked.connect(self._open_settings_folder)
-        bottom_row.addWidget(folder_btn)
-        settings_box.addLayout(bottom_row)
-
-        settings_box.addStretch()
-        content.addLayout(settings_box)
-        layout.addLayout(content)
+        action_row.addWidget(folder_btn, 1)
+        layout.addLayout(action_row)
 
         # Cancel/OK buttons
         btn_row = QHBoxLayout()
@@ -1827,12 +2219,49 @@ class PrefsDialog(DraggableDialog):
 
     def _on_auto_copy_pref_changed(self, state):
         S.set('AUTO_COPY', state == Qt.CheckState.Checked.value)
+        self._update_paste_options_state()
 
     def _on_auto_paste_pref_changed(self, state):
         S.set('AUTO_PASTE', state == Qt.CheckState.Checked.value)
+        self._update_paste_options_state()
 
     def _on_tmux_pref_changed(self, state):
         S.set('TMUX_MODE', state == Qt.CheckState.Checked.value)
+        self._update_paste_options_state()
+
+    def _update_paste_options_state(self):
+        """Gray out paste options based on dependencies.
+
+        - If Copy to clipboard is off, gray out all other paste options
+        - If both ⌘V paste and Tmux paste are off, gray out Enter after paste
+        """
+        copy_enabled = self.copy_checkbox.isChecked()
+        paste_enabled = self.paste_checkbox.isChecked()
+        tmux_enabled = self.tmux_checkbox.isChecked()
+        any_paste_mode = paste_enabled or tmux_enabled
+
+        # Gray out style for disabled checkboxes
+        enabled_style = f"QCheckBox {{ color: {TEXT_PRIMARY}; font-size: 11px; }}"
+        disabled_style = f"QCheckBox {{ color: {TEXT_SECONDARY}; font-size: 11px; }}"
+
+        # ⌘V paste and Tmux paste depend on Copy being enabled
+        self.paste_checkbox.setEnabled(copy_enabled)
+        self.paste_checkbox.setStyleSheet(enabled_style if copy_enabled else disabled_style)
+        self.tmux_checkbox.setEnabled(copy_enabled)
+        self.tmux_checkbox.setStyleSheet(enabled_style if copy_enabled else disabled_style)
+
+        # Enter after paste depends on Copy AND at least one paste mode
+        enter_enabled = copy_enabled and any_paste_mode
+        self.enter_checkbox.setEnabled(enter_enabled)
+        self.enter_checkbox.setStyleSheet(enabled_style if enter_enabled else disabled_style)
+
+        # Update icon opacity for visual consistency
+        for i, label in enumerate(self._paste_icon_labels):
+            # Index 0,1 = paste/tmux icons, 2 = enter icon
+            if i < 2:
+                label.setEnabled(copy_enabled)
+            else:
+                label.setEnabled(enter_enabled)
 
     def _on_threshold_changed(self, value):
         S.SILENCE_THRESHOLD = value
@@ -1920,8 +2349,28 @@ class PrefsDialog(DraggableDialog):
     def _on_llm_prefix_changed(self):
         S.LLM_PREFIX = self.llm_prefix_edit.toPlainText()
 
+    def _select_recordings_folder(self):
+        """Open folder selection dialog for recordings."""
+        folder = QFileDialog.getExistingDirectory(
+            self, "Select Recordings Folder", S.RECORDINGS_DIR
+        )
+        if folder:
+            S.set('RECORDINGS_DIR', folder)
+            self.folder_label.setText(folder)
+
+    def _revert_recordings_folder(self):
+        """Revert recordings folder to default."""
+        S.set('RECORDINGS_DIR', DEFAULT_RECORDINGS_DIR)
+        self.folder_label.setText(DEFAULT_RECORDINGS_DIR)
+
     def _open_settings_folder(self):
         rp.open_file_with_default_application(_VOICETHING_DIR)
+
+    def _select_whisper_model(self):
+        """Open model selection dialog from preferences via parent's method."""
+        # Use parent's show_model_dialog to get the same chimes and behavior
+        if self.parent() and hasattr(self.parent(), 'show_model_dialog'):
+            self.parent().show_model_dialog()
 
     def _revert_to_defaults(self):
         """Revert all settings to defaults and re-open dialog."""
@@ -3029,8 +3478,8 @@ class VoiceThingWindow(QWidget):
         if S.AUTO_ENTER:
             self.enter_btn.setIcon(load_icon("enter", color=ICON_COLOR_LIGHT))
         self.enter_btn.setEnabled(True)
-        self.tmux_btn = make_btn("U", "tmux", self.toggle_tmux_mode)
-        self.tmux_btn.setToolTip("Toggle tmux paste mode (paste to active tmux pane)")
+        self.tmux_btn = make_btn("U", "tmux", self.show_tmux_selection)
+        self.tmux_btn.setToolTip("Select tmux pane target")
         self.tmux_btn.setCheckable(True)
         self.tmux_btn.setChecked(S.TMUX_MODE)
         if S.TMUX_MODE:
@@ -3297,37 +3746,47 @@ class VoiceThingWindow(QWidget):
         self._transcribe_file(audio_path)
 
     def _do_paste(self, text):
-        if S.AUTO_COPY:
-            self._copy_to_clipboard(text)
+        # Copy is required for any paste operation
+        if not S.AUTO_COPY:
+            return
+
+        self._copy_to_clipboard(text)
+
+        # Don't paste into VoiceThing itself
         if self.is_focused:
             return
+
         time.sleep(0.1)
+
         if S.TMUX_MODE:
-            # TMUX mode: send directly to tmux pane (replaces Cmd+V)
+            # TMUX mode: send directly to tmux pane using send-keys
             self._do_tmux_paste(text)
         elif S.AUTO_PASTE:
             # Normal mode: Cmd+V to paste in focused app
             kb = KeyboardController()
             with kb.pressed(Key.cmd):
                 kb.tap("v")
+            # Enter key only makes sense with a paste mode enabled
             if S.AUTO_ENTER:
                 time.sleep(S.ENTER_DELAY)
-                play_chime('enter')  # Low do-ba-do for Enter
+                play_chime('enter')
                 kb.press(Key.enter)
                 time.sleep(0.1)
                 kb.release(Key.enter)
 
     def _do_tmux_paste(self, text):
-        """Paste text into the active tmux pane and optionally press enter."""
-        # Use tmux send-keys to paste text into active pane
+        """Paste text into the configured tmux pane and optionally press enter."""
+        # Use tmux send-keys to paste text into target pane
         # -l flag sends text literally (no key interpretation)
+        # -t flag specifies target pane (default '%' = current pane)
+        target = S.TMUX_TARGET or '%'
         try:
-            subprocess.run(['tmux', 'send-keys', '-l', text], check=True)
+            subprocess.run(['tmux', 'send-keys', '-t', target, '-l', text], check=True)
             if S.AUTO_ENTER:
                 time.sleep(S.ENTER_DELAY)
-                play_chime('enter')  # Low do-ba-do for Enter
-                subprocess.run(['tmux', 'send-keys', 'Enter'], check=True)
-            print(f"Sent to tmux: {text[:50]}{'...' if len(text) > 50 else ''}")
+                play_chime('enter')
+                subprocess.run(['tmux', 'send-keys', '-t', target, 'Enter'], check=True)
+            print(f"Sent to tmux ({target}): {text[:50]}{'...' if len(text) > 50 else ''}")
         except subprocess.CalledProcessError as e:
             print(f"tmux send-keys failed: {e}")
         except FileNotFoundError:
@@ -3692,6 +4151,7 @@ class VoiceThingWindow(QWidget):
     def toggle_simple_mode(self):
         """Toggle simple mode - hides advanced buttons and shows only transcriptions."""
         S.set('SIMPLE_MODE', not S.SIMPLE_MODE)
+        self._save_settings()
 
     def toggle_sound(self):
         S.set('SOUND_ENABLED', not S.SOUND_ENABLED)
@@ -3713,6 +4173,17 @@ class VoiceThingWindow(QWidget):
 
     def toggle_tmux_mode(self):
         S.set('TMUX_MODE', not S.TMUX_MODE)
+
+    def show_tmux_selection(self):
+        """Show dialog to select tmux target pane."""
+        dialog = TmuxSelectionDialog(S.TMUX_TARGET, self)
+        dialog.center_on_parent()
+        if dialog.exec():
+            S.set('TMUX_TARGET', dialog.selected_target)
+            # Also enable tmux mode if not already
+            if not S.TMUX_MODE:
+                S.set('TMUX_MODE', True)
+            self._save_settings()
 
     def _load_wake_word_model(self):
         """Lazy load OpenWakeWord model."""
@@ -4003,8 +4474,8 @@ class VoiceThingWindow(QWidget):
             self._copy_to_clipboard(self.last_transcription)
 
     def open_folder(self):
-        os.makedirs(RECORDINGS_DIR, exist_ok=True)
-        rp.open_file_with_default_application(RECORDINGS_DIR)
+        os.makedirs(S.RECORDINGS_DIR, exist_ok=True)
+        rp.open_file_with_default_application(S.RECORDINGS_DIR)
 
     def load_audio_file(self):
         """Open file dialog to load an audio file for transcription."""
@@ -4149,10 +4620,10 @@ class VoiceThingWindow(QWidget):
                 return
             print(f"Recorded {len(audio) / SAMPLE_RATE:.2f}s")
 
-            os.makedirs(RECORDINGS_DIR, exist_ok=True)
+            os.makedirs(S.RECORDINGS_DIR, exist_ok=True)
             ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-            wav_path = os.path.join(RECORDINGS_DIR, f"{ts}.wav")
-            txt_path = os.path.join(RECORDINGS_DIR, f"{ts}.txt")
+            wav_path = os.path.join(S.RECORDINGS_DIR, f"{ts}.wav")
+            txt_path = os.path.join(S.RECORDINGS_DIR, f"{ts}.txt")
 
             scipy.io.wavfile.write(wav_path, SAMPLE_RATE, (audio * 32767).astype(np.int16))
             self.last_audio_path = wav_path
