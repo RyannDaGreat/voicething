@@ -930,9 +930,16 @@ def load_icon(name, color=None):
     return QIcon(pixmap)
 
 
-def _get_menubar_icon():
-    """Create menu bar template icon from app icon (auto-adapts to macOS theme)."""
-    from PIL import Image
+def _get_menubar_icon(hue=None, brightness=1.0):
+    """Create menu bar icon from app icon.
+
+    Args:
+        hue: If None, creates template icon (auto light/dark).
+             If float 0-360, adds a glowing colored dot in center.
+        brightness: Pulsing brightness multiplier (0.5-1.0) for the dot.
+    """
+    from PIL import Image, ImageDraw
+    import colorsys
     import numpy as np
     icon_path = os.path.join(ASSETS_DIR, "icon.png")
     if not os.path.exists(icon_path):
@@ -942,14 +949,25 @@ def _get_menubar_icon():
     img = img.resize((TRAY_ICON_SIZE, TRAY_ICON_SIZE), Image.Resampling.LANCZOS)
     data = np.array(img)
     # Template images: black RGB with alpha defining the shape
-    # macOS automatically colors it for light/dark menu bar
     alpha = data[:, :, 3]
     data[:, :, 0] = 0  # Black
     data[:, :, 1] = 0
     data[:, :, 2] = 0
     data[:, :, 3] = alpha
-    # Convert to QIcon
     result = Image.fromarray(data, 'RGBA')
+
+    # Add glowing dot if hue specified (recording indicator)
+    if hue is not None:
+        draw = ImageDraw.Draw(result)
+        # HSV: hue 0-1, saturation 0.5, value/brightness
+        r, g, b = colorsys.hsv_to_rgb(hue / 360.0, 0.5, brightness)
+        color = (int(r * 255), int(g * 255), int(b * 255), 255)
+        # Draw dot in center of icon (roughly where the orb is)
+        cx, cy = TRAY_ICON_SIZE // 2, int(TRAY_ICON_SIZE * 0.55)  # Slightly below center
+        radius = TRAY_ICON_SIZE // 6
+        draw.ellipse([cx - radius, cy - radius, cx + radius, cy + radius], fill=color)
+
+    # Convert to QIcon
     from io import BytesIO
     buf = BytesIO()
     result.save(buf, format='PNG')
@@ -958,7 +976,8 @@ def _get_menubar_icon():
     pixmap.loadFromData(buf.read())
     pixmap.setDevicePixelRatio(2.0)  # Retina
     icon = QIcon(pixmap)
-    icon.setIsMask(True)  # Tell macOS this is a template image
+    if hue is None:
+        icon.setIsMask(True)  # Template only when not recording
     return icon
 
 
@@ -983,7 +1002,7 @@ ACTIONS = [
     ("load", "L", "disc", "Load audio file", "Load Audio File..."),
     ("folder", "F", "folder-open", "Open recordings folder", "Open Recordings Folder"),
     ("sound", "S", "volume", "Toggle sound effects", None),
-    ("auto_hide", "V", "eye", "Toggle auto-minimize", None),
+    ("auto_hide", "H", "eye", "Toggle auto-minimize", None),
     ("llm", "R", "robot", "Toggle LLM post-processing", None),
     ("wake_word", "J", "ear", "Toggle wake word detection", None),
     ("wake_word_model", "K", "ear", "Change wake word", None),
@@ -2521,7 +2540,7 @@ class TextPanel(QTextEdit):
     def keyPressEvent(self, e):
         # Pass shortcut keys to parent window
         if e.key() in (Qt.Key.Key_Space, Qt.Key.Key_Escape, Qt.Key.Key_X, Qt.Key.Key_C, Qt.Key.Key_L, Qt.Key.Key_F,
-                       Qt.Key.Key_S, Qt.Key.Key_V, Qt.Key.Key_R, Qt.Key.Key_E, Qt.Key.Key_W, Qt.Key.Key_O, Qt.Key.Key_T, Qt.Key.Key_M, Qt.Key.Key_Question):
+                       Qt.Key.Key_S, Qt.Key.Key_H, Qt.Key.Key_R, Qt.Key.Key_E, Qt.Key.Key_W, Qt.Key.Key_O, Qt.Key.Key_T, Qt.Key.Key_M, Qt.Key.Key_Question):
             self.window().keyPressEvent(e)
         else:
             super().keyPressEvent(e)
@@ -3536,7 +3555,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         self.sound_btn.setIcon(load_icon("volume" if S.SOUND_ENABLED else "volume-off",
                                          color=ICON_COLOR_LIGHT if S.SOUND_ENABLED else ICON_COLOR_DARK))
         self.sound_btn.setEnabled(True)
-        self.eye_btn = make_btn("V", "eye", self.toggle_auto_hide)
+        self.eye_btn = make_btn("H", "eye", self.toggle_auto_hide)
         self.eye_btn.setToolTip("Toggle auto-minimize after transcription")
         self.eye_btn.setCheckable(True)
         self.eye_btn.setEnabled(True)
@@ -3597,7 +3616,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
             Qt.Key.Key_Z: self.retranscribe_btn, Qt.Key.Key_W: self.simple_btn,
             Qt.Key.Key_C: self.copy_btn, Qt.Key.Key_L: self.load_btn,
             Qt.Key.Key_F: self.folder_btn, Qt.Key.Key_S: self.sound_btn,
-            Qt.Key.Key_V: self.eye_btn, Qt.Key.Key_R: self.llm_btn,
+            Qt.Key.Key_H: self.eye_btn, Qt.Key.Key_R: self.llm_btn,
             Qt.Key.Key_J: self.wake_word_btn, Qt.Key.Key_N: self.enter_btn,
             Qt.Key.Key_U: self.tmux_btn,
             Qt.Key.Key_M: self.model_btn, Qt.Key.Key_P: self.prefs_btn,
@@ -3715,6 +3734,11 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
     def _setup_tray(self):
         self.tray = QSystemTrayIcon(self)
         self.tray.setIcon(_get_menubar_icon())
+        # Tray icon animation state
+        self.tray_hue = 0.0
+        self.tray_phase = 0.0  # For brightness pulsing
+        self.tray_icon_timer = QTimer(self)
+        self.tray_icon_timer.timeout.connect(self._update_tray_icon)
         menu = QMenu()
         menu.addAction("Show", self.show)
         menu.addSeparator()
@@ -3729,6 +3753,13 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         self.tray.setContextMenu(menu)
         self.tray.setToolTip(APP_NAME)
         self.tray.show()
+
+    def _update_tray_icon(self):
+        """Update tray icon with rainbow pulsing effect."""
+        self.tray_hue = (self.tray_hue + 2) % 360  # Cycle hue
+        self.tray_phase += 0.15  # Pulse speed
+        brightness = 0.75 + 0.25 * math.sin(self.tray_phase)  # Pulse 50-100%
+        self.tray.setIcon(_get_menubar_icon(hue=self.tray_hue, brightness=brightness))
 
     def _maybe_hide(self):
         if not S.AUTO_HIDE:
@@ -3830,16 +3861,12 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
 
         self._copy_to_clipboard(text)
 
-        # Don't paste into VoiceThing itself
-        if self.is_focused:
-            return
-
-        time.sleep(0.1)
-
         if S.TMUX_MODE:
             # TMUX mode: send directly to tmux pane using send-keys
+            time.sleep(0.1)
             self._do_tmux_paste(text)
         elif S.AUTO_PASTE:
+            time.sleep(0.1)
             # Normal mode: Cmd+V to paste in focused app
             kb = KeyboardController()
             with kb.pressed(Key.cmd):
@@ -3924,7 +3951,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         elif no_mods and key == Qt.Key.Key_F: self.open_folder()
         elif no_mods and key == Qt.Key.Key_L: self.load_audio_file()
         elif no_mods and key == Qt.Key.Key_S: self.toggle_sound()
-        elif no_mods and key == Qt.Key.Key_V: self.toggle_auto_hide()
+        elif no_mods and key == Qt.Key.Key_H: self.toggle_auto_hide()
         elif no_mods and key == Qt.Key.Key_R: self.toggle_llm()
         elif no_mods and key == Qt.Key.Key_J: self.toggle_wake_word()
         elif no_mods and key == Qt.Key.Key_N: self.toggle_auto_enter()
@@ -4064,7 +4091,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
                 (self.record_btn, "␣"), (self.cancel_btn, "X"),
                 (self.retranscribe_btn, "Z"), (self.simple_btn, "W"),
                 (self.copy_btn, "C"), (self.load_btn, "L"), (self.folder_btn, "F"),
-                (self.sound_btn, "S"), (self.eye_btn, "V"), (self.llm_btn, "R"),
+                (self.sound_btn, "S"), (self.eye_btn, "H"), (self.llm_btn, "R"),
                 (self.wake_word_btn, "J"), (self.enter_btn, "N"),
                 (self.model_btn, "M"), (self.prefs_btn, "P"), (self.help_btn, "?"),
             ]
@@ -4087,6 +4114,8 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         self.audio_chunks = []
         self.waveform.set_samples(np.array([]))
         self.pet_container.set_listening(False)  # Stop pet animation
+        self.tray_icon_timer.stop()
+        self.tray.setIcon(_get_menubar_icon())  # Reset to template icon
         play_chime('cancel')  # Minor: cancel
         # Reset wake word model to clear any buffered audio that might cause false triggers
         if self.wake_word_model is not None:
@@ -4595,12 +4624,15 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         )
         self.stream.start()
         self.update_timer.start(8)
+        self.tray_icon_timer.start(50)  # ~20 FPS for smooth animation
 
     def stop_recording(self):
         if self.stream:
             self.stream.stop()
             self.stream.close()
             self.stream = None
+        self.tray_icon_timer.stop()
+        self.tray.setIcon(_get_menubar_icon())  # Reset to template icon
         self._set_state("transcribing", "Transcribing...")
         self.pet_container.set_listening(False)
         self._switch_tab(0)  # Switch to Output tab during transcription
