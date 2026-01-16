@@ -848,7 +848,7 @@ def _log_chime_to_file(entry):
         f.write(json.dumps(entry) + '\n')
 
 def chime(*chords, t=0.15, gap=0.0, name=None, **kwargs):
-    """Play chime using native FluidSynth audio (non-blocking, layerable)."""
+    """Play chime (currently silent - FluidSynth removed)."""
     if not S.SOUND_ENABLED or S.CHIME_VOLUME <= 0:
         return
     # Log if debug enabled
