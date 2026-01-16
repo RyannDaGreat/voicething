@@ -57,6 +57,8 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QTreeWidget,
     QTreeWidgetItem,
+    QTableWidget,
+    QTableWidgetItem,
     QSplitter,
 )
 from Foundation import NSBundle
@@ -108,6 +110,7 @@ CHIME_THEMES = {
         'transcribe':     (([2], [6], [9], [14]), 0.08),# B→Eb→F#→B5 arpeggio
         'llm_start':      (([7, 11],), 0.06),           # E+G# LLM start
         'llm_done':       (([11, 14, 18],), 0.08),      # G#+B+D#6 LLM done
+        'tmux_send':      (([8, 16],), 0.05),            # C#5→C#6 (copy reversed, high -12)
     },
     # Minimal: Clean single notes, perfect intervals (octaves, 5ths)
     'minimal': {
@@ -127,6 +130,7 @@ CHIME_THEMES = {
         'transcribe':     (([-2],), 0.04),              # G4 single
         'llm_start':      (([-12, -5],), 0.04),         # A3+E4
         'llm_done':       (([12, 19],), 0.06),          # A5+E6 octave+5th
+        'tmux_send':      (([-12],), 0.03),             # A3 octave down (copy reversed)
     },
     # Blues: A blues scale with blue notes (0, 3, 5, 6, 7, 10)
     'blues': {
@@ -146,6 +150,7 @@ CHIME_THEMES = {
         'transcribe':     (([-9, -5, -2],), 0.06),      # C4+E4+G4
         'llm_start':      (([-7, -4],), 0.06),          # D4+F4 (Dm feel)
         'llm_done':       (([0, 4, 7, 10],), 0.1),      # A7 blues resolve
+        'tmux_send':      (([3, 12],), 0.05),            # C5→A5 (copy reversed, high -12)
     },
     # Ethereal: Sus2/Sus4 only, wide voicings (0, 2, 5, 7, 9)
     # Rapid sequence: Asus2 → Esus4 → Dsus2 → Asus2/E → Asus2 high
@@ -166,6 +171,7 @@ CHIME_THEMES = {
         'transcribe':     (([5, 9, 12],), 0.08),        # D+F#+A (Dsus2)
         'llm_start':      (([0, 7, 14],), 0.08),        # A+E+B5 (Asus2/E)
         'llm_done':       (([2, 9, 14, 21],), 0.1),     # B+F#+B5+E6 (soar)
+        'tmux_send':      (([14, 19, 14],), 0.06),       # B5→E6→B5 (copy reversed, high -12)
     },
     # Melancholy: A natural minor (0, 2, 3, 5, 7, 8, 10)
     'melancholy': {
@@ -185,6 +191,7 @@ CHIME_THEMES = {
         'transcribe':     (([3, 5, 10],), 0.08),        # C+D+G
         'llm_start':      (([5, 8, 10],), 0.08),        # D+F+G (Dm7 no root)
         'llm_done':       (([-12, -5, 0, 3],), 0.12),   # Am with low root
+        'tmux_send':      (([7, 15, 12],), 0.08),        # E5→C6→A5 (copy reversed, high -12)
     },
     # Bright: A major scale (0, 2, 4, 5, 7, 9, 11)
     'bright': {
@@ -204,6 +211,7 @@ CHIME_THEMES = {
         'transcribe':     (([7, 11, 14],), 0.05),       # E+G#+B (E)
         'llm_start':      (([-5, 2],), 0.05),            # E4+B (5th buildup)
         'llm_done':       (([0, 4, 7],), 0.06),         # A+C#+E (resolution)
+        'tmux_send':      (([4, 12],), 0.04),            # C#5→A5 (copy reversed, high -12)
     },
     # Jazzy: Extended chords, 7ths, 9ths, 13ths
     'jazzy': {
@@ -223,6 +231,7 @@ CHIME_THEMES = {
         'transcribe':     (([5, 9, 12, 16],), 0.06),    # D+F#+A+C# (Dmaj7)
         'llm_start':      (([2, 5, 8, 11],), 0.06),     # B+D+F+G# (Bdim7)
         'llm_done':       (([0, 4, 7, 11, 14],), 0.1),  # Amaj9
+        'tmux_send':      (([9, 16, 12],), 0.05),        # F#5→C#6→A5 (copy reversed, high -12)
     },
 }
 
@@ -481,6 +490,8 @@ DEFAULTS = dict(
     WAKE_WORD_MODEL='computer',
     TMUX_MODE=False,
     TMUX_TARGET='%',  # Tmux pane target (% = current pane)
+    TMUX_PANE_NAMES={},  # pane_id -> {phrase: str}
+    TMUX_PHRASES_AS_CONTEXT=True,  # Include tmux phrases in context words
     AUTO_COPY=True,   # Copy transcription to clipboard before paste
     AUTO_PASTE=True,  # Use ⌘V to paste after copying
     LLM_MODEL='OLLAMA:qwen2.5:7b',
@@ -930,54 +941,45 @@ def load_icon(name, color=None):
     return QIcon(pixmap)
 
 
-def _get_menubar_icon(hue=None, brightness=1.0):
+def _get_menubar_icon(hue=None):
     """Create menu bar icon from app icon.
 
     Args:
         hue: If None, creates template icon (auto light/dark).
-             If float 0-360, adds a glowing colored dot in center.
-        brightness: Pulsing brightness multiplier (0.5-1.0) for the dot.
+             If float 0-360, recolors entire icon with that hue.
     """
-    from PIL import Image, ImageDraw
+    from PIL import Image
     import colorsys
     import numpy as np
     icon_path = os.path.join(ASSETS_DIR, "icon.png")
     if not os.path.exists(icon_path):
         return load_icon("mic")  # Fallback
-    # Load and resize to menu bar size
     img = Image.open(icon_path).convert('RGBA')
     img = img.resize((TRAY_ICON_SIZE, TRAY_ICON_SIZE), Image.Resampling.LANCZOS)
     data = np.array(img)
-    # Template images: black RGB with alpha defining the shape
     alpha = data[:, :, 3]
-    data[:, :, 0] = 0  # Black
-    data[:, :, 1] = 0
-    data[:, :, 2] = 0
+
+    if hue is None:
+        # Template: black with alpha
+        data[:, :, :3] = 0
+    else:
+        # Recolor entire icon with cycling hue
+        r, g, b = colorsys.hsv_to_rgb(hue / 360.0, 0.8, 1.0)
+        data[:, :, 0] = int(r * 255)
+        data[:, :, 1] = int(g * 255)
+        data[:, :, 2] = int(b * 255)
     data[:, :, 3] = alpha
-    result = Image.fromarray(data, 'RGBA')
 
-    # Add glowing dot if hue specified (recording indicator)
-    if hue is not None:
-        draw = ImageDraw.Draw(result)
-        # HSV: hue 0-1, saturation 0.5, value/brightness
-        r, g, b = colorsys.hsv_to_rgb(hue / 360.0, 0.5, brightness)
-        color = (int(r * 255), int(g * 255), int(b * 255), 255)
-        # Draw dot in center of icon (roughly where the orb is)
-        cx, cy = TRAY_ICON_SIZE // 2, int(TRAY_ICON_SIZE * 0.55)  # Slightly below center
-        radius = TRAY_ICON_SIZE // 6
-        draw.ellipse([cx - radius, cy - radius, cx + radius, cy + radius], fill=color)
-
-    # Convert to QIcon
     from io import BytesIO
     buf = BytesIO()
-    result.save(buf, format='PNG')
+    Image.fromarray(data, 'RGBA').save(buf, format='PNG')
     buf.seek(0)
     pixmap = QPixmap()
     pixmap.loadFromData(buf.read())
-    pixmap.setDevicePixelRatio(2.0)  # Retina
+    pixmap.setDevicePixelRatio(2.0)
     icon = QIcon(pixmap)
     if hue is None:
-        icon.setIsMask(True)  # Template only when not recording
+        icon.setIsMask(True)
     return icon
 
 
@@ -1379,76 +1381,67 @@ def _get_tmux_scrollback(target, lines=50):
 
 
 class TmuxSelectionDialog(DraggableDialog):
-    """Dialog to select tmux pane target with tree hierarchy and preview."""
+    """Dialog to select tmux pane target with flat table and voice routing."""
+
+    # Column indices
+    COL_ADDRESS = 0
+    COL_PANE_ID = 1
+    COL_PROCESS = 2
+    COL_PHRASE = 3  # Single magic phrase column
 
     def __init__(self, current_target='%', parent=None):
         super().__init__(parent)
         self.selected_target = current_target
-        self._hover_target = None
+        self._hover_pane_id = None
+        self._selected_pane_id = None
+        self._pane_data = []  # List of {address, pane_id, process, target}
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(15, 15, 15, 15)
-        layout.setSpacing(4)  # Reduced spacing
+        layout.setSpacing(8)
 
-        layout.addWidget(make_title("Select Tmux Pane"))
+        layout.addWidget(make_title("Tmux Pane Manager"))
 
-        # Target text box at top
-        target_row = QHBoxLayout()
-        target_row.setSpacing(8)
-        target_label = QLabel("Target:")
-        target_label.setStyleSheet(get_pref_label_css())
-        target_row.addWidget(target_label)
-        self.target_edit = QLineEdit()
-        self.target_edit.setText(current_target)
-        self.target_edit.setStyleSheet(
-            "QLineEdit { background: white; color: black; border: 1px solid #888; "
-            "padding: 4px 8px; border-radius: 3px; font-family: Menlo, monospace; }"
-        )
-        self.target_edit.textChanged.connect(self._on_target_changed)
-        target_row.addWidget(self.target_edit, 1)
-        # Validation label inline
-        self.validation_label = QLabel("")
-        self.validation_label.setStyleSheet(f"color: #cc4444; font-size: 11px; min-width: 120px;")
-        target_row.addWidget(self.validation_label)
-        layout.addLayout(target_row)
-
-        # Main content: tree on left, preview on right
+        # Main content: table on left, preview on right
         splitter = QSplitter(Qt.Orientation.Horizontal)
 
-        # Tree widget
-        self.tree = QTreeWidget()
-        self.tree.setHeaderHidden(True)
-        self.tree.setStyleSheet(
-            f"QTreeWidget {{ {PANEL_BG_FLAT_CSS} color: {TEXT_PRIMARY}; "
+        # Table widget
+        self.table = QTableWidget()
+        self.table.setColumnCount(4)
+        self.table.setHorizontalHeaderLabels(["Address", "Pane ID", "Process", "Magic Phrase"])
+        self.table.setStyleSheet(
+            f"QTableWidget {{ {PANEL_BG_FLAT_CSS} color: {TEXT_PRIMARY}; "
             f"border: 1px solid {BORDER_COLOR}; font-family: Menlo, monospace; font-size: 11px; }}"
-            f"QTreeWidget::item:hover {{ background: rgba(180,210,240,0.5); }}"
-            f"QTreeWidget::item:selected {{ background: rgba(180,210,240,0.7); color: black; }}"
-            f"QTreeWidget::branch {{ background: transparent; border: none; image: none; }}"
+            f"QTableWidget::item {{ padding: 1px 4px; }}"
+            f"QTableWidget::item:hover {{ background: rgba(180,210,240,0.5); }}"
+            f"QTableWidget::item:selected {{ background: rgba(180,210,240,0.7); color: black; }}"
+            f"QHeaderView::section {{ background: #e0e0e0; color: black; padding: 2px 4px; "
+            f"border: 1px solid #ccc; font-weight: bold; }}"
             + SCROLLBAR_CSS
         )
-        self.tree.setIndentation(0)
-        self.tree.itemClicked.connect(self._on_item_clicked)
-        self.tree.itemDoubleClicked.connect(self._on_item_double_clicked)
-        self.tree.itemExpanded.connect(self._on_item_expanded)
-        self.tree.itemCollapsed.connect(self._on_item_collapsed)
-        self.tree.setMouseTracking(True)
-        self.tree.itemEntered.connect(self._on_item_hover)
-        # Clear hover when mouse leaves tree
-        self.tree.leaveEvent = lambda e: self._on_tree_leave()
-        splitter.addWidget(self.tree)
+        self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+        self.table.horizontalHeader().setStretchLastSection(True)
+        self.table.verticalHeader().setVisible(False)
+        self.table.verticalHeader().setDefaultSectionSize(22)  # Compact rows
+        self.table.setMouseTracking(True)
+        self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)  # We handle edit manually
+        self.table.cellClicked.connect(self._on_cell_clicked)
+        self.table.cellChanged.connect(self._on_cell_changed)
+        self.table.itemSelectionChanged.connect(self._on_selection_changed)
+        self.table.viewport().installEventFilter(self)  # For hover preview
+        splitter.addWidget(self.table)
 
-        # Right side: label + preview
+        # Right side: preview
         preview_container = QWidget()
         preview_layout = QVBoxLayout(preview_container)
         preview_layout.setContentsMargins(0, 0, 0, 0)
         preview_layout.setSpacing(2)
 
-        # Preview source label
         self.preview_label = QLabel("")
         self.preview_label.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 10px; font-family: Menlo, monospace;")
         preview_layout.addWidget(self.preview_label)
 
-        # Preview panel
         self.preview = QTextEdit()
         self.preview.setReadOnly(True)
         self.preview.setStyleSheet(
@@ -1458,18 +1451,16 @@ class TmuxSelectionDialog(DraggableDialog):
             + SCROLLBAR_CSS
         )
         self.preview.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
-        self.preview.setMinimumWidth(300)
+        self.preview.setMinimumWidth(280)
         preview_layout.addWidget(self.preview, 1)
 
         splitter.addWidget(preview_container)
-        splitter.setSizes([250, 350])
+        splitter.setSizes([420, 280])
         layout.addWidget(splitter, 1)
 
-        # Not running message (hidden by default)
+        # Not running message
         self.not_running_label = QLabel("tmux is not running")
-        self.not_running_label.setStyleSheet(
-            f"color: {TEXT_SECONDARY}; font-size: 14px; padding: 20px;"
-        )
+        self.not_running_label.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 14px; padding: 20px;")
         self.not_running_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.not_running_label.hide()
         layout.addWidget(self.not_running_label)
@@ -1477,27 +1468,23 @@ class TmuxSelectionDialog(DraggableDialog):
         # Buttons
         btn_row = QHBoxLayout()
         btn_row.setSpacing(8)
+        btn_row.addStretch()
         cancel_btn = QPushButton("Esc  Cancel")
         cancel_btn.setStyleSheet(get_btn_css())
         cancel_btn.clicked.connect(self.reject)
         btn_row.addWidget(cancel_btn)
-        ok_btn = QPushButton("Enter  OK")
+        ok_btn = QPushButton("Enter  Save")
         ok_btn.setStyleSheet(get_btn_css())
         ok_btn.clicked.connect(self._accept_selection)
         btn_row.addWidget(ok_btn)
         layout.addLayout(btn_row)
 
-        self.setMinimumSize(650, 450)
+        self.setMinimumSize(700, 400)
+        self._refresh_table()
 
-        # Populate tree
-        self._refresh_tree()
-        self._validate_target()
-        self._update_preview()
-
-    def _get_tmux_hierarchy(self):
-        """Get tmux sessions/windows/panes hierarchy."""
+    def _get_tmux_panes_flat(self):
+        """Get flat list of all tmux panes."""
         try:
-            # Get all panes with their session, window, pane info and command
             result = subprocess.run(
                 ['tmux', 'list-panes', '-a', '-F',
                  '#{session_name}\t#{window_index}\t#{window_name}\t#{pane_index}\t#{pane_current_command}\t#{pane_id}'],
@@ -1505,8 +1492,7 @@ class TmuxSelectionDialog(DraggableDialog):
             )
             if result.returncode != 0:
                 return None
-
-            hierarchy = {}  # session -> window_idx -> {name, panes: [{idx, cmd, id}]}
+            panes = []
             for line in result.stdout.strip().split('\n'):
                 if not line:
                     continue
@@ -1514,165 +1500,167 @@ class TmuxSelectionDialog(DraggableDialog):
                 if len(parts) < 6:
                     continue
                 session, win_idx, win_name, pane_idx, cmd, pane_id = parts
-                if session not in hierarchy:
-                    hierarchy[session] = {}
-                if win_idx not in hierarchy[session]:
-                    hierarchy[session][win_idx] = {'name': win_name, 'panes': []}
-                hierarchy[session][win_idx]['panes'].append({
-                    'idx': pane_idx, 'cmd': cmd, 'id': pane_id
+                address = f"{session}:{win_name}:{pane_idx}"
+                target = f"{session}:{win_idx}.{pane_idx}"
+                is_ai = any(ai in cmd.lower() for ai in AI_CODER_PROCESSES)
+                panes.append({
+                    'address': address,
+                    'pane_id': pane_id,
+                    'process': cmd + (" ⭐" if is_ai else ""),
+                    'target': target,
                 })
-            return hierarchy
+            return panes
         except (subprocess.TimeoutExpired, FileNotFoundError):
             return None
 
-    def _refresh_tree(self):
-        """Populate the tree with tmux hierarchy."""
-        self.tree.clear()
-        hierarchy = self._get_tmux_hierarchy()
+    def _refresh_table(self):
+        """Populate table with tmux panes."""
+        self.table.blockSignals(True)
+        self.table.setRowCount(0)
+        self._pane_data = self._get_tmux_panes_flat()
 
-        if hierarchy is None:
-            # tmux not running
-            self.tree.hide()
+        if self._pane_data is None:
+            self.table.hide()
             self.preview.hide()
             self.preview_label.hide()
             self.not_running_label.show()
-            self.target_edit.setEnabled(False)
+            self.table.blockSignals(False)
             return
 
         self.not_running_label.hide()
-        self.tree.show()
+        self.table.show()
         self.preview.show()
         self.preview_label.show()
-        self.target_edit.setEnabled(True)
 
-        for session_name in sorted(hierarchy.keys()):
-            session_item = QTreeWidgetItem([f"▼ 📁 {session_name}"])
-            session_item.setData(0, Qt.ItemDataRole.UserRole, session_name)
+        self.table.setRowCount(len(self._pane_data))
+        for row, pane in enumerate(self._pane_data):
+            pane_id = pane['pane_id']
+            saved = S.TMUX_PANE_NAMES.get(pane_id, {})
 
-            for win_idx in sorted(hierarchy[session_name].keys(), key=int):
-                win_data = hierarchy[session_name][win_idx]
-                win_target = f"{session_name}:{win_idx}"
-                win_item = QTreeWidgetItem([f"▼ 🪟 {win_idx}: {win_data['name']}"])
-                win_item.setData(0, Qt.ItemDataRole.UserRole, win_target)
+            # Address (read-only)
+            addr_item = QTableWidgetItem(pane['address'])
+            addr_item.setFlags(addr_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            addr_item.setData(Qt.ItemDataRole.UserRole, pane_id)
+            self.table.setItem(row, self.COL_ADDRESS, addr_item)
 
-                for pane in win_data['panes']:
-                    pane_target = f"{session_name}:{win_idx}.{pane['idx']}"
-                    # Check if AI coder
-                    is_ai = any(ai in pane['cmd'].lower() for ai in AI_CODER_PROCESSES)
-                    star = " ⭐" if is_ai else ""
-                    pane_item = QTreeWidgetItem([f"    {pane['idx']}: {pane['cmd']}{star}"])
-                    pane_item.setData(0, Qt.ItemDataRole.UserRole, pane_target)
-                    pane_item.setToolTip(0, pane_target)
-                    win_item.addChild(pane_item)
+            # Pane ID (read-only)
+            id_item = QTableWidgetItem(pane_id)
+            id_item.setFlags(id_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            self.table.setItem(row, self.COL_PANE_ID, id_item)
 
-                session_item.addChild(win_item)
+            # Process (read-only)
+            proc_item = QTableWidgetItem(pane['process'])
+            proc_item.setFlags(proc_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            self.table.setItem(row, self.COL_PROCESS, proc_item)
 
-            self.tree.addTopLevelItem(session_item)
+            # Magic Phrase (editable) - single phrase per pane
+            phrase = saved.get('phrase', '')
+            phrase_item = QTableWidgetItem(phrase)
+            self.table.setItem(row, self.COL_PHRASE, phrase_item)
 
-        # Expand all by default
-        self.tree.expandAll()
+        self.table.resizeColumnsToContents()
+        self.table.setColumnWidth(self.COL_PHRASE, 120)
+        self.table.blockSignals(False)
 
-    def _on_item_clicked(self, item, column):
-        """When tree item clicked, update target text box."""
-        target = item.data(0, Qt.ItemDataRole.UserRole)
-        if target:
-            self.target_edit.setText(target)
+        # Select first row by default
+        if self._pane_data:
+            self.table.selectRow(0)
+            self._selected_pane_id = self._pane_data[0]['pane_id']
+            self._update_preview(self._selected_pane_id)
 
-    def _on_item_hover(self, item, column):
-        """When hovering over tree item, show preview."""
-        target = item.data(0, Qt.ItemDataRole.UserRole)
-        if target:
-            self._hover_target = target
-            self._update_preview()
-
-    def _on_tree_leave(self):
-        """When mouse leaves tree, revert to showing current target."""
-        self._hover_target = None
-        self._update_preview()
-
-    def _on_item_double_clicked(self, item, column):
-        """Toggle expand/collapse on double-click."""
-        if item.childCount() > 0:
-            item.setExpanded(not item.isExpanded())
-
-    def _on_item_expanded(self, item):
-        """Update indicator when item expands."""
-        text = item.text(0)
-        if text.startswith("▶"):
-            item.setText(0, "▼" + text[1:])
-
-    def _on_item_collapsed(self, item):
-        """Update indicator when item collapses."""
-        text = item.text(0)
-        if text.startswith("▼"):
-            item.setText(0, "▶" + text[1:])
-
-    def _on_target_changed(self, text):
-        """When target text changes, validate and update preview."""
-        self.selected_target = text
-        self._hover_target = None
-        self._validate_target()
-        self._update_preview()
-
-    def _validate_target(self):
-        """Check if current target is valid."""
-        target = self.target_edit.text().strip()
-        if not target:
-            self.validation_label.setText("Target cannot be empty")
-            return False
-
-        if target == '%':
-            self.validation_label.setText("")
-            return True
-
-        # Try to get pane info
-        try:
-            result = subprocess.run(
-                ['tmux', 'display-message', '-t', target, '-p', '#{pane_id}'],
-                capture_output=True, text=True, timeout=1
-            )
-            if result.returncode == 0 and result.stdout.strip():
-                self.validation_label.setText("")
-                return True
-            else:
-                self.validation_label.setText(f"Invalid: {target}")
-                return False
-        except (subprocess.TimeoutExpired, FileNotFoundError):
-            self.validation_label.setText("tmux unavailable")
-            return False
-
-    def _update_preview(self):
-        """Update preview panel with scrollback from target."""
-        target = self._hover_target or self.target_edit.text().strip()
-        if not target:
-            self.preview_label.setText("")
-            self.preview.setPlainText("")
+    def _on_cell_clicked(self, row, col):
+        """Single-click on Magic Phrase column starts editing."""
+        if row >= len(self._pane_data):
             return
+        pane_id = self._pane_data[row]['pane_id']
+        self._selected_pane_id = pane_id
+        # Update preview to selected row (not hover)
+        if self._hover_pane_id is None:
+            self._update_preview(pane_id)
+        # Single-click on phrase column = start editing
+        if col == self.COL_PHRASE:
+            self.table.editItem(self.table.item(row, col))
 
-        # Update label
-        self.preview_label.setText(f"Preview: {target}")
+    def _on_selection_changed(self):
+        """Update selected pane when selection changes."""
+        rows = self.table.selectionModel().selectedRows()
+        if rows and rows[0].row() < len(self._pane_data):
+            pane_id = self._pane_data[rows[0].row()]['pane_id']
+            self._selected_pane_id = pane_id
+            # Update preview if not hovering
+            if self._hover_pane_id is None:
+                self._update_preview(pane_id)
 
-        # Get scrollback (cached)
-        text = _get_tmux_scrollback(target)
+    def _on_cell_changed(self, row, col):
+        """Save phrase when cell changes."""
+        if row >= len(self._pane_data) or col != self.COL_PHRASE:
+            return
+        pane_id = self._pane_data[row]['pane_id']
+        phrase = self.table.item(row, col).text().strip()
+        if phrase:
+            S.TMUX_PANE_NAMES[pane_id] = {'phrase': phrase}
+        elif pane_id in S.TMUX_PANE_NAMES:
+            del S.TMUX_PANE_NAMES[pane_id]
+
+    def eventFilter(self, obj, event):
+        """Handle mouse hover for preview."""
+        from PyQt6.QtCore import QEvent
+        if obj == self.table.viewport():
+            if event.type() == QEvent.Type.MouseMove:
+                pos = event.position().toPoint()
+                row = self.table.rowAt(pos.y())
+                col = self.table.columnAt(pos.x())
+                # Update cursor for phrase column
+                if col == self.COL_PHRASE and row >= 0:
+                    self.table.viewport().setCursor(Qt.CursorShape.IBeamCursor)
+                else:
+                    self.table.viewport().setCursor(Qt.CursorShape.ArrowCursor)
+                # Hover preview
+                if row >= 0 and row < len(self._pane_data):
+                    pane_id = self._pane_data[row]['pane_id']
+                    if pane_id != self._hover_pane_id:
+                        self._hover_pane_id = pane_id
+                        self._update_preview(pane_id)
+                else:
+                    self._hover_pane_id = None
+            elif event.type() == QEvent.Type.Leave:
+                self._hover_pane_id = None
+                self.table.viewport().setCursor(Qt.CursorShape.ArrowCursor)
+                # Revert to selected row preview
+                if self._selected_pane_id:
+                    self._update_preview(self._selected_pane_id)
+        return super().eventFilter(obj, event)
+
+    def _update_preview(self, pane_id):
+        """Update preview panel with scrollback from pane."""
+        self.preview_label.setText(f"Preview: {pane_id}")
+        text = _get_tmux_scrollback(pane_id)
         if text is not None:
             self.preview.setPlainText(text)
-            # Scroll to bottom
             sb = self.preview.verticalScrollBar()
             sb.setValue(sb.maximum())
         else:
-            self.preview.setPlainText(f"(cannot preview {target})")
+            self.preview.setPlainText(f"(cannot preview {pane_id})")
 
     def _accept_selection(self):
-        """Accept current selection if valid."""
-        if self._validate_target():
-            self.selected_target = self.target_edit.text().strip()
-            self.accept()
+        """Accept and save."""
+        # Clean up stale pane_ids from TMUX_PANE_NAMES
+        if self._pane_data:
+            live_ids = {p['pane_id'] for p in self._pane_data}
+            stale = [pid for pid in S.TMUX_PANE_NAMES if pid not in live_ids]
+            for pid in stale:
+                del S.TMUX_PANE_NAMES[pid]
+        # Set selected as target
+        if self._selected_pane_id:
+            self.selected_target = self._selected_pane_id
+        self.accept()
 
     def keyPressEvent(self, e):
         if e.key() == Qt.Key.Key_Escape:
             self.reject()
         elif e.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
-            self._accept_selection()
+            if self.table.state() != QTableWidget.State.EditingState:
+                self._accept_selection()
         else:
             super().keyPressEvent(e)
 
@@ -2120,6 +2108,24 @@ class PrefsDialog(DraggableDialog):
         context_row.addWidget(self.context_edit, 1)
         settings_box.addLayout(context_row)
 
+        # Tmux phrases as context words
+        phrases_ctx_row = QHBoxLayout()
+        phrases_ctx_row.setSpacing(8)
+        self.phrases_ctx_check = QCheckBox("+tmux phrases")
+        self.phrases_ctx_check.setChecked(S.TMUX_PHRASES_AS_CONTEXT)
+        self.phrases_ctx_check.setStyleSheet(f"QCheckBox {{ color: {TEXT_PRIMARY}; font-size: 11px; }}")
+        set_tooltip(self.phrases_ctx_check,
+            "Include tmux magic phrases as context words.\n"
+            "Helps Whisper recognize phrase words in speech."
+        )
+        self.phrases_ctx_check.stateChanged.connect(self._on_phrases_ctx_changed)
+        phrases_ctx_row.addWidget(self.phrases_ctx_check)
+        self.phrases_ctx_label = QLabel("")
+        self.phrases_ctx_label.setStyleSheet(f"color: #888; font-size: 11px;")
+        self._update_phrases_ctx_label()
+        phrases_ctx_row.addWidget(self.phrases_ctx_label, 1)
+        settings_box.addLayout(phrases_ctx_row)
+
         # LLM section
         settings_box.addWidget(make_section("LLM Post-Processing"))
         # Model dropdown
@@ -2439,6 +2445,24 @@ class PrefsDialog(DraggableDialog):
 
     def _on_context_changed(self, text):
         S.CUSTOM_WORDS = text
+
+    def _on_phrases_ctx_changed(self, state):
+        S.TMUX_PHRASES_AS_CONTEXT = bool(state)
+        self._update_phrases_ctx_label()
+
+    def _update_phrases_ctx_label(self):
+        """Show all phrase words in gray if checkbox is checked."""
+        if S.TMUX_PHRASES_AS_CONTEXT and S.TMUX_PANE_NAMES:
+            words = set()
+            for info in S.TMUX_PANE_NAMES.values():
+                phrase = info.get('phrase', '')
+                words.update(phrase.split())
+            if words:
+                self.phrases_ctx_label.setText(' '.join(sorted(words)))
+            else:
+                self.phrases_ctx_label.setText("")
+        else:
+            self.phrases_ctx_label.setText("")
 
     def _on_llm_model_changed(self, index):
         S.LLM_MODEL = self.llm_model_combo.itemData(index)
@@ -3736,7 +3760,6 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         self.tray.setIcon(_get_menubar_icon())
         # Tray icon animation state
         self.tray_hue = 0.0
-        self.tray_phase = 0.0  # For brightness pulsing
         self.tray_icon_timer = QTimer(self)
         self.tray_icon_timer.timeout.connect(self._update_tray_icon)
         menu = QMenu()
@@ -3755,11 +3778,9 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         self.tray.show()
 
     def _update_tray_icon(self):
-        """Update tray icon with rainbow pulsing effect."""
-        self.tray_hue = (self.tray_hue + 2) % 360  # Cycle hue
-        self.tray_phase += 0.15  # Pulse speed
-        brightness = 0.75 + 0.25 * math.sin(self.tray_phase)  # Pulse 50-100%
-        self.tray.setIcon(_get_menubar_icon(hue=self.tray_hue, brightness=brightness))
+        """Update tray icon with cycling hue."""
+        self.tray_hue = (self.tray_hue + 2) % 360
+        self.tray.setIcon(_get_menubar_icon(hue=self.tray_hue))
 
     def _maybe_hide(self):
         if not S.AUTO_HIDE:
@@ -3861,17 +3882,23 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
 
         self._copy_to_clipboard(text)
 
+        # Voice routing: if tmux mode enabled, check for phrase matches
+        tmux_routed = False
         if S.TMUX_MODE:
-            # TMUX mode: send directly to tmux pane using send-keys
+            matches = self._find_matching_tmux_panes(text)
+            if matches:
+                # Magic phrase matched - route to tmux panes (skip ⌘V)
+                time.sleep(0.1)
+                play_chime('tmux_send')
+                self._do_tmux_paste_to_targets(matches, text)
+                tmux_routed = True
+
+        # ⌘V paste: only if enabled AND tmux didn't route
+        if S.AUTO_PASTE and not tmux_routed:
             time.sleep(0.1)
-            self._do_tmux_paste(text)
-        elif S.AUTO_PASTE:
-            time.sleep(0.1)
-            # Normal mode: Cmd+V to paste in focused app
             kb = KeyboardController()
             with kb.pressed(Key.cmd):
                 kb.tap("v")
-            # Enter key only makes sense with a paste mode enabled
             if S.AUTO_ENTER:
                 time.sleep(S.ENTER_DELAY)
                 play_chime('enter')
@@ -3881,21 +3908,52 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
 
     def _do_tmux_paste(self, text):
         """Paste text into the configured tmux pane and optionally press enter."""
-        # Use tmux send-keys to paste text into target pane
-        # -l flag sends text literally (no key interpretation)
-        # -t flag specifies target pane (default '%' = current pane)
         target = S.TMUX_TARGET or '%'
+        self._do_tmux_paste_to_target(target, text)
+
+    def _do_tmux_paste_to_target(self, target, text):
+        """Send text to a specific tmux target (pane_id or session:window.pane)."""
         try:
             subprocess.run(['tmux', 'send-keys', '-t', target, '-l', text], check=True)
             if S.AUTO_ENTER:
                 time.sleep(S.ENTER_DELAY)
                 play_chime('enter')
                 subprocess.run(['tmux', 'send-keys', '-t', target, 'Enter'], check=True)
-            print(f"Sent to tmux ({target}): {text[:50]}{'...' if len(text) > 50 else ''}")
+            phrase = S.TMUX_PANE_NAMES.get(target, {}).get('phrase', target)
+            print(f"Sent to tmux '{phrase}' ({target}): {text[:50]}{'...' if len(text) > 50 else ''}")
         except subprocess.CalledProcessError as e:
             print(f"tmux send-keys failed: {e}")
         except FileNotFoundError:
             print("tmux not found - is tmux installed and running?")
+
+    def _do_tmux_paste_to_targets(self, targets, text):
+        """Send text to multiple tmux targets simultaneously, then Enter simultaneously."""
+        # Send text to all targets at once
+        for target in targets:
+            try:
+                subprocess.Popen(['tmux', 'send-keys', '-t', target, '-l', text])
+            except FileNotFoundError:
+                print("tmux not found")
+                return
+        # Wait for text to be sent, then send Enter to all
+        if S.AUTO_ENTER:
+            time.sleep(S.ENTER_DELAY)
+            play_chime('enter')
+            for target in targets:
+                subprocess.Popen(['tmux', 'send-keys', '-t', target, 'Enter'])
+        # Log what was sent
+        names = [S.TMUX_PANE_NAMES.get(t, {}).get('phrase', t) for t in targets]
+        print(f"Sent to {len(targets)} panes ({', '.join(names)}): {text[:50]}{'...' if len(text) > 50 else ''}")
+
+    def _find_matching_tmux_panes(self, text):
+        """Find panes whose magic phrase matches the transcription text."""
+        text_lower = text.lower()
+        matches = []
+        for pane_id, info in S.TMUX_PANE_NAMES.items():
+            phrase = info.get('phrase', '')
+            if phrase and phrase.lower() in text_lower:
+                matches.append(pane_id)
+        return matches
 
     def _update_display(self):
         if self.audio_chunks:
@@ -4262,7 +4320,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
             self._save_settings()
 
     def _load_wake_word_model(self):
-        """Lazy load OpenWakeWord model."""
+        """Lazy load OpenWakeWord model. Returns False if unavailable (graceful degradation)."""
         if self.wake_word_model is not None:
             return True
         try:
@@ -4282,7 +4340,8 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
             return True
         except Exception as e:
             print(f"Failed to load wake word model: {e}")
-            raise
+            print("Wake word detection disabled (install models with: openwakeword --download-models)")
+            return False
 
     def _start_wake_word_listener(self):
         """Start always-on audio stream for wake word detection."""
@@ -4452,7 +4511,8 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         # Simple settings without hooks (or with trivial hooks)
         for key in ['ENTER_DELAY', 'WAKE_WORD_SENSITIVITY', 'CUSTOM_WORDS', 'WHISPER_MODEL',
                     'LLM_MODEL', 'LLM_PREFIX', 'CHIME_VOLUME', 'CHIME_PITCH',
-                    'CHIME_PROGRAM', 'CHIME_THEME', 'SILENCE_SKIP_ENABLED', 'SILENCE_THRESHOLD']:
+                    'CHIME_PROGRAM', 'CHIME_THEME', 'SILENCE_SKIP_ENABLED', 'SILENCE_THRESHOLD',
+                    'TMUX_TARGET', 'TMUX_PANE_NAMES', 'TMUX_PHRASES_AS_CONTEXT', 'RECORDINGS_DIR']:
             if key in data:
                 S[key] = data[key]
         # SIMPLE_MODE needs toggle pattern
@@ -4571,10 +4631,22 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         self.last_audio_path = path
         threading.Thread(target=self._transcribe_file_thread, args=(path,), daemon=True).start()
 
+    def _get_initial_prompt(self):
+        """Get initial_prompt for Whisper, including tmux phrase words if enabled."""
+        words = S.CUSTOM_WORDS or ""
+        if S.TMUX_PHRASES_AS_CONTEXT and S.TMUX_PANE_NAMES:
+            phrase_words = set()
+            for info in S.TMUX_PANE_NAMES.values():
+                phrase = info.get('phrase', '')
+                phrase_words.update(phrase.split())
+            if phrase_words:
+                words = f"{words} {' '.join(phrase_words)}".strip()
+        return words or None
+
     def _transcribe_file_thread(self, path):
         try:
             print(f"Transcribing file: {path}")
-            initial_prompt = S.CUSTOM_WORDS or None
+            initial_prompt = self._get_initial_prompt()
             # Note: carry_initial_prompt not yet exposed in pywhispercpp C bindings
             result = rp.transcribe_audio_file_via_whisper(
                 path, model=S.WHISPER_MODEL, show_progress=True,
@@ -4706,7 +4778,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
 
             scipy.io.wavfile.write(wav_path, SAMPLE_RATE, (audio * 32767).astype(np.int16))
             self.last_audio_path = wav_path
-            initial_prompt = S.CUSTOM_WORDS or None
+            initial_prompt = self._get_initial_prompt()
             # Note: carry_initial_prompt not yet exposed in pywhispercpp C bindings
             result = rp.transcribe_audio_file_via_whisper(
                 wav_path, model=S.WHISPER_MODEL, show_progress=True,
@@ -4807,6 +4879,12 @@ def main():
     def load_model():
         print(f"Loading Whisper ({S.WHISPER_MODEL})...")
         rp.r._get_pywhispercpp_model(S.WHISPER_MODEL)
+        # Download openwakeword models if not already present
+        try:
+            import openwakeword
+            openwakeword.utils.download_models()
+        except Exception as e:
+            print(f"openwakeword model download skipped: {e}")
         print(f"{APP_NAME} ready. Double-tap ⌥ to record.")
     threading.Thread(target=load_model, daemon=True).start()
 
