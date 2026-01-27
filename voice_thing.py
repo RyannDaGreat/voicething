@@ -108,6 +108,7 @@ CHIME_THEMES = {
         'start_rec':      (([2, 6], [9, 14]), 0.08),    # B+Eb→F#+B5
         'stop_rec':       (([14, 9], [6, 2]), 0.08),    # B5+F#→Eb+B descend
         'transcribe':     (([2], [6], [9], [14]), 0.08),# B→Eb→F#→B5 arpeggio
+        'null_text':      (([-10], [-10]), 0.06),       # Low B twice (from stop_rec)
         'llm_start':      (([7, 11],), 0.06),           # E+G# LLM start
         'llm_done':       (([11, 14, 18],), 0.08),      # G#+B+D#6 LLM done
         'tmux_send':      (([8, 16],), 0.05),            # C#5→C#6 (copy reversed, high -12)
@@ -128,6 +129,7 @@ CHIME_THEMES = {
         'start_rec':      (([0],), 0.05),               # A4 single
         'stop_rec':       (([7, 2],), 0.05),            # E5+B4
         'transcribe':     (([-2],), 0.04),              # G4 single
+        'null_text':      (([-5], [-5]), 0.04),         # Low E twice (from stop_rec)
         'llm_start':      (([-12, -5],), 0.04),         # A3+E4
         'llm_done':       (([12, 19],), 0.06),          # A5+E6 octave+5th
         'tmux_send':      (([-12],), 0.03),             # A3 octave down (copy reversed)
@@ -148,6 +150,7 @@ CHIME_THEMES = {
         'start_rec':      (([0, 3],), 0.08),            # A+C minor 3rd
         'stop_rec':       (([3, 6, 10],), 0.08),        # C+Eb+G (Cm)
         'transcribe':     (([-9, -5, -2],), 0.06),      # C4+E4+G4
+        'null_text':      (([-9], [-9]), 0.05),         # Low C twice (from stop_rec)
         'llm_start':      (([-7, -4],), 0.06),          # D4+F4 (Dm feel)
         'llm_done':       (([0, 4, 7, 10],), 0.1),      # A7 blues resolve
         'tmux_send':      (([3, 12],), 0.05),            # C5→A5 (copy reversed, high -12)
@@ -169,6 +172,7 @@ CHIME_THEMES = {
         'start_rec':      (([-12, 0, 2],), 0.1),        # A3+A+B (Asus2 low)
         'stop_rec':       (([7, 12, 14],), 0.1),        # E+A5+B5 (Esus4 high)
         'transcribe':     (([5, 9, 12],), 0.08),        # D+F#+A (Dsus2)
+        'null_text':      (([-5], [-5]), 0.06),         # Low E twice (from stop_rec)
         'llm_start':      (([0, 7, 14],), 0.08),        # A+E+B5 (Asus2/E)
         'llm_done':       (([2, 9, 14, 21],), 0.1),     # B+F#+B5+E6 (soar)
         'tmux_send':      (([14, 19, 14],), 0.06),       # B5→E6→B5 (copy reversed, high -12)
@@ -189,6 +193,7 @@ CHIME_THEMES = {
         'start_rec':      (([0, 3, 8],), 0.1),          # A+C+F (Am add b6)
         'stop_rec':       (([7, 10, 15],), 0.1),        # E+G+C6 (Cmaj high)
         'transcribe':     (([3, 5, 10],), 0.08),        # C+D+G
+        'null_text':      (([-5], [-5]), 0.06),         # Low E twice (from stop_rec)
         'llm_start':      (([5, 8, 10],), 0.08),        # D+F+G (Dm7 no root)
         'llm_done':       (([-12, -5, 0, 3],), 0.12),   # Am with low root
         'tmux_send':      (([7, 15, 12],), 0.08),        # E5→C6→A5 (copy reversed, high -12)
@@ -211,6 +216,7 @@ CHIME_THEMES = {
         # 'start_rec':   (([-5,0,4],[0, 4, 7]), 0.12), # A major
         # 'stop_rec':    (([-12, -8, -5],[-24]), 0.12),# A major low
         'transcribe':     (([7, 11, 14],), 0.05),       # E+G#+B (E)
+        'null_text':      (([-10], [-10]), 0.04),       # Low B twice (from stop_rec)
         'llm_start':      (([-5, 2],), 0.05),            # E4+B (5th buildup)
         'llm_done':       (([0, 4, 7],), 0.06),         # A+C#+E (resolution)
         'tmux_send':      (([4, 12],), 0.04),            # C#5→A5 (copy reversed, high -12)
@@ -231,6 +237,7 @@ CHIME_THEMES = {
         'start_rec':      (([7, 10, 14, 17],), 0.08),   # Em7+D (Em9)
         'stop_rec':       (([0, 4, 7, 14],), 0.08),     # A+C#+E+B (Amaj9 no7)
         'transcribe':     (([5, 9, 12, 16],), 0.06),    # D+F#+A+C# (Dmaj7)
+        'null_text':      (([-12], [-12]), 0.05),       # Low A twice (from stop_rec root)
         'llm_start':      (([2, 5, 8, 11],), 0.06),     # B+D+F+G# (Bdim7)
         'llm_done':       (([0, 4, 7, 11, 14],), 0.1),  # Amaj9
         'tmux_send':      (([9, 16, 12],), 0.05),        # F#5→C#6→A5 (copy reversed, high -12)
@@ -813,11 +820,14 @@ def make_searchable_dropdown(items, current_value, on_change=None):
     return combo
 
 def make_labeled_textedit(label_text, value, placeholder, tooltip, on_change=None, height=80, default=None, presets=None):
-    """Create a labeled multiline text edit. Returns (textedit, row_layout).
+    """Create a labeled multiline text edit. Returns (textedit, row_layout, preset_callback).
 
     Args:
         presets: Optional list of (key, value, description) tuples for preset selection dialog.
-                 If provided, clicking reset shows a preset selection dialog instead of resetting directly.
+                 If provided, shows a "P  Presets" button instead of reset icon.
+
+    Returns:
+        (textedit, row_layout, preset_callback) - preset_callback is None if no presets.
     """
     row = QVBoxLayout()
     row.setSpacing(4)
@@ -828,26 +838,37 @@ def make_labeled_textedit(label_text, value, placeholder, tooltip, on_change=Non
         set_tooltip(label, tooltip)
     header.addWidget(label)
     edit = QTextEdit()  # Create early so we can reference in closure
-    if default is not None or presets is not None:
+    preset_callback = None
+
+    if presets is not None:
+        # Styled button with icon and keyboard shortcut label
+        preset_btn = QPushButton("P  Presets")
+        preset_btn.setIcon(load_icon("reset", ICON_COLOR_DARK))
+        preset_btn.setIconSize(QSize(14, 14))
+        preset_btn.setStyleSheet(get_btn_css())
+        preset_btn.setToolTip("Select a prompt preset (P)")
+        header.addWidget(preset_btn)
+
+        def on_preset_click():
+            current = edit.toPlainText()
+            dialog = OptionsDialog("Select Preset", presets, current, edit.window())
+            dialog.center_on_parent()
+            if dialog.exec() and dialog.selected_value is not None:
+                edit.setPlainText(dialog.selected_value)
+
+        preset_btn.clicked.connect(on_preset_click)
+        preset_callback = on_preset_click
+    elif default is not None:
+        # Simple reset icon button
         reset_btn = QPushButton()
         reset_btn.setIcon(load_icon("reset", ICON_COLOR_DARK))
         reset_btn.setFixedSize(20, 20)
         reset_btn.setIconSize(QSize(14, 14))
-        reset_btn.setToolTip("Select preset" if presets else "Reset to default")
+        reset_btn.setToolTip("Reset to default")
         reset_btn.setStyleSheet("QPushButton { padding: 0; border: none; background: transparent; }")
         header.addWidget(reset_btn)
+        reset_btn.clicked.connect(lambda: edit.setPlainText(default))
 
-        def on_reset_click():
-            if presets:
-                current = edit.toPlainText()
-                dialog = OptionsDialog("Select Preset", presets, current, edit.window())
-                dialog.center_on_parent()
-                if dialog.exec() and dialog.selected_value is not None:
-                    edit.setPlainText(dialog.selected_value)
-            elif default is not None:
-                edit.setPlainText(default)
-
-        reset_btn.clicked.connect(on_reset_click)
     header.addStretch()
     row.addLayout(header)
     edit.setPlainText(value)
@@ -860,7 +881,7 @@ def make_labeled_textedit(label_text, value, placeholder, tooltip, on_change=Non
     if on_change:
         edit.textChanged.connect(on_change)
     row.addWidget(edit)
-    return edit, row
+    return edit, row, preset_callback
 
 def get_slider_css():
     """Get slider CSS for preference dialogs."""
@@ -2232,7 +2253,7 @@ class PrefsDialog(DraggableDialog):
 
         # LLM section
         settings_box.addWidget(make_section("LLM Post-Processing"))
-        # Model dropdown
+        # Model dropdown with enable checkbox
         llm_model_row = QHBoxLayout()
         llm_model_row.setSpacing(8)
         llm_model_label = QLabel("Model:")
@@ -2249,9 +2270,15 @@ class PrefsDialog(DraggableDialog):
             LLM_MODELS, S.LLM_MODEL, self._on_llm_model_changed
         )
         llm_model_row.addWidget(self.llm_model_combo, 1)
+        self.llm_enabled_checkbox = QCheckBox("Enable")
+        self.llm_enabled_checkbox.setChecked(S.LLM_ENABLED)
+        self.llm_enabled_checkbox.setStyleSheet(f"QCheckBox {{ color: {TEXT_PRIMARY}; font-size: 11px; }}")
+        self.llm_enabled_checkbox.setToolTip("Enable LLM post-processing (R)")
+        self.llm_enabled_checkbox.stateChanged.connect(self._on_llm_enabled_changed)
+        llm_model_row.addWidget(self.llm_enabled_checkbox)
         settings_box.addLayout(llm_model_row)
         # Prompt prefix
-        self.llm_prefix_edit, llm_prefix_layout = make_labeled_textedit(
+        self.llm_prefix_edit, llm_prefix_layout, self._show_preset_dialog = make_labeled_textedit(
             "Prompt Prefix:",
             S.LLM_PREFIX or DEFAULT_LLM_PREFIX,
             "Leave empty for default de-ramble prompt...",
@@ -2568,6 +2595,9 @@ class PrefsDialog(DraggableDialog):
         else:
             self.phrases_ctx_label.setText("")
 
+    def _on_llm_enabled_changed(self, state):
+        S.set('LLM_ENABLED', state == Qt.CheckState.Checked.value)
+
     def _on_llm_model_changed(self, index):
         S.LLM_MODEL = self.llm_model_combo.itemData(index)
 
@@ -2609,6 +2639,8 @@ class PrefsDialog(DraggableDialog):
             self.reject()
         elif key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
             self.accept()
+        elif key == Qt.Key.Key_P and self._show_preset_dialog:
+            self._show_preset_dialog()
         elif Qt.Key.Key_1 <= key <= Qt.Key.Key_9 and not self.piano.hasFocus():
             # Number keys 1-9 select themes (when piano not focused)
             idx = key - Qt.Key.Key_1
@@ -4811,6 +4843,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         self.tray.setIcon(_get_menubar_icon())  # Reset to template icon
         self._set_state("transcribing", "Transcribing...")
         self.pet_container.set_listening(False)
+        self.pet_container.set_processing(True)  # Emmy: record spin while transcribing
         self._switch_tab(0)  # Switch to Output tab during transcription
         play_chime('stop_rec')  # D key: stop recording
         audio = np.concatenate(self.audio_chunks) if self.audio_chunks else np.array([])
@@ -4843,6 +4876,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
             raw_text = strip_wake_words(text)
         print(f"Result: {raw_text!r}")
         if not raw_text:
+            play_chime('null_text')  # No text detected
             return
         play_chime('transcribe')  # Transcription done chime
 
@@ -4897,6 +4931,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
 
     def _finish(self):
         self._cleanup()
+        self.pet_container.set_processing(False)  # Emmy: stop record spin
         self._set_state("idle")
         # Reset wake word model to clear any buffered audio that might cause false triggers
         if self.wake_word_model is not None:

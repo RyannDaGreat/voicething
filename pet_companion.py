@@ -11,6 +11,7 @@ Includes LPC Cats & Dogs (CC-BY 3.0) with sleep/eat animations.
 """
 
 import os
+import random
 import subprocess
 from enum import Enum, auto
 from typing import Optional
@@ -30,6 +31,8 @@ BG_COLORS_TO_KEY = {
     "lpc_dog_golden": None, "lpc_dog_black": None,
     "lpc_cat_white": None, "lpc_cat_orange": None,
     "lpc_cat_gray": None, "lpc_cat_black": None,
+    # Emmy has proper alpha
+    "emmy": None,
 }
 
 
@@ -70,6 +73,13 @@ class PetState(Enum):
     COPY = auto()
     BARK = auto()
     EATING = auto()
+    HOVER = auto()       # Mouse hover (blink/tilt for Emmy)
+    # Emmy-specific states
+    RECORD = auto()      # Spinning on vinyl record
+    GRAMOPHONE = auto()  # Listening to gramophone
+    ROLLING = auto()     # Belly rub / rolling
+    BUTTON = auto()      # Pushing red button
+    TOAST = auto()       # Eating toast
 
 
 class PetType(Enum):
@@ -88,6 +98,8 @@ class PetType(Enum):
     LPC_CAT_ORANGE = "lpc_cat_orange"
     LPC_CAT_GRAY = "lpc_cat_gray"
     LPC_CAT_BLACK = "lpc_cat_black"
+    # Emmy - special dog with unique animations
+    EMMY = "emmy"
 
 
 # Animation mappings: (PetType, PetState) -> (filename, loop_count)
@@ -143,11 +155,28 @@ for color in ["white", "orange", "gray", "black"]:
     PET_ANIMATIONS[(pt, PetState.BARK)] = ("walk_left.gif", 1)
     PET_ANIMATIONS[(pt, PetState.EATING)] = ("eat.gif", -1)
 
+# Emmy animations - special dog with unique behaviors
+# See assets/pets/emmy2/create_gifs.py for sprite documentation
+PET_ANIMATIONS[(PetType.EMMY, PetState.IDLE)] = ("idle.png", -1)        # STILL image, not animated
+PET_ANIMATIONS[(PetType.EMMY, PetState.HOVER)] = ("hover.gif", -1)      # Blink/tilt on mouse hover
+PET_ANIMATIONS[(PetType.EMMY, PetState.LISTENING)] = ("record.gif", -1) # or gramophone (50/50)
+PET_ANIMATIONS[(PetType.EMMY, PetState.SLEEPING)] = ("idle.png", -1)
+PET_ANIMATIONS[(PetType.EMMY, PetState.PETTING)] = ("rolling.gif", 2)   # or toast (50/50)
+PET_ANIMATIONS[(PetType.EMMY, PetState.COPY)] = ("bark.gif", 1)
+PET_ANIMATIONS[(PetType.EMMY, PetState.BARK)] = ("bark.gif", 1)         # or button (50/50)
+PET_ANIMATIONS[(PetType.EMMY, PetState.EATING)] = ("toast.gif", -1)
+# Emmy-specific states
+PET_ANIMATIONS[(PetType.EMMY, PetState.RECORD)] = ("record.gif", -1)
+PET_ANIMATIONS[(PetType.EMMY, PetState.GRAMOPHONE)] = ("gramophone.gif", -1)
+PET_ANIMATIONS[(PetType.EMMY, PetState.ROLLING)] = ("rolling.gif", 2)
+PET_ANIMATIONS[(PetType.EMMY, PetState.BUTTON)] = ("button.gif", 1)
+PET_ANIMATIONS[(PetType.EMMY, PetState.TOAST)] = ("toast.gif", 2)
+
 
 def _get_pet_sound_category(pet_type: PetType) -> str:
     """Get the sound category (dog/cat/mouse) for a pet type."""
     if pet_type in (PetType.DOG, PetType.LPC_DOG_WHITE, PetType.LPC_DOG_TAN,
-                    PetType.LPC_DOG_GOLDEN, PetType.LPC_DOG_BLACK):
+                    PetType.LPC_DOG_GOLDEN, PetType.LPC_DOG_BLACK, PetType.EMMY):
         return "dog"
     elif pet_type in (PetType.CAT, PetType.LPC_CAT_WHITE, PetType.LPC_CAT_ORANGE,
                       PetType.LPC_CAT_GRAY, PetType.LPC_CAT_BLACK):
@@ -169,6 +198,8 @@ def get_pet_asset_path(pet_type: PetType, filename: str) -> str:
         return os.path.join(PETS_DIR, "cat", "cat sprite", filename)
     elif pet_type == PetType.MOUSE:
         return os.path.join(PETS_DIR, "rodent", "PNG", "32x32", filename)
+    elif pet_type == PetType.EMMY:
+        return os.path.join(PETS_DIR, "emmy2", filename)
     elif pet_type.value.startswith("lpc_"):
         # LPC pets are in lpc/{pet_type.value}/
         return os.path.join(PETS_DIR, "lpc", pet_type.value, filename)
@@ -214,10 +245,31 @@ class PetCompanionWidget(QWidget):
             self._return_timer.stop()
 
     def set_listening(self, is_listening: bool):
-        """Set whether the app is recording."""
+        """Set whether the app is recording.
+
+        Emmy behavior: gramophone when recording (listening to you speak)
+        """
         if is_listening:
-            self.set_state(PetState.LISTENING)
-        elif self._state == PetState.LISTENING:
+            if self.pet_type == PetType.EMMY:
+                # Emmy: gramophone while recording (listening)
+                self.set_state(PetState.GRAMOPHONE)
+            else:
+                self.set_state(PetState.LISTENING)
+        elif self._state in (PetState.LISTENING, PetState.RECORD, PetState.GRAMOPHONE):
+            self.set_state(PetState.IDLE)
+
+    def set_processing(self, is_processing: bool):
+        """Set whether the app is transcribing/processing.
+
+        Emmy behavior: record spin while processing/transcribing
+        """
+        if is_processing:
+            if self.pet_type == PetType.EMMY:
+                self.set_state(PetState.RECORD)
+            else:
+                # Other pets could have a processing animation here
+                pass
+        elif self._state == PetState.RECORD:
             self.set_state(PetState.IDLE)
 
     def set_sleeping(self, is_sleeping: bool):
@@ -232,8 +284,15 @@ class PetCompanionWidget(QWidget):
         self.set_state(PetState.COPY, duration_ms=1500)
 
     def trigger_bark(self, play_sound: bool = True):
-        """Trigger bark/meow/squeak animation with optional sound."""
-        self.set_state(PetState.BARK, duration_ms=1000)
+        """Trigger bark/meow/squeak animation with optional sound.
+
+        Emmy behavior: 50% bark, 50% push red button
+        """
+        if self.pet_type == PetType.EMMY:
+            state = random.choice([PetState.BARK, PetState.BUTTON])
+            self.set_state(state, duration_ms=1500)
+        else:
+            self.set_state(PetState.BARK, duration_ms=1000)
         if play_sound:
             category = _get_pet_sound_category(self.pet_type)
             sound_path = PET_SOUNDS.get(category)
@@ -255,7 +314,14 @@ class PetCompanionWidget(QWidget):
         self._load_animation(PetState.IDLE)
 
     def _load_animation(self, state: PetState):
-        """Load the animation for the given state."""
+        """Load the animation for the given state.
+
+        PIXEL ART RULES (TOP PRIORITY, NO EXCEPTIONS):
+        - ALL pixels must be used (no cropping)
+        - ALL pixels must be square (integer scaling only: 1x, 2x, 3x, 4x)
+        - NEVER scale to non-integer multiples (1.5x, 2.7x, etc.)
+        - If it doesn't fit, fix the container, not the sprite
+        """
         key = (self.pet_type, state)
         if key not in PET_ANIMATIONS:
             key = (self.pet_type, PetState.IDLE)
@@ -273,59 +339,87 @@ class PetCompanionWidget(QWidget):
         if filename.endswith(".gif"):
             self._is_gif = True
             self._movie = QMovie(filepath)
-            # Don't use setScaledSize - it causes blurry interpolation
-            # Scale manually in paintEvent with FastTransformation instead
+            # NEVER use setScaledSize - we scale manually with integer multiples only
             self._movie.frameChanged.connect(self.update)
             self._movie.start()
         else:
             self._is_gif = False
             self._pixmap = QPixmap(filepath)
-            if self._pixmap.width() > 32:
-                self._pixmap = self._pixmap.copy(0, 0, 32, 32)
-            self._pixmap = self._pixmap.scaled(
-                64, 64,
-                Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.FastTransformation
-            )
+            # NO scaling here - done in paintEvent with integer multiple only
 
         self.update()
 
     def paintEvent(self, event):
+        """Render the pet sprite.
+
+        PIXEL ART RULES (TOP PRIORITY, NO EXCEPTIONS):
+        - ALL pixels must be used (no cropping)
+        - ALL pixels must be square (integer scaling only: 1x, 2x, 3x, 4x)
+        - NEVER scale to non-integer multiples - this makes pixels different sizes
+        - If it doesn't fit, fix the container, not the sprite
+        """
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, False)
 
+        pixmap = None
         if self._is_gif and self._movie:
             pixmap = self._movie.currentPixmap()
-            if not pixmap.isNull():
-                if self._key_color is not None:
-                    pixmap = apply_color_key(pixmap, self._key_color)
-                # Scale manually with FastTransformation (no blur)
-                if pixmap.width() != 48 or pixmap.height() != 48:
-                    pixmap = pixmap.scaled(
-                        48, 48,
-                        Qt.AspectRatioMode.KeepAspectRatio,
-                        Qt.TransformationMode.FastTransformation
-                    )
-                x = (self.width() - pixmap.width()) // 2
-                y = (self.height() - pixmap.height()) // 2
-                painter.drawPixmap(x, y, pixmap)
-        elif self._pixmap and not self._pixmap.isNull():
-            x = (self.width() - self._pixmap.width()) // 2
-            y = (self.height() - self._pixmap.height()) // 2
-            painter.drawPixmap(x, y, self._pixmap)
+        elif self._pixmap:
+            pixmap = self._pixmap
+
+        if pixmap is None or pixmap.isNull():
+            return
+
+        # Apply color keying if needed
+        if self._key_color is not None:
+            pixmap = apply_color_key(pixmap, self._key_color)
+
+        # Calculate largest INTEGER scale that fits (1x, 2x, 3x, etc.)
+        # NEVER use fractional scaling - it makes pixels different sizes
+        src_w, src_h = pixmap.width(), pixmap.height()
+        scale_x = self.width() // src_w
+        scale_y = self.height() // src_h
+        scale = max(1, min(scale_x, scale_y))  # At least 1x, largest integer that fits
+
+        # Scale ONLY by integer multiple using nearest neighbor
+        if scale > 1:
+            pixmap = pixmap.scaled(
+                src_w * scale, src_h * scale,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.FastTransformation
+            )
+
+        # Center in widget
+        x = (self.width() - pixmap.width()) // 2
+        y = (self.height() - pixmap.height()) // 2
+        painter.drawPixmap(x, y, pixmap)
 
     def mousePressEvent(self, event):
+        """Handle click - trigger petting animation.
+
+        Emmy behavior: 50% rolling (belly rub), 50% toast (fed bread)
+        """
         if event.button() == Qt.MouseButton.LeftButton:
-            self.set_state(PetState.PETTING, duration_ms=1200)
+            if self.pet_type == PetType.EMMY:
+                state = random.choice([PetState.ROLLING, PetState.TOAST])
+                self.set_state(state, duration_ms=2000)
+            else:
+                self.set_state(PetState.PETTING, duration_ms=1200)
             self.clicked.emit()
         super().mousePressEvent(event)
 
     def enterEvent(self, event):
+        """Mouse entered - Emmy shows blink/tilt animation on hover."""
         self.setCursor(Qt.CursorShape.PointingHandCursor)
+        if self.pet_type == PetType.EMMY and self._state == PetState.IDLE:
+            self.set_state(PetState.HOVER)
         super().enterEvent(event)
 
     def leaveEvent(self, event):
+        """Mouse left - Emmy returns to still idle."""
         self.setCursor(Qt.CursorShape.ArrowCursor)
+        if self.pet_type == PetType.EMMY and self._state == PetState.HOVER:
+            self.set_state(PetState.IDLE)
         super().leaveEvent(event)
 
 
@@ -387,6 +481,10 @@ class PetContainer(QWidget):
         for pet in self._pets.values():
             pet.set_listening(is_listening)
 
+    def set_processing(self, is_processing: bool):
+        for pet in self._pets.values():
+            pet.set_processing(is_processing)
+
     def set_sleeping(self, is_sleeping: bool):
         for pet in self._pets.values():
             pet.set_sleeping(is_sleeping)
@@ -415,6 +513,8 @@ def get_pet_icon(pet_type: PetType, size: int = 24) -> QPixmap:
         path = get_pet_asset_path(PetType.CAT, "catwalkx2.gif")
     elif pet_type == PetType.MOUSE:
         path = get_pet_asset_path(PetType.MOUSE, "mouse.png")
+    elif pet_type == PetType.EMMY:
+        path = get_pet_asset_path(PetType.EMMY, "idle.png")  # Sitting still
     elif pet_type.value.startswith("lpc_"):
         path = get_pet_asset_path(pet_type, "idle.png")
     else:
@@ -447,4 +547,5 @@ def get_pet_icon(pet_type: PetType, size: int = 24) -> QPixmap:
 LPC_DOG_TYPES = [PetType.LPC_DOG_WHITE, PetType.LPC_DOG_TAN, PetType.LPC_DOG_GOLDEN, PetType.LPC_DOG_BLACK]
 LPC_CAT_TYPES = [PetType.LPC_CAT_WHITE, PetType.LPC_CAT_ORANGE, PetType.LPC_CAT_GRAY, PetType.LPC_CAT_BLACK]
 ORIGINAL_PET_TYPES = [PetType.DOG, PetType.CAT, PetType.MOUSE]
-ALL_PET_TYPES = ORIGINAL_PET_TYPES + LPC_DOG_TYPES + LPC_CAT_TYPES
+SPECIAL_PET_TYPES = [PetType.EMMY]
+ALL_PET_TYPES = ORIGINAL_PET_TYPES + LPC_DOG_TYPES + LPC_CAT_TYPES + SPECIAL_PET_TYPES
