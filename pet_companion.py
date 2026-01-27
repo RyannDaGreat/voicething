@@ -220,8 +220,8 @@ class PetCompanionWidget(QWidget):
         self._is_gif = False
         self._key_color: Optional[QColor] = BG_COLORS_TO_KEY.get(pet_type.value)
 
-        self.setFixedSize(64, 64)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self._sprite_size = (64, 64)  # Will be updated when sprite loads
 
         self._return_timer = QTimer(self)
         self._return_timer.setSingleShot(True)
@@ -262,6 +262,7 @@ class PetCompanionWidget(QWidget):
         """Set whether the app is transcribing/processing.
 
         Emmy behavior: record spin while processing/transcribing
+        Does NOT interrupt bark/button/copy animations.
         """
         if is_processing:
             if self.pet_type == PetType.EMMY:
@@ -270,6 +271,8 @@ class PetCompanionWidget(QWidget):
                 # Other pets could have a processing animation here
                 pass
         elif self._state == PetState.RECORD:
+            # Only return to idle if still in RECORD state
+            # Don't interrupt bark/button/copy animations
             self.set_state(PetState.IDLE)
 
     def set_sleeping(self, is_sleeping: bool):
@@ -280,8 +283,15 @@ class PetCompanionWidget(QWidget):
             self.set_state(PetState.IDLE)
 
     def trigger_copy(self):
-        """Trigger copy celebration animation."""
-        self.set_state(PetState.COPY, duration_ms=1500)
+        """Trigger copy celebration animation.
+
+        Emmy behavior: 50% bark, 50% push red button (same as done)
+        """
+        if self.pet_type == PetType.EMMY:
+            state = random.choice([PetState.BARK, PetState.BUTTON])
+            self.set_state(state, duration_ms=1500)
+        else:
+            self.set_state(PetState.COPY, duration_ms=1500)
 
     def trigger_bark(self, play_sound: bool = True):
         """Trigger bark/meow/squeak animation with optional sound.
@@ -334,20 +344,38 @@ class PetCompanionWidget(QWidget):
 
         if self._movie:
             self._movie.stop()
+            self._movie.frameChanged.disconnect()
+            self._movie.deleteLater()
             self._movie = None
 
         if filename.endswith(".gif"):
             self._is_gif = True
             self._movie = QMovie(filepath)
-            # NEVER use setScaledSize - we scale manually with integer multiples only
+            self._movie.setParent(self)  # Parent to widget so it's deleted together
+            self._movie.setCacheMode(QMovie.CacheMode.CacheAll)  # Cache frames for smooth playback
+            # Get size before starting (non-blocking)
+            self._movie.jumpToFrame(0)
+            frame = self._movie.currentPixmap()
+            if not frame.isNull():
+                self._sprite_size = (frame.width(), frame.height())
+            # Connect directly to update slot (no lambda)
             self._movie.frameChanged.connect(self.update)
             self._movie.start()
         else:
             self._is_gif = False
             self._pixmap = QPixmap(filepath)
-            # NO scaling here - done in paintEvent with integer multiple only
+            if not self._pixmap.isNull():
+                self._sprite_size = (self._pixmap.width(), self._pixmap.height())
 
+        # Resize widget to fit sprite (no clipping!)
+        self.setFixedSize(self._sprite_size[0], self._sprite_size[1])
         self.update()
+
+        # Tell parent to re-arrange (sizes may have changed)
+        if self.parent():
+            parent = self.parent()
+            if hasattr(parent, '_arrange_pets'):
+                parent._arrange_pets()
 
     def paintEvent(self, event):
         """Render the pet sprite.
@@ -431,7 +459,9 @@ class PetContainer(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._pets: dict[PetType, PetCompanionWidget] = {}
+        self._raise_by = 0  # How much pets are raised above container bottom
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground)
         self.setMinimumSize(64, 64)
 
     def add_pet(self, pet_type: PetType) -> PetCompanionWidget:
@@ -465,17 +495,39 @@ class PetContainer(QWidget):
             self.add_pet(pt)
 
     def _arrange_pets(self):
-        """Arrange pets horizontally."""
+        """Arrange pets horizontally, raised by 1/3 of max height.
+
+        Container is made taller to accommodate raised pets without clipping.
+        Pets are positioned at y=0 (top of container), and container height
+        includes extra space at bottom so pets appear to float above.
+        """
+        if not self._pets:
+            self._raise_by = 0
+            self.setFixedSize(0, 0)
+            return
+
+        # Find max height and total width
+        max_h = max(pet.height() for pet in self._pets.values())
+        total_w = sum(pet.width() for pet in self._pets.values()) + 4 * (len(self._pets) - 1)
+
+        # Raise all pets by 1/3 of max height
+        self._raise_by = max_h // 3
+
+        # Container height = max_h + raise_by to fit raised pets without clipping
+        # Pets at y=0 means they occupy top portion, bottom portion is empty space
+        self.setFixedSize(total_w, max_h + self._raise_by)
+
+        # Position pets at y=0 (top of container), so they appear raised
         x = 0
         for pet in self._pets.values():
             pet.move(x, 0)
             pet.show()
             x += pet.width() + 4
 
-        if self._pets:
-            self.setFixedSize(x - 4, 64)
-        else:
-            self.setFixedSize(0, 0)
+    @property
+    def raise_amount(self) -> int:
+        """How many pixels pets are raised above the container's layout baseline."""
+        return self._raise_by
 
     def set_listening(self, is_listening: bool):
         for pet in self._pets.values():

@@ -3666,11 +3666,6 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         timer_row.setSpacing(0)
         self.timer_label = TimerWidget(seg_font)
         timer_row.addWidget(self.timer_label, 1, Qt.AlignmentFlag.AlignCenter)
-        # Pet container is parented to timer_row_widget but positioned absolutely (doesn't affect layout)
-        self.pet_container = PetContainer(self.timer_row_widget)
-        self.pet_container.set_pets(S.PET_TYPES)
-        self.pet_container.move(0, 0)  # Top-left corner
-        self.pet_container.raise_()  # Ensure pets are on top
         layout.addWidget(self.timer_row_widget)
 
         self.btn_row_widget = QWidget()
@@ -3866,6 +3861,12 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         S.hooks['TMUX_MODE'] = self._on_tmux_mode_changed
         S.hooks['SIMPLE_MODE'] = self._on_simple_mode_changed
         S.hooks['ALWAYS_ON_TOP'] = self._on_always_on_top_setting_changed
+
+        # Pet container - floats absolutely, not in any layout
+        self.pet_container = PetContainer(self)
+        self.pet_container.set_pets(S.PET_TYPES)
+        self.pet_container.move(60, 10)  # After traffic lights
+        self.pet_container.raise_()
 
         self._load_settings()
         self._update_ui()  # Initialize UI layout based on boot size
@@ -4245,6 +4246,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         # In simple mode, ensure transcriptions tab is active
         if S.SIMPLE_MODE:
             self.tab_stack.setCurrentIndex(1)
+
 
     def _cleanup(self):
         if self.stream:
