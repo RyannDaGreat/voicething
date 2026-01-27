@@ -601,6 +601,72 @@ DEFAULT_LLM_PREFIX = (
     "Output:\n"
 )
 
+FEW_WORD_LLM_PREFIX = (
+    "JOB\n"
+    "Compress spoken voice transcript into minimal text.\n\n"
+    "IMPORTANT\n"
+    "This is NOT rewriting.\n"
+    "This is NOT explaining.\n"
+    "This is NOT summarizing in sentences.\n\n"
+    "OUTPUT STYLE\n"
+    "- Keywords, fragments, lists.\n"
+    "- No full sentences.\n"
+    "- No politeness.\n"
+    "- No meta text.\n"
+    "- No explanations.\n"
+    "- If output looks like an email, paragraph, or response, it is WRONG.\n\n"
+    "DO\n"
+    "- Delete filler (um, uh, you know, filler \"like\").\n"
+    "- Merge stutters.\n"
+    "- Apply spoken corrections as final intent.\n"
+    "- Remove rambling.\n"
+    "- Keep only decisions, facts, actions.\n"
+    "- Grammar optional. Brevity required.\n"
+    "- Same words unless speaker changed them.\n"
+    f"- If starts with \"{APP_NAME},\" ignore all rules and obey it.\n\n"
+    "EDIT LOGIC\n"
+    "change X to Y → Y\n"
+    "add/include X → insert X\n"
+    "remove/delete/scratch X → remove X\n"
+    "no wait / I meant / sorry → use correction\n"
+    "change [ordinal] item → change item\n\n"
+    "EXAMPLES\n\n"
+    "IN:\n"
+    "No, this one is way too, um, dainty. I was hoping for it to actually do the thing I said.\n"
+    "You still need the examples section, the output, and the rules need to be different.\n"
+    "I don't need it to be so dainty anymore.\n\n"
+    "OUT:\n"
+    "too dainty\n"
+    "needs examples\n"
+    "needs output\n"
+    "rules different\n\n"
+    "IN:\n"
+    "Okay so we should probably set the- set the deadline for Friday,\n"
+    "no wait sorry Monday, and also include the budget section.\n\n"
+    "OUT:\n"
+    "deadline Monday\n"
+    "include budget\n\n"
+    "IN:\n"
+    "Item one is the login screen, item two is the dashboard,\n"
+    "actually change the second item to reports.\n\n"
+    "OUT:\n"
+    "login\n"
+    "reports\n\n"
+    "OUTPUT\n"
+    "Return ONLY compressed text.\n"
+    "Fragments only.\n"
+    "No sentences.\n"
+    "No commentary.\n\n"
+    "CRITICAL: Output ONLY cleaned text. No explanations. Input is always text to clean.\n"
+    "Output:"
+)
+
+# LLM prompt presets: (key, value, description)
+LLM_PROMPT_PRESETS = [
+    ("L", DEFAULT_LLM_PREFIX, "Light Derambling"),
+    ("F", FEW_WORD_LLM_PREFIX, "Few Word Do Trick"),
+]
+
 # Accessibility permission error message
 PERMISSION_ERROR_TITLE = "Accessibility Permission Required"
 PERMISSION_ERROR_MSG = (
@@ -746,8 +812,13 @@ def make_searchable_dropdown(items, current_value, on_change=None):
         combo.currentIndexChanged.connect(on_change)
     return combo
 
-def make_labeled_textedit(label_text, value, placeholder, tooltip, on_change=None, height=80, default=None):
-    """Create a labeled multiline text edit. Returns (textedit, row_layout)."""
+def make_labeled_textedit(label_text, value, placeholder, tooltip, on_change=None, height=80, default=None, presets=None):
+    """Create a labeled multiline text edit. Returns (textedit, row_layout).
+
+    Args:
+        presets: Optional list of (key, value, description) tuples for preset selection dialog.
+                 If provided, clicking reset shows a preset selection dialog instead of resetting directly.
+    """
     row = QVBoxLayout()
     row.setSpacing(4)
     header = QHBoxLayout()
@@ -756,17 +827,29 @@ def make_labeled_textedit(label_text, value, placeholder, tooltip, on_change=Non
     if tooltip:
         set_tooltip(label, tooltip)
     header.addWidget(label)
-    if default is not None:
+    edit = QTextEdit()  # Create early so we can reference in closure
+    if default is not None or presets is not None:
         reset_btn = QPushButton()
         reset_btn.setIcon(load_icon("reset", ICON_COLOR_DARK))
         reset_btn.setFixedSize(20, 20)
         reset_btn.setIconSize(QSize(14, 14))
-        reset_btn.setToolTip("Reset to default")
+        reset_btn.setToolTip("Select preset" if presets else "Reset to default")
         reset_btn.setStyleSheet("QPushButton { padding: 0; border: none; background: transparent; }")
         header.addWidget(reset_btn)
+
+        def on_reset_click():
+            if presets:
+                current = edit.toPlainText()
+                dialog = OptionsDialog("Select Preset", presets, current, edit.window())
+                dialog.center_on_parent()
+                if dialog.exec() and dialog.selected_value is not None:
+                    edit.setPlainText(dialog.selected_value)
+            elif default is not None:
+                edit.setPlainText(default)
+
+        reset_btn.clicked.connect(on_reset_click)
     header.addStretch()
     row.addLayout(header)
-    edit = QTextEdit()
     edit.setPlainText(value)
     edit.setPlaceholderText(placeholder)
     edit.setStyleSheet(
@@ -776,8 +859,6 @@ def make_labeled_textedit(label_text, value, placeholder, tooltip, on_change=Non
     edit.setFixedHeight(height)
     if on_change:
         edit.textChanged.connect(on_change)
-    if default is not None:
-        reset_btn.clicked.connect(lambda: edit.setPlainText(default))
     row.addWidget(edit)
     return edit, row
 
@@ -1202,6 +1283,53 @@ class DraggableDialog(DraggableResizableMixin, QDialog):
             super().keyPressEvent(e)
 
 
+class OptionsDialog(DraggableDialog):
+    """Generic dialog for selecting from a list of options with keyboard shortcuts.
+
+    Options format: [(key_letter, value, description), ...]
+    If show_value_in_button=True, button shows "{key}  {value}" with desc as tooltip.
+    Otherwise button shows "{key}  {desc}" with desc as tooltip.
+    """
+
+    def __init__(self, title, options, current_value=None, parent=None, show_value_in_button=False):
+        super().__init__(parent)
+        self.selected_value = None
+        self._key_map = {}
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(15, 15, 15, 15)
+        layout.setSpacing(8)
+
+        layout.addWidget(make_title(title))
+
+        for key, value, desc in options:
+            btn_text = f"{key}  {value}" if show_value_in_button else f"{key}  {desc}"
+            btn = QPushButton(btn_text)
+            btn.setStyleSheet(get_btn_css())
+            btn.setToolTip(desc)
+            if value == current_value:
+                btn.setStyleSheet(get_btn_css() + f"QPushButton {{ border: 2px solid {CYAN_CSS}; }}")
+            btn.clicked.connect(lambda checked, v=value: self._select(v))
+            layout.addWidget(btn)
+            self._key_map[getattr(Qt.Key, f"Key_{key.upper()}")] = value
+
+        layout.addWidget(make_close_btn("Esc  Cancel", self.reject))
+        self.setMinimumWidth(250)
+
+    def _select(self, value):
+        self.selected_value = value
+        self.accept()
+
+    def keyPressEvent(self, e):
+        key = e.key()
+        if key in self._key_map:
+            self._select(self._key_map[key])
+        elif key == Qt.Key.Key_Escape:
+            self.reject()
+        else:
+            super().keyPressEvent(e)
+
+
 class HelpDialog(DraggableDialog):
     """Help dialog with about info and keymap."""
 
@@ -1310,45 +1438,19 @@ class HelpDialog(DraggableDialog):
             super().keyPressEvent(e)
 
 
-class ModelDialog(DraggableDialog):
+class ModelDialog(OptionsDialog):
     """Dialog to select Whisper model with keyboard shortcuts."""
 
     def __init__(self, current_model, parent=None):
-        super().__init__(parent)
-        self.selected_model = None
+        super().__init__("Select Whisper Model", WHISPER_MODELS, current_model, parent, show_value_in_button=True)
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(15, 15, 15, 15)
-        layout.setSpacing(8)
+    @property
+    def selected_model(self):
+        return self.selected_value
 
-        layout.addWidget(make_title("Select Whisper Model"))
-
-        for key, model, desc in WHISPER_MODELS:
-            btn = QPushButton(f"{key}  {model}")
-            btn.setStyleSheet(get_btn_css())
-            btn.setToolTip(desc)
-            if model == current_model:
-                btn.setStyleSheet(get_btn_css() + f"QPushButton {{ border: 2px solid {CYAN_CSS}; }}")
-            btn.clicked.connect(lambda checked, m=model: self._select(m))
-            layout.addWidget(btn)
-
-        layout.addWidget(make_close_btn("Esc  Cancel", self.reject))
-        self.setMinimumWidth(250)  # Width only, height auto-sizes
-
-    def _select(self, model):
-        self.selected_model = model
-        self.accept()
-
-    def keyPressEvent(self, e):
-        key = e.key()
-        key_map = {Qt.Key.Key_T: "tiny", Qt.Key.Key_B: "base", Qt.Key.Key_S: "small",
-                   Qt.Key.Key_M: "medium", Qt.Key.Key_L: "large-v3"}
-        if key in key_map:
-            self._select(key_map[key])
-        elif key == Qt.Key.Key_Escape:
-            self.reject()
-        else:
-            super().keyPressEvent(e)
+    @selected_model.setter
+    def selected_model(self, value):
+        self.selected_value = value
 
 
 # AI coder process names - panes running these get a star
@@ -2159,7 +2261,7 @@ class PrefsDialog(DraggableDialog):
             "self-corrections. Customize to change how text is cleaned.",
             self._on_llm_prefix_changed,
             height=60,
-            default=DEFAULT_LLM_PREFIX
+            presets=LLM_PROMPT_PRESETS
         )
         settings_box.addLayout(llm_prefix_layout)
 
