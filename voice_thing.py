@@ -202,12 +202,14 @@ CHIME_THEMES = {
         'delete':         (([-8, -5],), 0.05),          # C#4+E4
         'enter':          (([4], [7], [12]), 0.04),     # C#→E→A arp
         'cancel':         (([-5, -8],), 0.05),          # E4+C#4 (record rhyme)
-        'record_start':   (([0, 4, 7],), 0.12),         # A major
-        'record_stop':    (([-12, -8, -5],), 0.12),     # A major low
+        'record_start':   (([-5,0,4],[0, 4, 7]), 0.12), # A major
+        'record_stop':    (([-12, -8, -5],[-24]), 0.12),# A major low
         'loading_start':  (([0, 7],), 0.08),             # A+E (5th buildup)
         'loading_done':   (([5, 9, 12],), 0.1),        # D+F#+A (resolution)
-        'start_rec':      (([0, 4, 11],), 0.06),        # A+C#+G# (Amaj7 no5)
-        'stop_rec':       (([2, 7, 11],), 0.06),        # B+E+G# (E/B)
+        'start_rec':      (([-5,0,4],[0, 4, 11],), 0.06),        # A+C#+G# (Amaj7 no5)
+        'stop_rec':       (([2, 7, 11],[7,2,11-12]), 0.06),        # B+E+G# (E/B)
+        # 'start_rec':   (([-5,0,4],[0, 4, 7]), 0.12), # A major
+        # 'stop_rec':    (([-12, -8, -5],[-24]), 0.12),# A major low
         'transcribe':     (([7, 11, 14],), 0.05),       # E+G#+B (E)
         'llm_start':      (([-5, 2],), 0.05),            # E4+B (5th buildup)
         'llm_done':       (([0, 4, 7],), 0.06),         # A+C#+E (resolution)
@@ -4515,8 +4517,8 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
                     'TMUX_TARGET', 'TMUX_PANE_NAMES', 'TMUX_PHRASES_AS_CONTEXT', 'RECORDINGS_DIR']:
             if key in data:
                 S[key] = data[key]
-        # SIMPLE_MODE needs toggle pattern
-        if data.get('SIMPLE_MODE') and not S.SIMPLE_MODE:
+        # SIMPLE_MODE needs toggle pattern (handle both on->off and off->on)
+        if 'SIMPLE_MODE' in data and data['SIMPLE_MODE'] != S.SIMPLE_MODE:
             self.toggle_simple_mode()
         # THEME is separate (not in S)
         if 'THEME' in data:
