@@ -1826,6 +1826,7 @@ class PrefsDialog(DraggableDialog):
     wake_word_changed = pyqtSignal(str)  # Emits wake word model name
     sensitivity_changed = pyqtSignal(float)  # Emits sensitivity threshold
     auto_enter_changed = pyqtSignal(bool)  # Emits auto enter flag
+    _tts_status_signal = pyqtSignal(bool, str)  # (is_online, tmux_info) for thread-safe UI update
 
     def __init__(self, current_style, current_pet_types, simple_mode=False, parent=None,
                  wake_word=None, wake_word_sensitivity=None,
@@ -2039,11 +2040,12 @@ class PrefsDialog(DraggableDialog):
         tts_header_row.addWidget(self.tts_power_btn)
         theme_box.addLayout(tts_header_row)
 
-        # Start status check timer
-        self._tts_status_timer = QTimer()
-        self._tts_status_timer.timeout.connect(self._update_tts_status)
-        self._tts_status_timer.start(1000)  # Check every 1 second
-        self._update_tts_status()  # Initial check
+        # TTS status check (debounced, not polling - polling causes hiccups)
+        self._tts_status_signal.connect(self._on_tts_status_changed)
+        self._tts_debounce_timer = QTimer()
+        self._tts_debounce_timer.setSingleShot(True)
+        self._tts_debounce_timer.timeout.connect(self._do_tts_status_check)
+        self._invalidate_tts_status()  # Initial check
 
         # TTS Voice selector
         tts_voice_row = QHBoxLayout()
@@ -2625,81 +2627,57 @@ class PrefsDialog(DraggableDialog):
 
     def _edit_tts_instruction(self):
         """Open dialog to edit the TTS instruction template."""
-        dialog = QDialog(self)
-        dialog.setWindowTitle("Edit TTS Instruction")
-        dialog.setMinimumSize(500, 200)
-        layout = QVBoxLayout(dialog)
-
-        # Info label
-        info = QLabel("Template variables: {port}, {speed}, {voice}, {volume}")
-        info.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 10px;")
-        layout.addWidget(info)
-
-        # Text edit
-        text_edit = QTextEdit()
-        text_edit.setPlainText(S.SPEAK_BACK_INSTRUCTION_TEMPLATE)
-        text_edit.setStyleSheet(f"color: {TEXT_PRIMARY}; font-family: monospace; font-size: 11px;")
-        layout.addWidget(text_edit)
-
-        # Buttons
-        btn_row = QHBoxLayout()
-        revert_btn = QPushButton("Revert to Default")
-        revert_btn.setStyleSheet(get_btn_css())
-        default_template = DEFAULTS['SPEAK_BACK_INSTRUCTION_TEMPLATE']
-        revert_btn.clicked.connect(lambda: text_edit.setPlainText(default_template))
-        btn_row.addWidget(revert_btn)
-        btn_row.addStretch()
-        cancel_btn = QPushButton("Cancel")
-        cancel_btn.setStyleSheet(get_btn_css())
-        cancel_btn.clicked.connect(dialog.reject)
-        btn_row.addWidget(cancel_btn)
-        save_btn = QPushButton("Save")
-        save_btn.setStyleSheet(get_btn_css())
-        save_btn.clicked.connect(dialog.accept)
-        btn_row.addWidget(save_btn)
-        layout.addLayout(btn_row)
-
+        dialog = TTSInstructionDialog(S.SPEAK_BACK_INSTRUCTION_TEMPLATE, self)
+        dialog.center_on_parent()
         if dialog.exec():
-            S.set('SPEAK_BACK_INSTRUCTION_TEMPLATE', text_edit.toPlainText())
+            S.set('SPEAK_BACK_INSTRUCTION_TEMPLATE', dialog.get_text())
 
-    def _update_tts_status(self):
-        """Check if TTS server is online and update status indicator (non-blocking)."""
+    def _invalidate_tts_status(self):
+        """Mark TTS status as needing a recheck (debounced 2 seconds)."""
+        self._tts_debounce_timer.start(2000)  # Reset to 2 seconds each call
+
+    def _do_tts_status_check(self):
+        """Actually check TTS status (called after debounce timer fires)."""
         def _check():
             import urllib.request
             try:
                 with urllib.request.urlopen(f"http://localhost:{S.SPEAK_BACK_PORT}/health", timeout=0.5) as resp:
                     if resp.status == 200:
-                        # Get tmux session info
-                        import rp
+                        # Get tmux session info using subprocess
                         from rp.libs.supertonic_tts_server import TMUX_SESSION
                         tmux_info = ""
-                        if TMUX_SESSION in rp.tmux_get_all_session_names():
-                            try:
-                                window = rp.shell_command(f'tmux list-windows -t {TMUX_SESSION} -F "#{{window_name}}" 2>/dev/null').strip().split('\n')[0]
-                                pane = rp.shell_command(f'tmux list-panes -t {TMUX_SESSION} -F "#{{pane_index}}" 2>/dev/null').strip().split('\n')[0]
+                        try:
+                            result = subprocess.run(
+                                ['tmux', 'list-windows', '-t', TMUX_SESSION, '-F', '#{window_name}'],
+                                capture_output=True, text=True, timeout=1
+                            )
+                            if result.returncode == 0:
+                                window = result.stdout.strip().split('\n')[0]
+                                result2 = subprocess.run(
+                                    ['tmux', 'list-panes', '-t', TMUX_SESSION, '-F', '#{pane_index}'],
+                                    capture_output=True, text=True, timeout=1
+                                )
+                                pane = result2.stdout.strip().split('\n')[0] if result2.returncode == 0 else '0'
                                 tmux_info = f"TMUX:{TMUX_SESSION}:{window}:{pane}"
-                            except Exception:
-                                tmux_info = f"TMUX:{TMUX_SESSION}"
-                        self._set_tts_online(tmux_info)
+                        except Exception:
+                            pass
+                        self._tts_status_signal.emit(True, tmux_info)
                         return
             except Exception:
                 pass
-            self._set_tts_offline()
+            self._tts_status_signal.emit(False, "")
         threading.Thread(target=_check, daemon=True).start()
 
-    def _set_tts_online(self, tmux_info):
-        """Update UI to show TTS online (called from thread)."""
-        self.tts_status_label.setText(f"ONLINE <span style='font-size:7px'>({tmux_info})</span>")
-        self.tts_status_label.setStyleSheet("color: #51cf66; font-size: 9px; font-weight: bold;")
-        power_icon = load_icon("power", color="#51cf66")
-        if power_icon:
-            self.tts_power_btn.setIcon(power_icon)
-
-    def _set_tts_offline(self):
-        """Update UI to show TTS offline (called from thread)."""
-        self.tts_status_label.setText("OFFLINE")
-        self.tts_status_label.setStyleSheet("color: #ff6b6b; font-size: 9px; font-weight: bold;")
-        power_icon = load_icon("power", color="#ff6b6b")
+    def _on_tts_status_changed(self, is_online, tmux_info):
+        """Update UI based on TTS status (called on main thread via signal)."""
+        if is_online:
+            self.tts_status_label.setText(f"ONLINE <span style='font-size:7px'>({tmux_info})</span>")
+            self.tts_status_label.setStyleSheet("color: #51cf66; font-size: 9px; font-weight: bold;")
+            power_icon = load_icon("power", color="#51cf66")
+        else:
+            self.tts_status_label.setText("OFFLINE")
+            self.tts_status_label.setStyleSheet("color: #ff6b6b; font-size: 9px; font-weight: bold;")
+            power_icon = load_icon("power", color="#ff6b6b")
         if power_icon:
             self.tts_power_btn.setIcon(power_icon)
 
@@ -2715,7 +2693,7 @@ class PrefsDialog(DraggableDialog):
                     from rp.libs.supertonic_tts_server import TMUX_SESSION
                     if TMUX_SESSION in rp.tmux_get_all_session_names():
                         rp.tmux_kill_session(TMUX_SESSION)
-                    self._update_tts_status()
+                    self._invalidate_tts_status()
                     return
         except Exception:
             pass
@@ -2723,6 +2701,7 @@ class PrefsDialog(DraggableDialog):
         def _start():
             import rp
             rp.text_to_speech_via_supertonic("TTS server started", voice=S.SPEAK_BACK_VOICE, speed=S.SPEAK_BACK_SPEED, volume=S.SPEAK_BACK_VOLUME)
+            self._invalidate_tts_status()
         threading.Thread(target=_start, daemon=True).start()
 
     def _speak_tts_demo(self, text):
@@ -2737,6 +2716,7 @@ class PrefsDialog(DraggableDialog):
                     volume=S.SPEAK_BACK_VOLUME,
                     block=True
                 )
+                self._invalidate_tts_status()  # Server may have started
             except Exception as e:
                 print(f"TTS demo failed: {e}")
         threading.Thread(target=_do_speak, daemon=True).start()
@@ -2910,6 +2890,7 @@ class PrefsDialog(DraggableDialog):
         S.update(DEFAULTS)
         self.reverted_to_defaults = True
         self.reject()  # Close, parent will re-open with fresh values from S
+
 
     def keyPressEvent(self, e):
         key = e.key()
