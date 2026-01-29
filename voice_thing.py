@@ -102,6 +102,7 @@ CHIME_THEMES = {
         'delete':         (([0, -3],), 0.08),           # A+F# minor feel
         'enter':          (([-10], [-14], [-10]), 0.05),# Low do-ba-do
         'cancel':         (([3, -1],), 0.06),           # C+G# minor cancel
+        'pre_cancel':     (([-9, -13],), 0.06),         # C+G# octave lower
         'record_start':   (([0, 4, 7, 11],), 0.15),     # Amaj7
         'record_stop':    (([-12, -8, -5, 0],), 0.15),  # Amaj low
         'loading_start':  (([5], [12]), 0.1),           # D→A5 loading
@@ -123,6 +124,7 @@ CHIME_THEMES = {
         'delete':         (([-12],), 0.06),             # A3 octave down
         'enter':          (([5],), 0.04),               # D5 (4th up)
         'cancel':         (([-7],), 0.05),              # D4 (5th down)
+        'pre_cancel':     (([-19],), 0.05),             # D3 octave lower
         'record_start':   (([0, 12],), 0.12),           # A4+A5 octave
         'record_stop':    (([-12, 0],), 0.12),          # A3+A4 octave
         'loading_start':  (([2],), 0.08),               # B4 single
@@ -144,6 +146,7 @@ CHIME_THEMES = {
         'delete':         (([6, 3],), 0.08),            # Eb+C tritone
         'enter':          (([-12], [-9]), 0.05),        # A3→C4 arpeggio
         'cancel':         (([6, 0],), 0.06),            # Eb+A tritone resolve
+        'pre_cancel':     (([-6, -12],), 0.06),         # Eb+A octave lower
         'record_start':   (([0, 3, 6, 10],), 0.15),     # Am7b5 (blues!)
         'record_stop':    (([-12, -9, -5, -2],), 0.15), # Am7 low
         'loading_start':  (([3], [6]), 0.1),            # C→Eb chromatic
@@ -166,6 +169,7 @@ CHIME_THEMES = {
         'delete':         (([-19, -7, -5],), 0.1),      # D3+D4+E4 low cluster
         'enter':          (([-14, -7, 0],), 0.08),      # G3+D4+A4 wide arp
         'cancel':         (([-7, 2, 9],), 0.08),        # D+B+F# stack
+        'pre_cancel':     (([-19, -10, -3],), 0.08),    # D+B+F# octave lower
         'record_start':   (([-12, 0, 2, 7],), 0.2),     # A3+Asus2
         'record_stop':    (([-12, -7, -5, 0, 7],), 0.2),# Wide sus4 spread
         'loading_start':  (([0, 5, 9],), 0.12),         # A+D+F# (Dsus2/A)
@@ -187,6 +191,7 @@ CHIME_THEMES = {
         'delete':         (([-5, -10],), 0.1),          # E4+Bb3 dark
         'enter':          (([-12], [-9], [-5]), 0.06),  # A3→C4→E4 arp
         'cancel':         (([8, 5, 0],), 0.08),         # F+D+A descend
+        'pre_cancel':     (([-4, -7, -12],), 0.08),     # F+D+A octave lower
         'record_start':   (([0, 3, 7],), 0.18),         # Am triad
         'record_stop':    (([-12, -9, -5],), 0.18),     # Am low
         'loading_start':  (([5, 8, 12],), 0.12),        # D+F+A (Dm)
@@ -208,6 +213,7 @@ CHIME_THEMES = {
         'delete':         (([-8, -5],), 0.05),          # C#4+E4
         'enter':          (([4], [7], [12]), 0.04),     # C#→E→A arp
         'cancel':         (([-5, -8],), 0.05),          # E4+C#4 (record rhyme)
+        'pre_cancel':     (([-17, -20],), 0.05),        # E3+C#3 octave lower
         'record_start':   (([-5,0,4],[0, 4, 7]), 0.12), # A major
         'record_stop':    (([-12, -8, -5],[-24]), 0.12),# A major low
         'loading_start':  (([0, 7],), 0.08),             # A+E (5th buildup)
@@ -231,6 +237,7 @@ CHIME_THEMES = {
         'delete':         (([-2, 2, 5],), 0.08),        # G+B+D (Gmaj)
         'enter':          (([-5, -1, 2, 7],), 0.06),    # E+G#+B+E (Emaj w/oct)
         'cancel':         (([6, 10, 13],), 0.06),       # Eb+G+Bb (Eb maj)
+        'pre_cancel':     (([-6, -2, 1],), 0.06),       # Eb+G+Bb octave lower
         'record_start':   (([0, 4, 7, 10, 14],), 0.12), # A9 full
         'record_stop':    (([-12, -8, -5, -2],), 0.12), # A7 low
         'loading_start':  (([2, 5, 9],), 0.1),          # B+D+F# (Bm)
@@ -520,6 +527,7 @@ DEFAULTS = dict(
     SPEAK_BACK_VOLUME=1.0,  # TTS volume (0.0=mute, 1.0=normal, 2.0=loud)
     SPEAK_BACK_STEPS=5,  # TTS quality steps (1=fast/low, 10=slow/high)
     SPEAK_BACK_APPEND_INSTRUCTION=True,  # Append TTS instruction to transcriptions
+    SPEAK_BACK_TMUX_ONLY=False,  # Only append TTS instruction when sending to tmux (not paste)
     SPEAK_BACK_INSTRUCTION_TEMPLATE="Please speak back with ({command} &)",
 )
 S = Settings(**DEFAULTS)
@@ -2060,6 +2068,21 @@ class TTSSettingsWidget(QWidget):
         append_row.addStretch()
         layout.addLayout(append_row)
 
+        # Child checkbox: Only for tmux (indented)
+        tmux_only_row = QHBoxLayout()
+        tmux_only_row.setSpacing(8)
+        tmux_only_row.addSpacing(20)  # Indent
+        self._tmux_only_checkbox = QCheckBox("Only for tmux")
+        self._tmux_only_checkbox.setChecked(S.SPEAK_BACK_TMUX_ONLY)
+        self._tmux_only_checkbox.setStyleSheet(f"QCheckBox {{ color: {TEXT_PRIMARY}; font-size: 11px; }}")
+        self._tmux_only_checkbox.setToolTip("Only append TTS instruction when sending to tmux panes,\n"
+                                            "not when pasting via ⌘V.")
+        self._tmux_only_checkbox.setEnabled(S.SPEAK_BACK_APPEND_INSTRUCTION)
+        self._tmux_only_checkbox.stateChanged.connect(self._on_tmux_only_changed)
+        tmux_only_row.addWidget(self._tmux_only_checkbox)
+        tmux_only_row.addStretch()
+        layout.addLayout(tmux_only_row)
+
         # Announce pane checkbox
         announce_row = QHBoxLayout()
         announce_row.setSpacing(8)
@@ -2130,7 +2153,12 @@ class TTSSettingsWidget(QWidget):
         self._speak_demo(f"Quality {S.SPEAK_BACK_STEPS}")
 
     def _on_append_changed(self, state):
-        S.set('SPEAK_BACK_APPEND_INSTRUCTION', state == Qt.CheckState.Checked.value)
+        enabled = state == Qt.CheckState.Checked.value
+        S.set('SPEAK_BACK_APPEND_INSTRUCTION', enabled)
+        self._tmux_only_checkbox.setEnabled(enabled)
+
+    def _on_tmux_only_changed(self, state):
+        S.set('SPEAK_BACK_TMUX_ONLY', state == Qt.CheckState.Checked.value)
 
     def _on_announce_changed(self, state):
         S.set('TMUX_ANNOUNCE_PANE', state == Qt.CheckState.Checked.value)
@@ -2353,7 +2381,7 @@ class PrefsDialog(DraggableDialog):
         theme_btns_box.setSpacing(2)
         style_keys = list(STYLES.keys())
         # Custom display names for themes
-        THEME_DISPLAY_NAMES = {"rust_grunge": "SBU Tunnels"}
+        THEME_DISPLAY_NAMES = {"rust_grunge": "SBU Tunnels", "macos_2005": "MacOS 2005"}
         for i, style_name in enumerate(style_keys):
             key = str(i + 1)
             display_name = THEME_DISPLAY_NAMES.get(style_name, style_name.replace("_", " ").title())
@@ -4378,28 +4406,35 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         if not S.AUTO_COPY:
             return
 
-        # Append TTS instruction if append instruction is enabled
-        if S.SPEAK_BACK_APPEND_INSTRUCTION:
-            instruction = S.SPEAK_BACK_INSTRUCTION_TEMPLATE.format(
-                command=build_tts_command()
-            )
-            text = text + '\n\n' + instruction
-
-        self._copy_to_clipboard(text)
-
         # Voice routing: if tmux mode enabled, check for phrase matches
         tmux_routed = False
         if S.TMUX_MODE:
             matches = self._find_matching_tmux_panes(text)
             if matches:
                 # Magic phrase matched - route to tmux panes (skip ⌘V)
+                # Append TTS instruction for tmux if enabled
+                tmux_text = text
+                if S.SPEAK_BACK_APPEND_INSTRUCTION:
+                    instruction = S.SPEAK_BACK_INSTRUCTION_TEMPLATE.format(
+                        command=build_tts_command()
+                    )
+                    tmux_text = text + '\n\n' + instruction
+                self._copy_to_clipboard(tmux_text)
                 time.sleep(0.1)
                 play_chime('tmux_send')
-                self._do_tmux_paste_to_targets(matches, text)
+                self._do_tmux_paste_to_targets(matches, tmux_text)
                 tmux_routed = True
 
         # ⌘V paste: only if enabled AND tmux didn't route
         if S.AUTO_PASTE and not tmux_routed:
+            # Append TTS instruction for paste only if enabled and not tmux-only mode
+            paste_text = text
+            if S.SPEAK_BACK_APPEND_INSTRUCTION and not S.SPEAK_BACK_TMUX_ONLY:
+                instruction = S.SPEAK_BACK_INSTRUCTION_TEMPLATE.format(
+                    command=build_tts_command()
+                )
+                paste_text = text + '\n\n' + instruction
+            self._copy_to_clipboard(paste_text)
             time.sleep(0.1)
             kb = KeyboardController()
             with kb.pressed(Key.cmd):
@@ -5360,10 +5395,18 @@ def main():
     app.setStyleSheet(f"QToolTip {{ background: #333; color: white; border: 1px solid #555; border-radius: 4px; font-family: {UI_FONT}; }}")
     window = VoiceThingWindow()
 
-    tap_state = [0.0, 0, 0.0]  # [last_release_time, tap_count, current_press_time]
+    tap_state = [0.0, 0, 0.0, False]  # [last_release_time, tap_count, current_press_time, pre_cancel_played]
     pressed = set()
+    pre_cancel_timer = [None]  # Mutable container for timer reference
     CMD_KEYS = (keyboard.Key.cmd, keyboard.Key.cmd_l, keyboard.Key.cmd_r)
     ALT_KEYS = (keyboard.Key.alt, keyboard.Key.alt_l, keyboard.Key.alt_r)
+    SHIFT_KEYS = (keyboard.Key.shift, keyboard.Key.shift_l, keyboard.Key.shift_r)
+
+    def _play_pre_cancel():
+        """Called after CANCEL_HOLD_SECONDS if still holding alt during recording."""
+        if tap_state[1] == 2 and window.state == "recording" and any(k in pressed for k in ALT_KEYS):
+            play_chime('pre_cancel')
+            tap_state[3] = True  # Mark that pre_cancel was played
 
     def on_press(key):
         pressed.add(key)
@@ -5375,12 +5418,26 @@ def main():
             else:
                 tap_state[1] = 1
             tap_state[2] = now  # Record press time
+            tap_state[3] = False  # Reset pre_cancel flag
+            # If this is the 2nd tap while recording, start timer for pre_cancel chime
+            if tap_state[1] == 2 and window.state == "recording":
+                pre_cancel_timer[0] = threading.Timer(CANCEL_HOLD_SECONDS, _play_pre_cancel)
+                pre_cancel_timer[0].start()
+        elif key in SHIFT_KEYS:
+            # Shift aborts the cancel - reset to tap 1 so release won't trigger cancel
+            if tap_state[1] == 2 and tap_state[3]:
+                tap_state[1] = 0
+                tap_state[3] = False
         elif key not in CMD_KEYS:
             tap_state[1] = 0
 
     def on_release(key):
         pressed.discard(key)
         if key in ALT_KEYS:
+            # Cancel the pre_cancel timer if still running
+            if pre_cancel_timer[0] is not None:
+                pre_cancel_timer[0].cancel()
+                pre_cancel_timer[0] = None
             now = time.time()
             hold_duration = now - tap_state[2]  # How long this tap was held
             cmd_held = any(k in pressed for k in CMD_KEYS)
