@@ -16,10 +16,13 @@
   "THEME": "vaporwave",
   "WAKE_WORD_MODEL": "jarvis",
   "TMUX_MODE": true,
-  "TMUX_TARGET": "%2",
+  "TMUX_TARGET": "%11",
   "TMUX_PANE_NAMES": {
     "%2": {
       "phrase": "paper"
+    },
+    "%11": {
+      "phrase": "chicken"
     }
   },
   "TMUX_PHRASES_AS_CONTEXT": true,
@@ -36,9 +39,10 @@
   "RECORDINGS_DIR": "/var/folders/pm/461ntwb12b7bbqcjw1s6t0kw0000gn/T/VoiceThing",
   "ALWAYS_ON_TOP": false,
   "SPEAK_BACK_PORT": 7123,
-  "SPEAK_BACK_SPEED": 1.5,
-  "SPEAK_BACK_VOICE": "M1",
+  "SPEAK_BACK_SPEED": 1.6,
+  "SPEAK_BACK_VOICE": "F4",
   "SPEAK_BACK_VOLUME": 1.0,
+  "SPEAK_BACK_STEPS": 10,
   "SPEAK_BACK_APPEND_INSTRUCTION": true,
-  "SPEAK_BACK_INSTRUCTION_TEMPLATE": "Please speak via curl \"http://localhost:{port}/speak?text=YOUR_MESSAGE_HERE&speed={speed}&voice={voice}&volume={volume}\""
+  "SPEAK_BACK_INSTRUCTION_TEMPLATE": "Please speak via curl \"http://localhost:{port}/speak?text=YOUR_MESSAGE_HERE&speed={speed}&voice={voice}&volume={volume}&steps={steps}\" &"
 }
