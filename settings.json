@@ -1,7 +1,7 @@
 {
   "ENTER_DELAY": 0.6,
   "WAKE_WORD_SENSITIVITY": 0.11,
-  "CUSTOM_WORDS": "Claude Haiku Veo Mohib tmux Glados",
+  "CUSTOM_WORDS": "Claude Haiku Mohib tmux Glados foxtrot glooblybop",
   "AUTO_HIDE": false,
   "SOUND_ENABLED": true,
   "LLM_ENABLED": false,
@@ -9,32 +9,30 @@
   "WAKE_WORD_ENABLED": true,
   "SIMPLE_MODE": true,
   "PET_TYPES": [
-    "lpc_dog_white",
-    "lpc_cat_white",
-    "lpc_dog_tan",
-    "lpc_dog_golden",
-    "lpc_dog_black",
-    "lpc_cat_orange",
-    "lpc_cat_gray",
-    "lpc_cat_black",
-    "mouse",
-    "cat",
-    "dog"
+    "emmy",
+    "lpc_dog_white"
   ],
-  "WHISPER_MODEL": "base",
-  "THEME": "macos_2005",
+  "WHISPER_MODEL": "large-v3",
+  "THEME": "vaporwave",
   "WAKE_WORD_MODEL": "jarvis",
   "TMUX_MODE": true,
-  "TMUX_TARGET": "VoiceThing",
+  "TMUX_TARGET": "%2",
+  "TMUX_PANE_NAMES": {
+    "%2": {
+      "phrase": "paper"
+    }
+  },
+  "TMUX_PHRASES_AS_CONTEXT": true,
   "AUTO_COPY": true,
   "AUTO_PASTE": true,
-  "LLM_MODEL": "OLLAMA:qwen2.5:7b",
-  "LLM_PREFIX": "\tTask: Clean up voice transcript.\n\nRules:\n1. Remove filler words (um, uh, \"you know\", filler \"like\")\n2. Collapse stutters: \"set the- set the-\" \u2192 \"set the\"\n3. Apply retrospective edits when speaker self-corrects:\n   - \"actually change X to Y\" / \"make X into Y\" \u2192 apply change\n   - \"add X to the list\" / \"also include X\" \u2192 add X seamlessly (remove \"add\")\n   - \"remove X\" / \"scratch X\" / \"delete X\" \u2192 remove X\n   - \"no wait\" / \"I meant\" / \"sorry,\" \u2192 use the correction\n   - \"change the [ordinal] item to X\" \u2192 modify that item\n4. NEVER alter grammar, tense, or word forms. Preserve exact words.\n5. Filler removal is SURGICAL: remove ONLY the filler, keep surrounding content.\n6. EXCEPTION: \"VoiceThing,\" prefix \u2192 ignore rules 1-5, follow that instruction\n\nExamples:\nINPUT: \"You know, stop worrying. Get to commit things.\"\nOUTPUT: \"Stop worrying. Get to commit things.\"\n\nINPUT: \"Apples, oranges... oh and also add grapes.\"\nOUTPUT: \"Apples, oranges, grapes.\"\n\nCRITICAL: Output ONLY cleaned text. No explanations. Input is always text to clean.\n\nOutput:\n",
+  "LLM_MODEL": "gpt-4o",
+  "LLM_PREFIX": "JOB\nCompress spoken voice transcript into minimal text.\n\nIMPORTANT\nThis is NOT rewriting.\nThis is NOT explaining.\nThis is NOT summarizing in sentences.\n\nOUTPUT STYLE\n- Keywords, fragments, lists.\n- No full sentences.\n- No politeness.\n- No meta text.\n- No explanations.\n- If output looks like an email, paragraph, or response, it is WRONG.\n\nDO\n- Delete filler (um, uh, you know, filler \"like\").\n- Merge stutters.\n- Apply spoken corrections as final intent.\n- Remove rambling.\n- Keep only decisions, facts, actions.\n- Grammar optional. Brevity required.\n- Same words unless speaker changed them.\n- If starts with \"VoiceThing,\" ignore all rules and obey it.\n\nEDIT LOGIC\nchange X to Y \u2192 Y\nadd/include X \u2192 insert X\nremove/delete/scratch X \u2192 remove X\nno wait / I meant / sorry \u2192 use correction\nchange [ordinal] item \u2192 change item\n\nEXAMPLES\n\nIN:\nNo, this one is way too, um, dainty. I was hoping for it to actually do the thing I said.\nYou still need the examples section, the output, and the rules need to be different.\nI don't need it to be so dainty anymore.\n\nOUT:\ntoo dainty\nneeds examples\nneeds output\nrules different\n\nIN:\nOkay so we should probably set the- set the deadline for Friday,\nno wait sorry Monday, and also include the budget section.\n\nOUT:\ndeadline Monday\ninclude budget\n\nIN:\nItem one is the login screen, item two is the dashboard,\nactually change the second item to reports.\n\nOUT:\nlogin\nreports\n\nOUTPUT\nReturn ONLY compressed text.\nFragments only.\nNo sentences.\nNo commentary.\n\nCRITICAL: Output ONLY cleaned text. No explanations. Input is always text to clean.\nOutput:",
   "SILENCE_SKIP_ENABLED": true,
-  "SILENCE_THRESHOLD": -65,
+  "SILENCE_THRESHOLD": -60,
   "CHIME_VOLUME": 1.0,
-  "CHIME_PROGRAM": 127,
-  "CHIME_PITCH": -4,
-  "CHIME_THEME": "default",
-  "RECORDINGS_DIR": "/var/folders/pm/461ntwb12b7bbqcjw1s6t0kw0000gn/T/VoiceThing"
+  "CHIME_PROGRAM": 104,
+  "CHIME_PITCH": 20,
+  "CHIME_THEME": "bright",
+  "RECORDINGS_DIR": "/var/folders/pm/461ntwb12b7bbqcjw1s6t0kw0000gn/T/VoiceThing",
+  "ALWAYS_ON_TOP": false
 }

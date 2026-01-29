@@ -352,8 +352,7 @@ class PetCompanionWidget(QWidget):
             self._is_gif = True
             self._movie = QMovie(filepath)
             self._movie.setParent(self)  # Parent to widget so it's deleted together
-            self._movie.setCacheMode(QMovie.CacheMode.CacheAll)  # Cache frames for smooth playback
-            # Get size before starting (non-blocking)
+            # Get size from first frame
             self._movie.jumpToFrame(0)
             frame = self._movie.currentPixmap()
             if not frame.isNull():
