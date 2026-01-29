@@ -4838,9 +4838,6 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         dialog.center_on_parent()
         if dialog.exec():
             S.set('TMUX_TARGET', dialog.selected_target)
-            # Also enable tmux mode if not already
-            if not S.TMUX_MODE:
-                S.set('TMUX_MODE', True)
             self._save_settings()
 
     def _load_wake_word_model(self):
