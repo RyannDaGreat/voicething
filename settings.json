@@ -7,7 +7,7 @@
   "LLM_ENABLED": false,
   "AUTO_ENTER": true,
   "WAKE_WORD_ENABLED": true,
-  "SIMPLE_MODE": true,
+  "SIMPLE_MODE": false,
   "PET_TYPES": [
     "emmy",
     "lpc_dog_white"
@@ -16,7 +16,7 @@
   "THEME": "vaporwave",
   "WAKE_WORD_MODEL": "jarvis",
   "TMUX_MODE": true,
-  "TMUX_TARGET": "%11",
+  "TMUX_TARGET": "%2",
   "TMUX_PANE_NAMES": {
     "%2": {
       "phrase": "paper"
@@ -40,7 +40,7 @@
   "RECORDINGS_DIR": "/var/folders/pm/461ntwb12b7bbqcjw1s6t0kw0000gn/T/VoiceThing",
   "ALWAYS_ON_TOP": false,
   "SPEAK_BACK_SPEED": 1.5,
-  "SPEAK_BACK_VOICE": "F4",
+  "SPEAK_BACK_VOICE": "say",
   "SPEAK_BACK_VOLUME": 1.0,
   "SPEAK_BACK_STEPS": 5,
   "SPEAK_BACK_APPEND_INSTRUCTION": true,
