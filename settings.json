@@ -1,19 +1,19 @@
 {
   "ENTER_DELAY": 0.3,
-  "WAKE_WORD_SENSITIVITY": 0.2,
+  "WAKE_WORD_SENSITIVITY": 0.19,
   "CUSTOM_WORDS": "Claude Haiku Mohib tmux Glados foxtrot glooblybop",
   "AUTO_HIDE": false,
   "SOUND_ENABLED": true,
   "LLM_ENABLED": false,
   "AUTO_ENTER": true,
-  "WAKE_WORD_ENABLED": false,
+  "WAKE_WORD_ENABLED": true,
   "SIMPLE_MODE": false,
   "PET_TYPES": [
     "emmy",
     "lpc_dog_white"
   ],
   "WHISPER_MODEL": "large-v3",
-  "THEME": "macos_2005",
+  "THEME": "cyberpunk_metal",
   "WAKE_WORD_MODEL": "jarvis",
   "TMUX_MODE": true,
   "TMUX_TARGET": "%2",
@@ -44,5 +44,6 @@
   "SPEAK_BACK_VOLUME": 1.0,
   "SPEAK_BACK_STEPS": 5,
   "SPEAK_BACK_APPEND_INSTRUCTION": true,
+  "SPEAK_BACK_TMUX_ONLY": true,
   "SPEAK_BACK_INSTRUCTION_TEMPLATE": "Please speak back with {command}"
 }
