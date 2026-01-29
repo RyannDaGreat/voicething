@@ -82,6 +82,7 @@ BLOCKSIZE = 256
 
 # UI settings
 TRAY_ICON_SIZE = 44  # Menu bar icon size (2x for retina)
+CANCEL_HOLD_SECONDS = 0.5  # Hold alt this long after recording starts to cancel instead of paste
 WAVEFORM_DURATION_SECONDS = 10  # Duration of audio shown in waveform display
 MIN_TOOLBAR_BUTTON_WIDTH = 28  # Minimum button width before toolbar wraps/collapses
 RESIZE_MARGIN = 20  # Pixels from edge for resize detection
@@ -1395,6 +1396,7 @@ class HelpDialog(DraggableDialog):
             "Voice transcription powered by Whisper.\n\n"
             "• Double-tap ⌥ to record from anywhere (works in fullscreen apps and terminals!)\n"
             "• Double-tap ⌥ again to stop and auto-paste the transcription via ⌘V\n"
+            f"• Double-tap ⌥ and hold 2nd tap {CANCEL_HOLD_SECONDS}s+ to cancel (no paste)\n"
             "• ⌘ + double-tap ⌥ to toggle focus\n"
             "• Access from menu bar (top right of Mac)\n"
             "• Drag & drop audio files to transcribe\n"
@@ -3944,6 +3946,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
     wake_word_signal = pyqtSignal(object)  # pre_buffer numpy array
     finish_signal = pyqtSignal()  # Signal to call _finish on main thread
     stop_signal = pyqtSignal()  # Signal to stop recording from wake word
+    cancel_signal = pyqtSignal()  # Signal to cancel recording (double-tap held long)
 
     _paint_inset = 0
 
@@ -4197,6 +4200,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         self.wake_word_signal.connect(lambda buf: self.start_recording(pre_buffer=buf))
         self.finish_signal.connect(self._finish)
         self.stop_signal.connect(self.stop_recording)
+        self.cancel_signal.connect(self.cancel_recording)
 
         self.update_timer = QTimer()
         self.update_timer.timeout.connect(self._update_display)
@@ -5356,32 +5360,38 @@ def main():
     app.setStyleSheet(f"QToolTip {{ background: #333; color: white; border: 1px solid #555; border-radius: 4px; font-family: {UI_FONT}; }}")
     window = VoiceThingWindow()
 
-    tap_state = [0.0, 0]  # [last_tap_time, tap_count]
+    tap_state = [0.0, 0, 0.0]  # [last_release_time, tap_count, current_press_time]
     pressed = set()
     CMD_KEYS = (keyboard.Key.cmd, keyboard.Key.cmd_l, keyboard.Key.cmd_r)
     ALT_KEYS = (keyboard.Key.alt, keyboard.Key.alt_l, keyboard.Key.alt_r)
 
     def on_press(key):
         pressed.add(key)
-        # Reset tap count if non-modifier key pressed
-        if key not in ALT_KEYS and key not in CMD_KEYS:
+        if key in ALT_KEYS:
+            now = time.time()
+            # Check if this press is close to last release (quick tap-tap)
+            if now - tap_state[0] < 0.3:
+                tap_state[1] += 1
+            else:
+                tap_state[1] = 1
+            tap_state[2] = now  # Record press time
+        elif key not in CMD_KEYS:
             tap_state[1] = 0
 
     def on_release(key):
         pressed.discard(key)
         if key in ALT_KEYS:
             now = time.time()
+            hold_duration = now - tap_state[2]  # How long this tap was held
             cmd_held = any(k in pressed for k in CMD_KEYS)
-            if now - tap_state[0] < 0.3:
-                tap_state[1] += 1
-                if tap_state[1] == 2:
-                    if cmd_held:
-                        window.focus_signal.emit()
-                    else:
-                        window.toggle_signal.emit()
-                    tap_state[1] = 0
-            else:
-                tap_state[1] = 1
+            if tap_state[1] == 2:
+                if cmd_held:
+                    window.focus_signal.emit()
+                elif window.state == "recording" and hold_duration >= CANCEL_HOLD_SECONDS:
+                    window.cancel_signal.emit()
+                else:
+                    window.toggle_signal.emit()
+                tap_state[1] = 0
             tap_state[0] = now
 
     listener = keyboard.Listener(on_press=on_press, on_release=on_release)
