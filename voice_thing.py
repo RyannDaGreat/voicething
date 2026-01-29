@@ -513,13 +513,12 @@ DEFAULTS = dict(
     CHIME_THEME='bright',  # Chime theme (default, blues, melancholy, bright)
     RECORDINGS_DIR=DEFAULT_RECORDINGS_DIR,  # Folder for audio recordings and transcripts
     ALWAYS_ON_TOP=True,  # Keep window above other windows
-    SPEAK_BACK_PORT=7123,  # Port for TTS HTTP server
     SPEAK_BACK_SPEED=1.5,  # TTS speech speed (0.7=slow, 1.0=normal, 2.0=fast)
     SPEAK_BACK_VOICE='F1',  # TTS voice (F1-F5 female, M1-M5 male)
     SPEAK_BACK_VOLUME=1.0,  # TTS volume (0.0=mute, 1.0=normal, 2.0=loud)
     SPEAK_BACK_STEPS=5,  # TTS quality steps (1=fast/low, 10=slow/high)
-    SPEAK_BACK_APPEND_INSTRUCTION=True,  # Append curl instruction to transcriptions
-    SPEAK_BACK_INSTRUCTION_TEMPLATE='Please speak via curl "http://localhost:{port}/speak?text=YOUR_MESSAGE_HERE&speed={speed}&voice={voice}&volume={volume}&steps={steps}" &',
+    SPEAK_BACK_APPEND_INSTRUCTION=True,  # Append TTS instruction to transcriptions
+    SPEAK_BACK_INSTRUCTION_TEMPLATE="({python} -m rp call 'text_to_speech_via_supertonic(text,voice=\"{voice}\",speed={speed},volume={volume},steps={steps},block=False)' ---text 'YOUR_MESSAGE_HERE' &)",
 )
 S = Settings(**DEFAULTS)
 # =============================================================================
@@ -1818,11 +1817,10 @@ class TmuxSelectionDialog(DraggableDialog):
 class TTSInstructionDialog(DraggableDialog):
     """Dialog to edit the TTS instruction template."""
 
-    DEFAULT_TEMPLATE = 'Please speak via curl "http://localhost:{port}/speak?text=YOUR_MESSAGE_HERE&speed={speed}&voice={voice}&volume={volume}&steps={steps}" &'
+    DEFAULT_TEMPLATE = "({python} -m rp call 'text_to_speech_via_supertonic(text,voice=\"{voice}\",speed={speed},volume={volume},steps={steps},block=False)' ---text 'YOUR_MESSAGE_HERE' &)"
 
     def __init__(self, current_text, parent=None):
         super().__init__(parent)
-        self._current_text = current_text
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(15, 15, 15, 15)
@@ -1831,8 +1829,8 @@ class TTSInstructionDialog(DraggableDialog):
         layout.addWidget(make_title("Edit TTS Instruction"))
 
         # Info label
-        info = QLabel("Template variables: {port}, {speed}, {voice}, {volume}, {steps}")
-        info.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 10px;")
+        info = QLabel("Template variables: {python}, {speed}, {voice}, {volume}, {steps}")
+        info.setStyleSheet(body_style(10))
         layout.addWidget(info)
 
         # Text edit
@@ -1884,59 +1882,20 @@ class TTSInstructionDialog(DraggableDialog):
 
 
 class TTSSettingsWidget(QWidget):
-    """Self-contained TTS settings widget with status indicator and controls.
-
-    Handles all TTS-related UI and logic including:
-    - Server status indicator (ONLINE/OFFLINE) with tmux info
-    - Power button to start/stop server
-    - Voice, speed, volume controls
-    - Append instruction checkbox and edit button
-    - Debounced status checking (no polling)
-    """
+    """Self-contained TTS settings widget with voice, speed, volume, quality controls."""
 
     TTS_VOICES = ['F1', 'F2', 'F3', 'F4', 'F5', 'M1', 'M2', 'M3', 'M4', 'M5']
-    STATUS_DEBOUNCE_MS = 2000
-
-    _status_signal = pyqtSignal(bool, str)  # (is_online, tmux_info)
-    _invalidate_signal = pyqtSignal()  # For thread-safe invalidation
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._status_signal.connect(self._on_status_changed)
-        self._invalidate_signal.connect(self._do_invalidate)
-        self._debounce_timer = QTimer()
-        self._debounce_timer.setSingleShot(True)
-        self._debounce_timer.timeout.connect(self._do_status_check)
         self._build_ui()
-        self._do_invalidate()  # Initial check (we're on main thread here)
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(4)
 
-        # Header row: section label + status + power button
-        header = QHBoxLayout()
-        header.setSpacing(4)
-        header.addWidget(make_section("Text-to-Speech"))
-        header.addStretch()
-
-        self._status_label = QLabel("OFFLINE")
-        self._status_label.setTextFormat(Qt.TextFormat.RichText)
-        self._status_label.setStyleSheet("color: #ff6b6b; font-size: 9px; font-weight: bold;")
-        header.addWidget(self._status_label)
-
-        self._power_btn = QPushButton()
-        self._power_btn.setFixedSize(18, 18)
-        power_icon = load_icon("power", color="#ff6b6b")
-        if power_icon:
-            self._power_btn.setIcon(power_icon)
-            self._power_btn.setIconSize(QSize(14, 14))
-        self._power_btn.setStyleSheet("QPushButton { background: transparent; border: none; }")
-        self._power_btn.setToolTip("Start/stop TTS server")
-        self._power_btn.clicked.connect(self._toggle_server)
-        header.addWidget(self._power_btn)
-        layout.addLayout(header)
+        layout.addWidget(make_section("Text-to-Speech"))
 
         # Voice selector
         voice_row = QHBoxLayout()
@@ -2016,10 +1975,10 @@ class TTSSettingsWidget(QWidget):
         # Append instruction checkbox + edit button
         append_row = QHBoxLayout()
         append_row.setSpacing(8)
-        self._append_checkbox = QCheckBox("Append curl instruction")
+        self._append_checkbox = QCheckBox("Append TTS instruction")
         self._append_checkbox.setChecked(S.SPEAK_BACK_APPEND_INSTRUCTION)
         self._append_checkbox.setStyleSheet(f"QCheckBox {{ color: {TEXT_PRIMARY}; font-size: 11px; }}")
-        self._append_checkbox.setToolTip("When enabled, appends TTS curl command to transcriptions\n"
+        self._append_checkbox.setToolTip("When enabled, appends TTS command to transcriptions\n"
                                          "so Claude can speak responses aloud.")
         self._append_checkbox.stateChanged.connect(self._on_append_changed)
         append_row.addWidget(self._append_checkbox)
@@ -2032,109 +1991,17 @@ class TTSSettingsWidget(QWidget):
         append_row.addStretch()
         layout.addLayout(append_row)
 
-    # ─────────────────────────────────────────────────────────────────────────
-    # Status checking (debounced)
-    # ─────────────────────────────────────────────────────────────────────────
-
-    def invalidate_status(self):
-        """Request a status check (thread-safe, debounced)."""
-        self._invalidate_signal.emit()  # Always use signal for thread safety
-
-    def _do_invalidate(self):
-        """Actually start the debounce timer (must be called on main thread)."""
-        self._debounce_timer.start(self.STATUS_DEBOUNCE_MS)
-
-    def _do_status_check(self):
-        """Actually check server status (runs in background thread)."""
-        def _check():
-            import urllib.request
-            try:
-                with urllib.request.urlopen(f"http://localhost:{S.SPEAK_BACK_PORT}/health", timeout=0.5) as resp:
-                    if resp.status == 200:
-                        from rp.libs.supertonic_tts_server import TMUX_SESSION
-                        tmux_info = ""
-                        try:
-                            result = subprocess.run(
-                                ['tmux', 'list-windows', '-t', TMUX_SESSION, '-F', '#{window_name}'],
-                                capture_output=True, text=True, timeout=1
-                            )
-                            if result.returncode == 0:
-                                window = result.stdout.strip().split('\n')[0]
-                                result2 = subprocess.run(
-                                    ['tmux', 'list-panes', '-t', TMUX_SESSION, '-F', '#{pane_index}'],
-                                    capture_output=True, text=True, timeout=1
-                                )
-                                pane = result2.stdout.strip().split('\n')[0] if result2.returncode == 0 else '0'
-                                tmux_info = f"TMUX:{TMUX_SESSION}:{window}:{pane}"
-                        except Exception:
-                            pass
-                        self._status_signal.emit(True, tmux_info)
-                        return
-            except Exception:
-                pass
-            self._status_signal.emit(False, "")
-        threading.Thread(target=_check, daemon=True).start()
-
-    def _on_status_changed(self, is_online, tmux_info):
-        """Update UI based on status (called on main thread via signal)."""
-        if is_online:
-            self._status_label.setText(f"ONLINE <span style='font-size:7px'>({tmux_info})</span>")
-            self._status_label.setStyleSheet("color: #51cf66; font-size: 9px; font-weight: bold;")
-            color = "#51cf66"
-        else:
-            self._status_label.setText("OFFLINE")
-            self._status_label.setStyleSheet("color: #ff6b6b; font-size: 9px; font-weight: bold;")
-            color = "#ff6b6b"
-        power_icon = load_icon("power", color=color)
-        if power_icon:
-            self._power_btn.setIcon(power_icon)
-
-    # ─────────────────────────────────────────────────────────────────────────
-    # Server control
-    # ─────────────────────────────────────────────────────────────────────────
-
-    def _toggle_server(self):
-        """Start or stop the TTS server."""
-        import urllib.request
-        try:
-            with urllib.request.urlopen(f"http://localhost:{S.SPEAK_BACK_PORT}/health", timeout=0.5) as resp:
-                if resp.status == 200:
-                    # Online -> stop it
-                    import rp
-                    from rp.libs.supertonic_tts_server import TMUX_SESSION
-                    if TMUX_SESSION in rp.tmux_get_all_session_names():
-                        rp.tmux_kill_session(TMUX_SESSION)
-                    self.invalidate_status()
-                    return
-        except Exception:
-            pass
-        # Offline -> start it
-        def _start():
-            import rp
-            rp.text_to_speech_via_supertonic(
-                "TTS server started",
-                voice=S.SPEAK_BACK_VOICE,
-                speed=S.SPEAK_BACK_SPEED,
-                volume=S.SPEAK_BACK_VOLUME
-            )
-            self.invalidate_status()
-        threading.Thread(target=_start, daemon=True).start()
-
     def _speak_demo(self, text):
-        """Speak demo text (non-blocking, may auto-start server)."""
+        """Speak demo text (non-blocking)."""
         def _do_speak():
             import rp
-            try:
-                rp.text_to_speech_via_supertonic(
-                    text,
-                    voice=S.SPEAK_BACK_VOICE,
-                    speed=S.SPEAK_BACK_SPEED,
-                    volume=S.SPEAK_BACK_VOLUME,
-                    block=True
-                )
-                self.invalidate_status()
-            except Exception as e:
-                print(f"TTS demo failed: {e}")
+            rp.text_to_speech_via_supertonic(
+                text,
+                voice=S.SPEAK_BACK_VOICE,
+                speed=S.SPEAK_BACK_SPEED,
+                volume=S.SPEAK_BACK_VOLUME,
+                block=True
+            )
         threading.Thread(target=_do_speak, daemon=True).start()
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -2173,7 +2040,7 @@ class TTSSettingsWidget(QWidget):
 
     def _edit_instruction(self):
         """Open dialog to edit the TTS instruction template."""
-        dialog = TTSInstructionDialog(S.SPEAK_BACK_INSTRUCTION_TEMPLATE, self)
+        dialog = TTSInstructionDialog(S.SPEAK_BACK_INSTRUCTION_TEMPLATE, self.window())
         dialog.center_on_parent()
         if dialog.exec():
             S.set('SPEAK_BACK_INSTRUCTION_TEMPLATE', dialog.get_text())
@@ -4415,10 +4282,11 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         # Append TTS instruction if append instruction is enabled
         if S.SPEAK_BACK_APPEND_INSTRUCTION:
             instruction = S.SPEAK_BACK_INSTRUCTION_TEMPLATE.format(
-                port=S.SPEAK_BACK_PORT,
+                python=sys.executable,
                 speed=S.SPEAK_BACK_SPEED,
                 voice=S.SPEAK_BACK_VOICE,
-                volume=S.SPEAK_BACK_VOLUME
+                volume=S.SPEAK_BACK_VOLUME,
+                steps=S.SPEAK_BACK_STEPS,
             )
             text = text + '\n\n' + instruction
 
