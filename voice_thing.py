@@ -1632,6 +1632,19 @@ class TmuxSelectionDialog(DraggableDialog):
         # Buttons
         btn_row = QHBoxLayout()
         btn_row.setSpacing(8)
+
+        # Enable tmux mode checkbox
+        self.enable_checkbox = QCheckBox("Enable tmux mode")
+        self.enable_checkbox.setChecked(S.TMUX_MODE)
+        self.enable_checkbox.setStyleSheet(f"QCheckBox {{ color: {TEXT_PRIMARY}; font-size: 11px; }}")
+        set_tooltip(self.enable_checkbox,
+            "Enable or disable tmux voice routing.\n\n"
+            "When enabled, transcriptions containing magic phrases\n"
+            "will be sent directly to the matching tmux panes."
+        )
+        self.enable_checkbox.stateChanged.connect(self._on_enable_changed)
+        btn_row.addWidget(self.enable_checkbox)
+
         btn_row.addStretch()
         cancel_btn = QPushButton("Esc  Cancel")
         cancel_btn.setStyleSheet(get_btn_css())
@@ -1805,6 +1818,10 @@ class TmuxSelectionDialog(DraggableDialog):
             sb.setValue(sb.maximum())
         else:
             self.preview.setPlainText(f"(cannot preview {pane_id})")
+
+    def _on_enable_changed(self, state):
+        """Toggle tmux mode on/off."""
+        S.set('TMUX_MODE', state == Qt.CheckState.Checked.value)
 
     def _accept_selection(self):
         """Accept and save."""
@@ -2038,6 +2055,25 @@ class TTSSettingsWidget(QWidget):
         append_row.addStretch()
         layout.addLayout(append_row)
 
+        # Announce pane checkbox
+        announce_row = QHBoxLayout()
+        announce_row.setSpacing(8)
+        self._announce_checkbox = QCheckBox("Announce tmux pane")
+        self._announce_checkbox.setChecked(S.TMUX_ANNOUNCE_PANE)
+        self._announce_checkbox.setStyleSheet(f"QCheckBox {{ color: {TEXT_PRIMARY}; font-size: 11px; }}")
+        set_tooltip(self._announce_checkbox,
+            "Use TTS to announce which pane(s) received the message.\n\n"
+            "When enabled, after sending to a magic phrase pane,\n"
+            "VoiceThing will speak 'sent to <phrase>' using TTS.\n\n"
+            "Example: if panes have phrases 'paper' and 'chicken',\n"
+            "and you say something matching both, you'll hear\n"
+            "'sent to paper chicken'."
+        )
+        self._announce_checkbox.stateChanged.connect(self._on_announce_changed)
+        announce_row.addWidget(self._announce_checkbox)
+        announce_row.addStretch()
+        layout.addLayout(announce_row)
+
     def _speak_demo(self, text):
         """Speak demo text (non-blocking)."""
         def _do_speak():
@@ -2090,6 +2126,9 @@ class TTSSettingsWidget(QWidget):
 
     def _on_append_changed(self, state):
         S.set('SPEAK_BACK_APPEND_INSTRUCTION', state == Qt.CheckState.Checked.value)
+
+    def _on_announce_changed(self, state):
+        S.set('TMUX_ANNOUNCE_PANE', state == Qt.CheckState.Checked.value)
 
     def _edit_instruction(self):
         """Open dialog to edit the TTS instruction template."""
@@ -4403,6 +4442,27 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         # Log what was sent
         names = [S.TMUX_PANE_NAMES.get(t, {}).get('phrase', t) for t in targets]
         print(f"Sent to {len(targets)} panes ({', '.join(names)}): {text[:50]}{'...' if len(text) > 50 else ''}")
+        # Announce pane names via TTS if enabled
+        if S.TMUX_ANNOUNCE_PANE and names:
+            announcement = f"sent to {' '.join(names)}"
+            self._speak_announcement(announcement)
+
+    def _speak_announcement(self, text):
+        """Speak an announcement using TTS (non-blocking)."""
+        def _do_speak():
+            if S.SPEAK_BACK_VOICE == 'say':
+                subprocess.run(['say', text])
+            else:
+                import rp
+                rp.text_to_speech_via_supertonic(
+                    text,
+                    voice=S.SPEAK_BACK_VOICE,
+                    speed=S.SPEAK_BACK_SPEED,
+                    volume=S.SPEAK_BACK_VOLUME,
+                    steps=S.SPEAK_BACK_STEPS,
+                    block=True
+                )
+        threading.Thread(target=_do_speak, daemon=True).start()
 
     def _find_matching_tmux_panes(self, text):
         """Find panes whose magic phrase matches the transcription text."""
@@ -4973,7 +5033,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         for key in ['ENTER_DELAY', 'WAKE_WORD_SENSITIVITY', 'CUSTOM_WORDS', 'WHISPER_MODEL',
                     'LLM_MODEL', 'LLM_PREFIX', 'CHIME_VOLUME', 'CHIME_PITCH',
                     'CHIME_PROGRAM', 'CHIME_THEME', 'SILENCE_SKIP_ENABLED', 'SILENCE_THRESHOLD',
-                    'TMUX_TARGET', 'TMUX_PANE_NAMES', 'TMUX_PHRASES_AS_CONTEXT', 'RECORDINGS_DIR']:
+                    'TMUX_TARGET', 'TMUX_PANE_NAMES', 'TMUX_PHRASES_AS_CONTEXT', 'TMUX_ANNOUNCE_PANE', 'RECORDINGS_DIR']:
             if key in data:
                 S[key] = data[key]
         # SIMPLE_MODE needs toggle pattern (handle both on->off and off->on)

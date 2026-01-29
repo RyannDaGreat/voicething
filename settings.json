@@ -26,6 +26,7 @@
     }
   },
   "TMUX_PHRASES_AS_CONTEXT": true,
+  "TMUX_ANNOUNCE_PANE": true,
   "AUTO_COPY": true,
   "AUTO_PASTE": true,
   "LLM_MODEL": "gpt-4o",
@@ -39,9 +40,9 @@
   "RECORDINGS_DIR": "/var/folders/pm/461ntwb12b7bbqcjw1s6t0kw0000gn/T/VoiceThing",
   "ALWAYS_ON_TOP": false,
   "SPEAK_BACK_SPEED": 1.5,
-  "SPEAK_BACK_VOICE": "F2",
+  "SPEAK_BACK_VOICE": "F4",
   "SPEAK_BACK_VOLUME": 1.0,
-  "SPEAK_BACK_STEPS": 10,
+  "SPEAK_BACK_STEPS": 5,
   "SPEAK_BACK_APPEND_INSTRUCTION": true,
-  "SPEAK_BACK_INSTRUCTION_TEMPLATE": "({python} -m rp call text_to_speech_via_supertonic ---text 'YOUR_MESSAGE_HERE' ---voice '{voice}' --speed {speed} --volume {volume} --steps {steps} --block False &)"
+  "SPEAK_BACK_INSTRUCTION_TEMPLATE": "Please speak back with ({command} &)"
 }
