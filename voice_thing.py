@@ -2638,7 +2638,7 @@ class PrefsDialog(DraggableDialog):
         # Text edit
         text_edit = QTextEdit()
         text_edit.setPlainText(S.SPEAK_BACK_INSTRUCTION_TEMPLATE)
-        text_edit.setStyleSheet(f"background: {STYLE.bg_secondary}; color: {TEXT_PRIMARY}; font-family: monospace; font-size: 11px;")
+        text_edit.setStyleSheet(f"color: {TEXT_PRIMARY}; font-family: monospace; font-size: 11px;")
         layout.addWidget(text_edit)
 
         # Buttons
@@ -2663,32 +2663,40 @@ class PrefsDialog(DraggableDialog):
             S.set('SPEAK_BACK_INSTRUCTION_TEMPLATE', text_edit.toPlainText())
 
     def _update_tts_status(self):
-        """Check if TTS server is online and update status indicator."""
-        import urllib.request
-        try:
-            with urllib.request.urlopen(f"http://localhost:{S.SPEAK_BACK_PORT}/health", timeout=0.5) as resp:
-                if resp.status == 200:
-                    # Get tmux session info
-                    import rp
-                    from rp.libs.supertonic_tts_server import TMUX_SESSION
-                    tmux_info = ""
-                    if TMUX_SESSION in rp.tmux_get_all_session_names():
-                        try:
-                            # Get window name (contains port)
-                            window = rp.shell_command(f'tmux list-windows -t {TMUX_SESSION} -F "#{{window_name}}" 2>/dev/null').strip().split('\n')[0]
-                            # Get pane info
-                            pane = rp.shell_command(f'tmux list-panes -t {TMUX_SESSION} -F "#{{pane_index}}" 2>/dev/null').strip().split('\n')[0]
-                            tmux_info = f"TMUX:{TMUX_SESSION}:{window}:{pane}"
-                        except Exception:
-                            tmux_info = f"TMUX:{TMUX_SESSION}"
-                    self.tts_status_label.setText(f"ONLINE <span style='font-size:7px'>({tmux_info})</span>")
-                    self.tts_status_label.setStyleSheet("color: #51cf66; font-size: 9px; font-weight: bold;")
-                    power_icon = load_icon("power", color="#51cf66")
-                    if power_icon:
-                        self.tts_power_btn.setIcon(power_icon)
-                    return
-        except Exception:
-            pass
+        """Check if TTS server is online and update status indicator (non-blocking)."""
+        def _check():
+            import urllib.request
+            try:
+                with urllib.request.urlopen(f"http://localhost:{S.SPEAK_BACK_PORT}/health", timeout=0.5) as resp:
+                    if resp.status == 200:
+                        # Get tmux session info
+                        import rp
+                        from rp.libs.supertonic_tts_server import TMUX_SESSION
+                        tmux_info = ""
+                        if TMUX_SESSION in rp.tmux_get_all_session_names():
+                            try:
+                                window = rp.shell_command(f'tmux list-windows -t {TMUX_SESSION} -F "#{{window_name}}" 2>/dev/null').strip().split('\n')[0]
+                                pane = rp.shell_command(f'tmux list-panes -t {TMUX_SESSION} -F "#{{pane_index}}" 2>/dev/null').strip().split('\n')[0]
+                                tmux_info = f"TMUX:{TMUX_SESSION}:{window}:{pane}"
+                            except Exception:
+                                tmux_info = f"TMUX:{TMUX_SESSION}"
+                        self._set_tts_online(tmux_info)
+                        return
+            except Exception:
+                pass
+            self._set_tts_offline()
+        threading.Thread(target=_check, daemon=True).start()
+
+    def _set_tts_online(self, tmux_info):
+        """Update UI to show TTS online (called from thread)."""
+        self.tts_status_label.setText(f"ONLINE <span style='font-size:7px'>({tmux_info})</span>")
+        self.tts_status_label.setStyleSheet("color: #51cf66; font-size: 9px; font-weight: bold;")
+        power_icon = load_icon("power", color="#51cf66")
+        if power_icon:
+            self.tts_power_btn.setIcon(power_icon)
+
+    def _set_tts_offline(self):
+        """Update UI to show TTS offline (called from thread)."""
         self.tts_status_label.setText("OFFLINE")
         self.tts_status_label.setStyleSheet("color: #ff6b6b; font-size: 9px; font-weight: bold;")
         power_icon = load_icon("power", color="#ff6b6b")
