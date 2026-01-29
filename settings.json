@@ -13,7 +13,7 @@
     "lpc_dog_white"
   ],
   "WHISPER_MODEL": "large-v3",
-  "THEME": "vaporwave",
+  "THEME": "cyberpunk_metal",
   "WAKE_WORD_MODEL": "jarvis",
   "TMUX_MODE": true,
   "TMUX_TARGET": "%2",
@@ -34,15 +34,15 @@
   "SILENCE_SKIP_ENABLED": true,
   "SILENCE_THRESHOLD": -60,
   "CHIME_VOLUME": 1.0,
-  "CHIME_PROGRAM": 104,
-  "CHIME_PITCH": 8,
+  "CHIME_PROGRAM": 127,
+  "CHIME_PITCH": 9,
   "CHIME_THEME": "bright",
   "RECORDINGS_DIR": "/var/folders/pm/461ntwb12b7bbqcjw1s6t0kw0000gn/T/VoiceThing",
   "ALWAYS_ON_TOP": false,
   "SPEAK_BACK_SPEED": 1.5,
-  "SPEAK_BACK_VOICE": "say",
+  "SPEAK_BACK_VOICE": "F4",
   "SPEAK_BACK_VOLUME": 1.0,
   "SPEAK_BACK_STEPS": 5,
   "SPEAK_BACK_APPEND_INSTRUCTION": true,
-  "SPEAK_BACK_INSTRUCTION_TEMPLATE": "Please speak back with ({command} &)"
+  "SPEAK_BACK_INSTRUCTION_TEMPLATE": "Please speak back with {command}"
 }
