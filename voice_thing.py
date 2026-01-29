@@ -1559,6 +1559,7 @@ class TmuxSelectionDialog(DraggableDialog):
         self._hover_pane_id = None
         self._selected_pane_id = None
         self._pane_data = []  # List of {address, pane_id, process, target}
+        self._orig_tmux_mode = S.TMUX_MODE  # Store original for cancel
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(15, 15, 15, 15)
@@ -1642,7 +1643,6 @@ class TmuxSelectionDialog(DraggableDialog):
             "When enabled, transcriptions containing magic phrases\n"
             "will be sent directly to the matching tmux panes."
         )
-        self.enable_checkbox.stateChanged.connect(self._on_enable_changed)
         btn_row.addWidget(self.enable_checkbox)
 
         btn_row.addStretch()
@@ -1819,12 +1819,10 @@ class TmuxSelectionDialog(DraggableDialog):
         else:
             self.preview.setPlainText(f"(cannot preview {pane_id})")
 
-    def _on_enable_changed(self, state):
-        """Toggle tmux mode on/off."""
-        S.set('TMUX_MODE', state == Qt.CheckState.Checked.value)
-
     def _accept_selection(self):
         """Accept and save."""
+        # Apply tmux mode from checkbox
+        S.set('TMUX_MODE', self.enable_checkbox.isChecked())
         # Clean up stale pane_ids from TMUX_PANE_NAMES
         if self._pane_data:
             live_ids = {p['pane_id'] for p in self._pane_data}
@@ -1835,6 +1833,11 @@ class TmuxSelectionDialog(DraggableDialog):
         if self._selected_pane_id:
             self.selected_target = self._selected_pane_id
         self.accept()
+
+    def reject(self):
+        """Revert tmux mode on cancel."""
+        S.set('TMUX_MODE', self._orig_tmux_mode)
+        super().reject()
 
     def keyPressEvent(self, e):
         if e.key() == Qt.Key.Key_Escape:
@@ -5033,7 +5036,9 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         for key in ['ENTER_DELAY', 'WAKE_WORD_SENSITIVITY', 'CUSTOM_WORDS', 'WHISPER_MODEL',
                     'LLM_MODEL', 'LLM_PREFIX', 'CHIME_VOLUME', 'CHIME_PITCH',
                     'CHIME_PROGRAM', 'CHIME_THEME', 'SILENCE_SKIP_ENABLED', 'SILENCE_THRESHOLD',
-                    'TMUX_TARGET', 'TMUX_PANE_NAMES', 'TMUX_PHRASES_AS_CONTEXT', 'TMUX_ANNOUNCE_PANE', 'RECORDINGS_DIR']:
+                    'TMUX_TARGET', 'TMUX_PANE_NAMES', 'TMUX_PHRASES_AS_CONTEXT', 'TMUX_ANNOUNCE_PANE', 'RECORDINGS_DIR',
+                    'SPEAK_BACK_SPEED', 'SPEAK_BACK_VOICE', 'SPEAK_BACK_VOLUME', 'SPEAK_BACK_STEPS',
+                    'SPEAK_BACK_APPEND_INSTRUCTION', 'SPEAK_BACK_INSTRUCTION_TEMPLATE']:
             if key in data:
                 S[key] = data[key]
         # SIMPLE_MODE needs toggle pattern (handle both on->off and off->on)
