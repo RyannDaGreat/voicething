@@ -501,6 +501,7 @@ DEFAULTS = dict(
     TMUX_TARGET='%',  # Tmux pane target (% = current pane)
     TMUX_PANE_NAMES={},  # pane_id -> {phrase: str}
     TMUX_PHRASES_AS_CONTEXT=True,  # Include tmux phrases in context words
+    TMUX_ANNOUNCE_PANE=False,  # Announce pane names via TTS when sending
     AUTO_COPY=True,   # Copy transcription to clipboard before paste
     AUTO_PASTE=True,  # Use ⌘V to paste after copying
     LLM_MODEL='OLLAMA:qwen2.5:7b',
@@ -514,11 +515,11 @@ DEFAULTS = dict(
     RECORDINGS_DIR=DEFAULT_RECORDINGS_DIR,  # Folder for audio recordings and transcripts
     ALWAYS_ON_TOP=True,  # Keep window above other windows
     SPEAK_BACK_SPEED=1.5,  # TTS speech speed (0.7=slow, 1.0=normal, 2.0=fast)
-    SPEAK_BACK_VOICE='F1',  # TTS voice (F1-F5 female, M1-M5 male)
+    SPEAK_BACK_VOICE='say',  # TTS voice (say=macOS, F1-F5/M1-M5=Supertonic)
     SPEAK_BACK_VOLUME=1.0,  # TTS volume (0.0=mute, 1.0=normal, 2.0=loud)
     SPEAK_BACK_STEPS=5,  # TTS quality steps (1=fast/low, 10=slow/high)
     SPEAK_BACK_APPEND_INSTRUCTION=True,  # Append TTS instruction to transcriptions
-    SPEAK_BACK_INSTRUCTION_TEMPLATE="({python} -m rp call 'text_to_speech_via_supertonic(text,voice=\"{voice}\",speed={speed},volume={volume},steps={steps},block=False)' ---text 'YOUR_MESSAGE_HERE' &)",
+    SPEAK_BACK_INSTRUCTION_TEMPLATE="Please speak back with ({command} &)",
 )
 S = Settings(**DEFAULTS)
 # =============================================================================
@@ -574,6 +575,20 @@ def make_close_btn(text="Esc  Close", on_click=None):
     if on_click:
         btn.clicked.connect(on_click)
     return btn
+
+
+def build_tts_command():
+    """Build the TTS command string based on current voice settings."""
+    if S.SPEAK_BACK_VOICE == 'say':
+        return "say 'YOUR_MESSAGE_HERE'"
+    else:
+        return (
+            f"{sys.executable} -m rp call text_to_speech_via_supertonic "
+            f"---text 'YOUR_MESSAGE_HERE' ---voice '{S.SPEAK_BACK_VOICE}' "
+            f"--speed {S.SPEAK_BACK_SPEED} --volume {S.SPEAK_BACK_VOLUME} "
+            f"--steps {S.SPEAK_BACK_STEPS} --block True"
+        )
+
 
 # LLM post-processing settings
 LLM_MODELS = [
@@ -1817,7 +1832,7 @@ class TmuxSelectionDialog(DraggableDialog):
 class TTSInstructionDialog(DraggableDialog):
     """Dialog to edit the TTS instruction template."""
 
-    DEFAULT_TEMPLATE = "({python} -m rp call 'text_to_speech_via_supertonic(text,voice=\"{voice}\",speed={speed},volume={volume},steps={steps},block=False)' ---text 'YOUR_MESSAGE_HERE' &)"
+    DEFAULT_TEMPLATE = "Please speak back with ({command} &)"
 
     def __init__(self, current_text, parent=None):
         super().__init__(parent)
@@ -1829,7 +1844,7 @@ class TTSInstructionDialog(DraggableDialog):
         layout.addWidget(make_title("Edit TTS Instruction"))
 
         # Info label
-        info = QLabel("Template variables: {python}, {speed}, {voice}, {volume}, {steps}")
+        info = QLabel("Template variable: {command}")
         info.setStyleSheet(body_style(10))
         layout.addWidget(info)
 
@@ -1843,6 +1858,24 @@ class TTSInstructionDialog(DraggableDialog):
         )
         self._text_edit.setMinimumHeight(80)
         layout.addWidget(self._text_edit)
+
+        # Command preview label
+        cmd_label = QLabel("{command} =")
+        cmd_label.setStyleSheet(body_style(10))
+        layout.addWidget(cmd_label)
+
+        # Command preview (non-editable, gray, monospace)
+        self._cmd_preview = QTextEdit()
+        self._cmd_preview.setReadOnly(True)
+        self._cmd_preview.setPlainText(build_tts_command())
+        self._cmd_preview.setStyleSheet(
+            f"QTextEdit {{ background-color: #2a2a2a; color: #888888; "
+            f"border: 1px solid {BORDER_COLOR}; font-family: Menlo, monospace; "
+            f"font-size: 10px; padding: 6px; }}" + SCROLLBAR_CSS
+        )
+        self._cmd_preview.setMinimumHeight(60)
+        self._cmd_preview.setMaximumHeight(80)
+        layout.addWidget(self._cmd_preview)
 
         # Buttons
         btn_row = QHBoxLayout()
@@ -1884,7 +1917,20 @@ class TTSInstructionDialog(DraggableDialog):
 class TTSSettingsWidget(QWidget):
     """Self-contained TTS settings widget with voice, speed, volume, quality controls."""
 
-    TTS_VOICES = ['F1', 'F2', 'F3', 'F4', 'F5', 'M1', 'M2', 'M3', 'M4', 'M5']
+    # Voice options: (value, display_label)
+    TTS_VOICES = [
+        ('say', 'macOS Say'),
+        ('F1', 'Supertonic F1 (Female)'),
+        ('F2', 'Supertonic F2 (Female)'),
+        ('F3', 'Supertonic F3 (Female)'),
+        ('F4', 'Supertonic F4 (Female)'),
+        ('F5', 'Supertonic F5 (Female)'),
+        ('M1', 'Supertonic M1 (Male)'),
+        ('M2', 'Supertonic M2 (Male)'),
+        ('M3', 'Supertonic M3 (Male)'),
+        ('M4', 'Supertonic M4 (Male)'),
+        ('M5', 'Supertonic M5 (Male)'),
+    ]
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -1902,14 +1948,15 @@ class TTSSettingsWidget(QWidget):
         voice_row.setSpacing(8)
         voice_label = QLabel("Voice:")
         voice_label.setStyleSheet(get_pref_label_css())
-        set_tooltip(voice_label, "Voice for Speak Back TTS.\n\nF1-F5 = Female voices\nM1-M5 = Male voices")
+        set_tooltip(voice_label, "Voice for Speak Back TTS.\n\nmacOS Say = Built-in system voice\nSupertonic = Fast neural TTS")
         voice_row.addWidget(voice_label)
         self._voice_combo = QComboBox()
         self._voice_combo.setStyleSheet(get_combobox_css())
-        for v in self.TTS_VOICES:
-            label = f"{v} ({'Female' if v.startswith('F') else 'Male'})"
-            self._voice_combo.addItem(label, v)
-        idx = self.TTS_VOICES.index(S.SPEAK_BACK_VOICE) if S.SPEAK_BACK_VOICE in self.TTS_VOICES else 0
+        for value, label in self.TTS_VOICES:
+            self._voice_combo.addItem(label, value)
+        # Find current voice index
+        voice_values = [v for v, _ in self.TTS_VOICES]
+        idx = voice_values.index(S.SPEAK_BACK_VOICE) if S.SPEAK_BACK_VOICE in voice_values else 0
         self._voice_combo.setCurrentIndex(idx)
         self._voice_combo.currentIndexChanged.connect(self._on_voice_changed)
         voice_row.addWidget(self._voice_combo, 1)
@@ -1994,14 +2041,17 @@ class TTSSettingsWidget(QWidget):
     def _speak_demo(self, text):
         """Speak demo text (non-blocking)."""
         def _do_speak():
-            import rp
-            rp.text_to_speech_via_supertonic(
-                text,
-                voice=S.SPEAK_BACK_VOICE,
-                speed=S.SPEAK_BACK_SPEED,
-                volume=S.SPEAK_BACK_VOLUME,
-                block=True
-            )
+            if S.SPEAK_BACK_VOICE == 'say':
+                subprocess.run(['say', text])
+            else:
+                import rp
+                rp.text_to_speech_via_supertonic(
+                    text,
+                    voice=S.SPEAK_BACK_VOICE,
+                    speed=S.SPEAK_BACK_SPEED,
+                    volume=S.SPEAK_BACK_VOLUME,
+                    block=True
+                )
         threading.Thread(target=_do_speak, daemon=True).start()
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -2011,8 +2061,11 @@ class TTSSettingsWidget(QWidget):
     def _on_voice_changed(self, index):
         voice = self._voice_combo.itemData(index)
         S.set('SPEAK_BACK_VOICE', voice)
-        label = "Female" if voice.startswith('F') else "Male"
-        self._speak_demo(f"{label} voice {voice[-1]}")
+        if voice == 'say':
+            self._speak_demo("macOS Say voice")
+        else:
+            label = "Female" if voice.startswith('F') else "Male"
+            self._speak_demo(f"Supertonic {label} {voice[-1]}")
 
     def _on_speed_changed(self, value):
         S.set('SPEAK_BACK_SPEED', value / 10.0)
@@ -4282,11 +4335,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         # Append TTS instruction if append instruction is enabled
         if S.SPEAK_BACK_APPEND_INSTRUCTION:
             instruction = S.SPEAK_BACK_INSTRUCTION_TEMPLATE.format(
-                python=sys.executable,
-                speed=S.SPEAK_BACK_SPEED,
-                voice=S.SPEAK_BACK_VOICE,
-                volume=S.SPEAK_BACK_VOLUME,
-                steps=S.SPEAK_BACK_STEPS,
+                command=build_tts_command()
             )
             text = text + '\n\n' + instruction
 
