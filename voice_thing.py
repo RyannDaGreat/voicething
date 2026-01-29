@@ -513,10 +513,12 @@ DEFAULTS = dict(
     CHIME_THEME='bright',  # Chime theme (default, blues, melancholy, bright)
     RECORDINGS_DIR=DEFAULT_RECORDINGS_DIR,  # Folder for audio recordings and transcripts
     ALWAYS_ON_TOP=True,  # Keep window above other windows
-    SPEAK_BACK_ENABLED=False,  # Enable TTS speak-back via SuperTonic
     SPEAK_BACK_PORT=7123,  # Port for TTS HTTP server
     SPEAK_BACK_SPEED=1.5,  # TTS speech speed (0.7=slow, 1.0=normal, 2.0=fast)
     SPEAK_BACK_VOICE='F1',  # TTS voice (F1-F5 female, M1-M5 male)
+    SPEAK_BACK_VOLUME=1.0,  # TTS volume (0.0=mute, 1.0=normal, 2.0=loud)
+    SPEAK_BACK_APPEND_INSTRUCTION=True,  # Append curl instruction to transcriptions
+    SPEAK_BACK_INSTRUCTION_TEMPLATE='Please speak via curl "http://localhost:{port}/speak?text=YOUR_MESSAGE_HERE&speed={speed}&voice={voice}&volume={volume}"',
 )
 S = Settings(**DEFAULTS)
 # =============================================================================
@@ -2011,6 +2013,117 @@ class PrefsDialog(DraggableDialog):
         chime_theme_row.addWidget(self.chime_theme_combo, 1)
         theme_box.addLayout(chime_theme_row)
 
+        # ─────────────────────────────────────────────────────────────────────
+        # TTS (Text-to-Speech) Section
+        # ─────────────────────────────────────────────────────────────────────
+        tts_header_row = QHBoxLayout()
+        tts_header_row.setSpacing(4)
+        tts_section_label = make_section("Text-to-Speech")
+        tts_header_row.addWidget(tts_section_label)
+        tts_header_row.addStretch()
+        # Status indicator (with rich text for smaller tmux info)
+        self.tts_status_label = QLabel("OFFLINE")
+        self.tts_status_label.setTextFormat(Qt.TextFormat.RichText)
+        self.tts_status_label.setStyleSheet(f"color: #ff6b6b; font-size: 9px; font-weight: bold;")
+        tts_header_row.addWidget(self.tts_status_label)
+        # Power button
+        self.tts_power_btn = QPushButton()
+        self.tts_power_btn.setFixedSize(18, 18)
+        power_icon = load_icon("power", color="#ff6b6b")
+        if power_icon:
+            self.tts_power_btn.setIcon(power_icon)
+            self.tts_power_btn.setIconSize(QSize(14, 14))
+        self.tts_power_btn.setStyleSheet("QPushButton { background: transparent; border: none; }")
+        self.tts_power_btn.setToolTip("Start/stop TTS server")
+        self.tts_power_btn.clicked.connect(self._toggle_tts_server)
+        tts_header_row.addWidget(self.tts_power_btn)
+        theme_box.addLayout(tts_header_row)
+
+        # Start status check timer
+        self._tts_status_timer = QTimer()
+        self._tts_status_timer.timeout.connect(self._update_tts_status)
+        self._tts_status_timer.start(1000)  # Check every 1 second
+        self._update_tts_status()  # Initial check
+
+        # TTS Voice selector
+        tts_voice_row = QHBoxLayout()
+        tts_voice_row.setSpacing(8)
+        tts_voice_label = QLabel("Voice:")
+        tts_voice_label.setStyleSheet(get_pref_label_css())
+        set_tooltip(tts_voice_label, "Voice for Speak Back TTS.\n\n"
+                                     "F1-F5 = Female voices\n"
+                                     "M1-M5 = Male voices")
+        tts_voice_row.addWidget(tts_voice_label)
+        self.tts_voice_combo = QComboBox()
+        self.tts_voice_combo.setStyleSheet(get_combobox_css())
+        voices = ['F1', 'F2', 'F3', 'F4', 'F5', 'M1', 'M2', 'M3', 'M4', 'M5']
+        for v in voices:
+            label = f"{v} ({'Female' if v.startswith('F') else 'Male'})"
+            self.tts_voice_combo.addItem(label, v)
+        idx = voices.index(S.SPEAK_BACK_VOICE) if S.SPEAK_BACK_VOICE in voices else 0
+        self.tts_voice_combo.setCurrentIndex(idx)
+        self.tts_voice_combo.currentIndexChanged.connect(self._on_tts_voice_changed)
+        tts_voice_row.addWidget(self.tts_voice_combo, 1)
+        theme_box.addLayout(tts_voice_row)
+
+        # TTS Speed slider
+        tts_speed_row = QHBoxLayout()
+        tts_speed_row.setSpacing(8)
+        tts_speed_label = QLabel("Speed:")
+        tts_speed_label.setStyleSheet(get_pref_label_css())
+        set_tooltip(tts_speed_label, "Speech speed (0.7x slow - 2.0x fast)")
+        tts_speed_row.addWidget(tts_speed_label)
+        self.tts_speed_slider = QSlider(Qt.Orientation.Horizontal)
+        self.tts_speed_slider.setRange(7, 20)  # 0.7x to 2.0x
+        self.tts_speed_slider.setValue(int(S.SPEAK_BACK_SPEED * 10))
+        self.tts_speed_slider.setStyleSheet(get_slider_css())
+        self.tts_speed_slider.valueChanged.connect(self._on_tts_speed_changed)
+        self.tts_speed_slider.sliderReleased.connect(self._on_tts_speed_released)
+        tts_speed_row.addWidget(self.tts_speed_slider, 1)
+        self.tts_speed_value = QLabel(f"{S.SPEAK_BACK_SPEED:.1f}x")
+        self.tts_speed_value.setStyleSheet(get_pref_label_css() + " min-width: 35px;")
+        tts_speed_row.addWidget(self.tts_speed_value)
+        theme_box.addLayout(tts_speed_row)
+
+        # TTS Volume slider
+        tts_vol_row = QHBoxLayout()
+        tts_vol_row.setSpacing(8)
+        tts_vol_label = QLabel("Volume:")
+        tts_vol_label.setStyleSheet(get_pref_label_css())
+        set_tooltip(tts_vol_label, "TTS volume (0.0 mute - 2.0 loud)")
+        tts_vol_row.addWidget(tts_vol_label)
+        self.tts_volume_slider = QSlider(Qt.Orientation.Horizontal)
+        self.tts_volume_slider.setRange(0, 20)  # 0.0 to 2.0
+        self.tts_volume_slider.setValue(int(S.SPEAK_BACK_VOLUME * 10))
+        self.tts_volume_slider.setStyleSheet(get_slider_css())
+        self.tts_volume_slider.valueChanged.connect(self._on_tts_volume_changed)
+        self.tts_volume_slider.sliderReleased.connect(self._on_tts_volume_released)
+        tts_vol_row.addWidget(self.tts_volume_slider, 1)
+        self.tts_volume_value = QLabel(f"{S.SPEAK_BACK_VOLUME:.1f}")
+        self.tts_volume_value.setStyleSheet(get_pref_label_css() + " min-width: 35px;")
+        tts_vol_row.addWidget(self.tts_volume_value)
+        theme_box.addLayout(tts_vol_row)
+
+        # Append instruction checkbox with Edit button
+        tts_append_row = QHBoxLayout()
+        tts_append_row.setSpacing(8)
+        self.tts_append_checkbox = QCheckBox("Append curl instruction")
+        self.tts_append_checkbox.setChecked(S.SPEAK_BACK_APPEND_INSTRUCTION)
+        self.tts_append_checkbox.setStyleSheet(f"QCheckBox {{ color: {TEXT_PRIMARY}; font-size: 11px; }}")
+        self.tts_append_checkbox.setToolTip("When enabled, appends TTS curl command to transcriptions\n"
+                                            "so Claude can speak responses aloud.")
+        self.tts_append_checkbox.stateChanged.connect(self._on_tts_append_changed)
+        tts_append_row.addWidget(self.tts_append_checkbox)
+        # Edit button
+        self.tts_edit_btn = QPushButton("Edit")
+        self.tts_edit_btn.setFixedWidth(40)
+        self.tts_edit_btn.setStyleSheet(get_btn_css().replace("padding: 3px 8px;", "padding: 1px 4px; font-size: 10px;"))
+        self.tts_edit_btn.setToolTip("Edit the instruction template")
+        self.tts_edit_btn.clicked.connect(self._edit_tts_instruction)
+        tts_append_row.addWidget(self.tts_edit_btn)
+        tts_append_row.addStretch()
+        theme_box.addLayout(tts_append_row)
+
         theme_box.addWidget(make_section("Theme"))
         # Theme buttons in compact sub-layout (60% reduced spacing = ~2px)
         theme_btns_box = QVBoxLayout()
@@ -2160,23 +2273,6 @@ class PrefsDialog(DraggableDialog):
         self.enter_checkbox.stateChanged.connect(self._on_enter_changed)
         auto_row.addWidget(self.enter_checkbox)
 
-        # Speak Back (TTS)
-        speak_icon_label = QLabel()
-        speak_icon = load_icon("speaker", color=ICON_COLOR_DARK)
-        if speak_icon:
-            speak_icon_label.setPixmap(speak_icon.pixmap(14, 14))
-        auto_row.addWidget(speak_icon_label)
-        self._paste_icon_labels.append(speak_icon_label)
-        self.speak_back_checkbox = QCheckBox("Speak Back")
-        self.speak_back_checkbox.setChecked(S.SPEAK_BACK_ENABLED)
-        self.speak_back_checkbox.setStyleSheet(f"QCheckBox {{ color: {TEXT_PRIMARY}; font-size: 11px; }}")
-        self.speak_back_checkbox.setToolTip("Enable SuperTonic TTS server for speak-back.\n\n"
-                                            "When enabled, appends curl instruction to transcriptions\n"
-                                            "so Claude can speak responses aloud.\n\n"
-                                            "Requires: pip install supertonic")
-        self.speak_back_checkbox.stateChanged.connect(self._on_speak_back_changed)
-        auto_row.addWidget(self.speak_back_checkbox)
-
         auto_row.addStretch()
         settings_box.addLayout(auto_row)
 
@@ -2203,51 +2299,6 @@ class PrefsDialog(DraggableDialog):
         self.delay_value.setStyleSheet(get_pref_label_css() + " min-width: 35px;")
         delay_row.addWidget(self.delay_value)
         settings_box.addLayout(delay_row)
-
-        # TTS Speed slider
-        tts_speed_row = QHBoxLayout()
-        tts_speed_row.setSpacing(8)
-        tts_speed_label = QLabel("TTS Speed:")
-        tts_speed_label.setStyleSheet(get_pref_label_css())
-        set_tooltip(tts_speed_label, "Speech speed for Speak Back TTS.\n\n"
-                                     "0.7x = Slow\n"
-                                     "1.0x = Normal\n"
-                                     "1.5x = Fast (default)\n"
-                                     "2.0x = Max speed")
-        tts_speed_row.addWidget(tts_speed_label)
-        self.tts_speed_slider = QSlider(Qt.Orientation.Horizontal)
-        self.tts_speed_slider.setRange(7, 20)  # 0.7x to 2.0x in 0.1x steps (SuperTonic limit)
-        self.tts_speed_slider.setValue(int(S.SPEAK_BACK_SPEED * 10))
-        self.tts_speed_slider.setStyleSheet(get_slider_css())
-        self.tts_speed_slider.valueChanged.connect(self._on_tts_speed_changed)
-        self.tts_speed_slider.sliderReleased.connect(self._on_tts_speed_released)
-        tts_speed_row.addWidget(self.tts_speed_slider, 1)
-        self.tts_speed_value = QLabel(f"{S.SPEAK_BACK_SPEED:.1f}x")
-        self.tts_speed_value.setStyleSheet(get_pref_label_css() + " min-width: 35px;")
-        tts_speed_row.addWidget(self.tts_speed_value)
-        settings_box.addLayout(tts_speed_row)
-
-        # TTS Voice selector
-        tts_voice_row = QHBoxLayout()
-        tts_voice_row.setSpacing(8)
-        tts_voice_label = QLabel("TTS Voice:")
-        tts_voice_label.setStyleSheet(get_pref_label_css())
-        set_tooltip(tts_voice_label, "Voice for Speak Back TTS.\n\n"
-                                     "F1-F5 = Female voices\n"
-                                     "M1-M5 = Male voices")
-        tts_voice_row.addWidget(tts_voice_label)
-        self.tts_voice_combo = QComboBox()
-        self.tts_voice_combo.setStyleSheet(get_combo_css())
-        voices = ['F1', 'F2', 'F3', 'F4', 'F5', 'M1', 'M2', 'M3', 'M4', 'M5']
-        for v in voices:
-            label = f"{v} ({'Female' if v.startswith('F') else 'Male'})"
-            self.tts_voice_combo.addItem(label, v)
-        # Set current voice
-        idx = voices.index(S.SPEAK_BACK_VOICE) if S.SPEAK_BACK_VOICE in voices else 0
-        self.tts_voice_combo.setCurrentIndex(idx)
-        self.tts_voice_combo.currentIndexChanged.connect(self._on_tts_voice_changed)
-        tts_voice_row.addWidget(self.tts_voice_combo, 1)
-        settings_box.addLayout(tts_voice_row)
 
         # Recording section
         settings_box.addWidget(make_section("Recording"))
@@ -2547,51 +2598,140 @@ class PrefsDialog(DraggableDialog):
         S.set('TMUX_MODE', state == Qt.CheckState.Checked.value)
         self._update_paste_options_state()
 
-    def _on_speak_back_changed(self, state):
-        enabled = state == Qt.CheckState.Checked.value
-        S.set('SPEAK_BACK_ENABLED', enabled)
-        if enabled:
-            # Check for existing server or start new one
-            try:
-                from tts_server import ensure_server
-                port = ensure_server(S.SPEAK_BACK_PORT)
-                S.set('SPEAK_BACK_PORT', port)
-                print(f"TTS speak-back enabled on port {port}")
-            except Exception as e:
-                print(f"Failed to start TTS server: {e}")
-                self.speak_back_checkbox.setChecked(False)
-        else:
-            from tts_server import stop_server, is_running
-            if is_running():
-                stop_server()
-            print("TTS speak-back disabled")
-
     def _on_tts_speed_changed(self, value):
         S.set('SPEAK_BACK_SPEED', value / 10.0)
         self.tts_speed_value.setText(f"{S.SPEAK_BACK_SPEED:.1f}x")
 
     def _on_tts_speed_released(self):
         """Speak the current speed when slider is released."""
-        if S.SPEAK_BACK_ENABLED:
-            self._speak_tts_demo(f"{S.SPEAK_BACK_SPEED:.1f} x speed")
+        self._speak_tts_demo(f"{S.SPEAK_BACK_SPEED:.1f} speed")
 
     def _on_tts_voice_changed(self, index):
         voice = self.tts_voice_combo.itemData(index)
         S.set('SPEAK_BACK_VOICE', voice)
-        if S.SPEAK_BACK_ENABLED:
-            label = "Female" if voice.startswith('F') else "Male"
-            self._speak_tts_demo(f"{label} voice {voice[-1]}")
+        label = "Female" if voice.startswith('F') else "Male"
+        self._speak_tts_demo(f"{label} voice {voice[-1]}")
+
+    def _on_tts_volume_changed(self, value):
+        S.set('SPEAK_BACK_VOLUME', value / 10.0)
+        self.tts_volume_value.setText(f"{S.SPEAK_BACK_VOLUME:.1f}")
+
+    def _on_tts_volume_released(self):
+        """Speak demo when volume slider released."""
+        self._speak_tts_demo(f"Volume {S.SPEAK_BACK_VOLUME:.1f}")
+
+    def _on_tts_append_changed(self, state):
+        S.set('SPEAK_BACK_APPEND_INSTRUCTION', state == Qt.CheckState.Checked.value)
+
+    def _edit_tts_instruction(self):
+        """Open dialog to edit the TTS instruction template."""
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Edit TTS Instruction")
+        dialog.setMinimumSize(500, 200)
+        layout = QVBoxLayout(dialog)
+
+        # Info label
+        info = QLabel("Template variables: {port}, {speed}, {voice}, {volume}")
+        info.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 10px;")
+        layout.addWidget(info)
+
+        # Text edit
+        text_edit = QTextEdit()
+        text_edit.setPlainText(S.SPEAK_BACK_INSTRUCTION_TEMPLATE)
+        text_edit.setStyleSheet(f"background: {STYLE.bg_secondary}; color: {TEXT_PRIMARY}; font-family: monospace; font-size: 11px;")
+        layout.addWidget(text_edit)
+
+        # Buttons
+        btn_row = QHBoxLayout()
+        revert_btn = QPushButton("Revert to Default")
+        revert_btn.setStyleSheet(get_btn_css())
+        default_template = DEFAULTS['SPEAK_BACK_INSTRUCTION_TEMPLATE']
+        revert_btn.clicked.connect(lambda: text_edit.setPlainText(default_template))
+        btn_row.addWidget(revert_btn)
+        btn_row.addStretch()
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.setStyleSheet(get_btn_css())
+        cancel_btn.clicked.connect(dialog.reject)
+        btn_row.addWidget(cancel_btn)
+        save_btn = QPushButton("Save")
+        save_btn.setStyleSheet(get_btn_css())
+        save_btn.clicked.connect(dialog.accept)
+        btn_row.addWidget(save_btn)
+        layout.addLayout(btn_row)
+
+        if dialog.exec():
+            S.set('SPEAK_BACK_INSTRUCTION_TEMPLATE', text_edit.toPlainText())
+
+    def _update_tts_status(self):
+        """Check if TTS server is online and update status indicator."""
+        import urllib.request
+        try:
+            with urllib.request.urlopen(f"http://localhost:{S.SPEAK_BACK_PORT}/health", timeout=0.5) as resp:
+                if resp.status == 200:
+                    # Get tmux session info
+                    import rp
+                    from rp.libs.supertonic_tts_server import TMUX_SESSION
+                    tmux_info = ""
+                    if TMUX_SESSION in rp.tmux_get_all_session_names():
+                        try:
+                            # Get window name (contains port)
+                            window = rp.shell_command(f'tmux list-windows -t {TMUX_SESSION} -F "#{{window_name}}" 2>/dev/null').strip().split('\n')[0]
+                            # Get pane info
+                            pane = rp.shell_command(f'tmux list-panes -t {TMUX_SESSION} -F "#{{pane_index}}" 2>/dev/null').strip().split('\n')[0]
+                            tmux_info = f"TMUX:{TMUX_SESSION}:{window}:{pane}"
+                        except Exception:
+                            tmux_info = f"TMUX:{TMUX_SESSION}"
+                    self.tts_status_label.setText(f"ONLINE <span style='font-size:7px'>({tmux_info})</span>")
+                    self.tts_status_label.setStyleSheet("color: #51cf66; font-size: 9px; font-weight: bold;")
+                    power_icon = load_icon("power", color="#51cf66")
+                    if power_icon:
+                        self.tts_power_btn.setIcon(power_icon)
+                    return
+        except Exception:
+            pass
+        self.tts_status_label.setText("OFFLINE")
+        self.tts_status_label.setStyleSheet("color: #ff6b6b; font-size: 9px; font-weight: bold;")
+        power_icon = load_icon("power", color="#ff6b6b")
+        if power_icon:
+            self.tts_power_btn.setIcon(power_icon)
+
+    def _toggle_tts_server(self):
+        """Start or stop the TTS server."""
+        import urllib.request
+        # Check if online
+        try:
+            with urllib.request.urlopen(f"http://localhost:{S.SPEAK_BACK_PORT}/health", timeout=0.5) as resp:
+                if resp.status == 200:
+                    # Server is online, stop it
+                    import rp
+                    from rp.libs.supertonic_tts_server import TMUX_SESSION
+                    if TMUX_SESSION in rp.tmux_get_all_session_names():
+                        rp.tmux_kill_session(TMUX_SESSION)
+                    self._update_tts_status()
+                    return
+        except Exception:
+            pass
+        # Server is offline, start it
+        def _start():
+            import rp
+            rp.text_to_speech_via_supertonic("TTS server started", voice=S.SPEAK_BACK_VOICE, speed=S.SPEAK_BACK_SPEED, volume=S.SPEAK_BACK_VOLUME)
+        threading.Thread(target=_start, daemon=True).start()
 
     def _speak_tts_demo(self, text):
-        """Speak demo text using current TTS settings."""
-        import urllib.request
-        import urllib.parse
-        url = (f"http://localhost:{S.SPEAK_BACK_PORT}/speak?"
-               f"text={urllib.parse.quote(text)}&speed={S.SPEAK_BACK_SPEED}&voice={S.SPEAK_BACK_VOICE}")
-        try:
-            urllib.request.urlopen(url, timeout=10)
-        except Exception:
-            pass  # Silent fail if server not running
+        """Speak demo text using current TTS settings (non-blocking)."""
+        import rp
+        def _do_speak():
+            try:
+                rp.text_to_speech_via_supertonic(
+                    text,
+                    voice=S.SPEAK_BACK_VOICE,
+                    speed=S.SPEAK_BACK_SPEED,
+                    volume=S.SPEAK_BACK_VOLUME,
+                    block=True
+                )
+            except Exception as e:
+                print(f"TTS demo failed: {e}")
+        threading.Thread(target=_do_speak, daemon=True).start()
 
     def _update_paste_options_state(self):
         """Gray out paste options based on dependencies.
@@ -4147,9 +4287,15 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         if not S.AUTO_COPY:
             return
 
-        # Append TTS instruction if speak-back is enabled
-        if S.SPEAK_BACK_ENABLED:
-            text = text + f'\n\nPlease speak via curl "http://localhost:{S.SPEAK_BACK_PORT}/speak?text=YOUR_MESSAGE_HERE&speed={S.SPEAK_BACK_SPEED}&voice={S.SPEAK_BACK_VOICE}"'
+        # Append TTS instruction if append instruction is enabled
+        if S.SPEAK_BACK_APPEND_INSTRUCTION:
+            instruction = S.SPEAK_BACK_INSTRUCTION_TEMPLATE.format(
+                port=S.SPEAK_BACK_PORT,
+                speed=S.SPEAK_BACK_SPEED,
+                voice=S.SPEAK_BACK_VOICE,
+                volume=S.SPEAK_BACK_VOLUME
+            )
+            text = text + '\n\n' + instruction
 
         self._copy_to_clipboard(text)
 
