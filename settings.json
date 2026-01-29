@@ -36,15 +36,15 @@
   "SILENCE_SKIP_ENABLED": true,
   "SILENCE_THRESHOLD": -60,
   "CHIME_VOLUME": 1.0,
-  "CHIME_PROGRAM": 127,
+  "CHIME_PROGRAM": 38,
   "CHIME_PITCH": 9,
-  "CHIME_THEME": "bright",
+  "CHIME_THEME": "default",
   "RECORDINGS_DIR": "/var/folders/pm/461ntwb12b7bbqcjw1s6t0kw0000gn/T/VoiceThing",
   "ALWAYS_ON_TOP": false,
-  "SPEAK_BACK_VOICE": "kitten",
+  "SPEAK_BACK_VOICE": "say",
   "TTS_SAY": {
-    "voice": "Montse",
-    "speed": 150
+    "voice": "Boing",
+    "speed": 168
   },
   "TTS_SUPERTONIC": {
     "voice": "F4",
@@ -57,6 +57,6 @@
     "speed": 1.0
   },
   "SPEAK_BACK_APPEND_INSTRUCTION": true,
-  "SPEAK_BACK_TMUX_ONLY": false,
+  "SPEAK_BACK_TMUX_ONLY": true,
   "SPEAK_BACK_INSTRUCTION_TEMPLATE": "Please speak back with {command}"
 }

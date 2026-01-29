@@ -668,7 +668,8 @@ def do_tts(text, block=True):
         threading.Thread(target=_speak, daemon=True).start()
 
 
-# LLM post-processing settings
+# LLM post-processing models for dropdown (curated list for UI)
+# Any OPENAI:* or OLLAMA:* model works via rp.run_llm_api
 LLM_MODELS = [
     # Ollama local models (free, private)
     "OLLAMA:qwen2.5:7b",
@@ -678,16 +679,14 @@ LLM_MODELS = [
     "OLLAMA:mistral:7b",
     "OLLAMA:gemma2:9b",
     "OLLAMA:codellama:7b",
-    # OpenAI GPT-5 models (requires API key)
-    "gpt-5.2",
-    "gpt-5.2-pro",
-    "gpt-5.2-codex",
-    "gpt-5-mini",
-    "gpt-5",
-    # OpenAI GPT-4 models (requires API key)
-    "gpt-4o-mini",
-    "gpt-4o",
-    "gpt-4-turbo",
+    # OpenAI models (requires API key)
+    "OPENAI:gpt-4o-mini",
+    "OPENAI:gpt-4o",
+    "OPENAI:gpt-4-turbo",
+    "OPENAI:gpt-5-mini",
+    "OPENAI:gpt-5",
+    "OPENAI:gpt-5.2",
+    "OPENAI:gpt-5.2-pro",
 ]
 
 DEFAULT_LLM_PREFIX = (
@@ -3415,8 +3414,9 @@ class TextPanel(QTextEdit):
         self.setStyleSheet(self.STYLE)
 
     def keyPressEvent(self, e):
-        # Pass shortcut keys to parent window
-        if e.key() in (Qt.Key.Key_Space, Qt.Key.Key_Escape, Qt.Key.Key_X, Qt.Key.Key_C, Qt.Key.Key_L, Qt.Key.Key_F,
+        # Pass shortcut keys to parent window (only without modifiers, so Cmd+C still copies)
+        no_mods = e.modifiers() == Qt.KeyboardModifier.NoModifier
+        if no_mods and e.key() in (Qt.Key.Key_Space, Qt.Key.Key_Escape, Qt.Key.Key_X, Qt.Key.Key_C, Qt.Key.Key_L, Qt.Key.Key_F,
                        Qt.Key.Key_S, Qt.Key.Key_H, Qt.Key.Key_R, Qt.Key.Key_E, Qt.Key.Key_W, Qt.Key.Key_O, Qt.Key.Key_T, Qt.Key.Key_M, Qt.Key.Key_Question):
             self.window().keyPressEvent(e)
         else:
