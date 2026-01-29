@@ -529,10 +529,11 @@ DEFAULTS = dict(
     CHIME_THEME='bright',  # Chime theme (default, blues, melancholy, bright)
     RECORDINGS_DIR=DEFAULT_RECORDINGS_DIR,  # Folder for audio recordings and transcripts
     ALWAYS_ON_TOP=True,  # Keep window above other windows
-    SPEAK_BACK_SPEED=1.5,  # TTS speech speed (0.7=slow, 1.0=normal, 2.0=fast)
-    SPEAK_BACK_VOICE='say',  # TTS voice (say=macOS, F1-F5/M1-M5=Supertonic)
-    SPEAK_BACK_VOLUME=1.0,  # TTS volume (0.0=mute, 1.0=normal, 2.0=loud)
-    SPEAK_BACK_STEPS=5,  # TTS quality steps (1=fast/low, 10=slow/high)
+    SPEAK_BACK_VOICE='say',  # TTS backend: 'say', 'supertonic', or 'kitten'
+    # Per-backend TTS settings (each backend remembers its own settings)
+    TTS_SAY={'voice': '', 'speed': 175},  # macOS say: '' = system default, WPM
+    TTS_SUPERTONIC={'voice': 'F1', 'speed': 1.0, 'volume': 1.0, 'steps': 5},
+    TTS_KITTEN={'voice': 'expr-voice-3-f', 'speed': 1.0},
     SPEAK_BACK_APPEND_INSTRUCTION=True,  # Append TTS instruction to transcriptions
     SPEAK_BACK_TMUX_ONLY=False,  # Only append TTS instruction when sending to tmux (not paste)
     SPEAK_BACK_INSTRUCTION_TEMPLATE="Please speak back with ({command} &)",
@@ -595,31 +596,36 @@ def make_close_btn(text="Esc  Close", on_click=None):
 
 def build_tts_command():
     """Build the TTS command string based on current voice settings."""
-    if S.SPEAK_BACK_VOICE == 'say':
-        return "say 'YOUR_MESSAGE_HERE'"
-    elif S.SPEAK_BACK_VOICE.startswith('kitten:'):
-        kitten_voice = S.SPEAK_BACK_VOICE.split(':', 1)[1]
+    backend = S.SPEAK_BACK_VOICE
+    if backend == 'say':
+        cfg = S.TTS_SAY
+        voice = cfg.get('voice', '')
+        rate = cfg.get('speed', 175)
+        if voice:
+            return f"say -v {voice} -r {int(rate)} 'YOUR_MESSAGE_HERE'"
+        else:
+            return f"say -r {int(rate)} 'YOUR_MESSAGE_HERE'"
+    elif backend == 'kitten':
+        cfg = S.TTS_KITTEN
         return (
             f"{sys.executable} -m rp call text_to_speech_via_kitten "
-            f"---text 'YOUR_MESSAGE_HERE' ---voice '{kitten_voice}' "
-            f"--speed {S.SPEAK_BACK_SPEED} --block True"
+            f"---text 'YOUR_MESSAGE_HERE' ---voice '{cfg.get('voice', 'expr-voice-3-f')}' "
+            f"--speed {cfg.get('speed', 1.0)} --block True"
         )
-    else:
+    else:  # supertonic
+        cfg = S.TTS_SUPERTONIC
         return (
             f"{sys.executable} -m rp call text_to_speech_via_supertonic "
-            f"---text 'YOUR_MESSAGE_HERE' ---voice '{S.SPEAK_BACK_VOICE}' "
-            f"--speed {S.SPEAK_BACK_SPEED} --volume {S.SPEAK_BACK_VOLUME} "
-            f"--steps {S.SPEAK_BACK_STEPS} --block True"
+            f"---text 'YOUR_MESSAGE_HERE' ---voice '{cfg.get('voice', 'F1')}' "
+            f"--speed {cfg.get('speed', 1.0)} --volume {cfg.get('volume', 1.0)} "
+            f"--steps {cfg.get('steps', 5)} --block True"
         )
 
 
 def do_tts(text, block=True):
-    """Speak text using the configured TTS voice.
+    """Speak text using the configured TTS backend.
 
-    Handles all three voice types:
-    - 'say': macOS built-in TTS (uses SPEAK_BACK_SPEED as WPM rate)
-    - 'kitten:*': Kitten TTS voices (uses SPEAK_BACK_SPEED as multiplier)
-    - Other: Supertonic voices F1-F5, M1-M5 (uses speed, volume, quality)
+    Uses per-backend settings from S.TTS_SAY, S.TTS_SUPERTONIC, S.TTS_KITTEN.
 
     Args:
         text: Text to speak
@@ -627,25 +633,32 @@ def do_tts(text, block=True):
     """
     def _speak():
         import rp
-        if S.SPEAK_BACK_VOICE == 'say':
-            # macOS say: -r rate is words per minute
-            rate = int(S.SPEAK_BACK_SPEED) if S.SPEAK_BACK_SPEED >= 50 else 175
-            subprocess.run(['say', '-r', str(rate), text])
-        elif S.SPEAK_BACK_VOICE.startswith('kitten:'):
-            kitten_voice = S.SPEAK_BACK_VOICE.split(':', 1)[1]
+        backend = S.SPEAK_BACK_VOICE
+        if backend == 'say':
+            cfg = S.TTS_SAY
+            voice = cfg.get('voice', '')
+            rate = cfg.get('speed', 175)
+            cmd = ['say', '-r', str(int(rate))]
+            if voice:  # Only add -v if not using system default
+                cmd.extend(['-v', voice])
+            cmd.append(text)
+            subprocess.run(cmd)
+        elif backend == 'kitten':
+            cfg = S.TTS_KITTEN
             rp.text_to_speech_via_kitten(
                 text,
-                voice=kitten_voice,
-                speed=S.SPEAK_BACK_SPEED,
+                voice=cfg.get('voice', 'expr-voice-3-f'),
+                speed=cfg.get('speed', 1.0),
                 block=True
             )
-        else:
+        elif backend == 'supertonic':
+            cfg = S.TTS_SUPERTONIC
             rp.text_to_speech_via_supertonic(
                 text,
-                voice=S.SPEAK_BACK_VOICE,
-                speed=S.SPEAK_BACK_SPEED,
-                volume=S.SPEAK_BACK_VOLUME,
-                steps=S.SPEAK_BACK_STEPS,
+                voice=cfg.get('voice', 'F1'),
+                speed=cfg.get('speed', 1.0),
+                volume=cfg.get('volume', 1.0),
+                steps=cfg.get('steps', 5),
                 block=True
             )
 
@@ -991,61 +1004,20 @@ def make_labeled_textedit(label_text, value, placeholder, tooltip, on_change=Non
     row.addWidget(edit)
     return edit, row, preset_callback
 
-def get_slider_css(disabled=False):
-    """Get slider CSS for preference dialogs.
-
-    Args:
-        disabled: If True, returns 50% transparent version for disabled state.
-    """
+def get_slider_css():
+    """Get slider CSS for preference dialogs."""
     groove = STYLE.slider_groove
     handle = STYLE.slider_handle or STYLE.accent_css
     fill = STYLE.slider_fill or STYLE.accent_css
-
-    if disabled:
-        groove = _to_rgba_50(groove)
-        handle = _to_rgba_50(handle)
-        fill = _to_rgba_50(fill)
-
     return f"""
         QSlider::groove:horizontal {{ background: {groove}; height: 6px; border-radius: 3px; }}
         QSlider::handle:horizontal {{ background: {handle}; width: 14px; margin: -4px 0; border-radius: 7px; }}
         QSlider::sub-page:horizontal {{ background: {fill}; border-radius: 3px; }}
     """
 
-def get_pref_label_css(disabled=False):
-    """Get label CSS for preference dialogs.
-
-    Args:
-        disabled: If True, returns 50% transparent version for disabled state.
-    """
-    if disabled:
-        color = _to_rgba_50(TEXT_PRIMARY)
-    else:
-        color = TEXT_PRIMARY
-    return f"color: {color}; font-size: 12px;"
-
-
-def _to_rgba_50(color):
-    """Convert any color format to rgba with 50% opacity."""
-    import re
-    if color.startswith('#'):
-        c = color.lstrip('#')
-        if len(c) == 3:
-            c = ''.join([x*2 for x in c])
-        r, g, b = int(c[0:2], 16), int(c[2:4], 16), int(c[4:6], 16)
-        return f"rgba({r}, {g}, {b}, 0.5)"
-    elif color.startswith('rgba('):
-        match = re.match(r'rgba\((\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\)', color)
-        if match:
-            r, g, b, a = match.groups()
-            new_a = float(a) * 0.5
-            return f"rgba({r}, {g}, {b}, {new_a})"
-    elif color.startswith('rgb('):
-        match = re.match(r'rgb\((\d+),\s*(\d+),\s*(\d+)\)', color)
-        if match:
-            r, g, b = match.groups()
-            return f"rgba({r}, {g}, {b}, 0.5)"
-    return color  # fallback
+def get_pref_label_css():
+    """Get label CSS for preference dialogs."""
+    return f"color: {TEXT_PRIMARY}; font-size: 12px;"
 
 
 def get_small_btn_css():
@@ -1071,14 +1043,6 @@ def get_checkbox_css(size=11):
     return f"QCheckBox {{ color: {TEXT_PRIMARY}; font-size: {size}px; }}"
 
 
-def set_slider_row_enabled(label, slider, value_label, enabled, min_width="35px"):
-    """Enable or disable a slider row with proper 50% opacity styling when disabled."""
-    label.setEnabled(enabled)
-    slider.setEnabled(enabled)
-    value_label.setEnabled(enabled)
-    label.setStyleSheet(get_pref_label_css(disabled=not enabled))
-    slider.setStyleSheet(get_slider_css(disabled=not enabled))
-    value_label.setStyleSheet(get_pref_label_css(disabled=not enabled) + f" min-width: {min_width};")
 
 
 def make_slider_row(label_text, tooltip, min_val, max_val, current_val, format_fn, on_change, on_release=None, min_width="35px"):
@@ -1634,12 +1598,6 @@ class HelpDialog(DraggableDialog):
         about_box.addWidget(about_text)
         about_box.addStretch()
 
-        # GitHub button
-        github_btn = QPushButton("GitHub")
-        github_btn.setStyleSheet(get_btn_css())
-        github_btn.clicked.connect(lambda: rp.open_file_with_default_application(GITHUB_URL))
-        about_box.addWidget(github_btn)
-
         # Debug button - prints imported modules to terminal
         debug_btn = QPushButton()
         debug_btn.setIcon(load_icon("bug", color=ICON_COLOR_DARK))
@@ -1647,6 +1605,12 @@ class HelpDialog(DraggableDialog):
         debug_btn.setFixedWidth(30)
         debug_btn.clicked.connect(self._print_modules)
         about_box.addWidget(debug_btn)
+
+        # GitHub button
+        github_btn = QPushButton("GitHub")
+        github_btn.setStyleSheet(get_btn_css())
+        github_btn.clicked.connect(lambda: rp.open_file_with_default_application(GITHUB_URL))
+        about_box.addWidget(github_btn)
 
         content.addLayout(about_box)
 
@@ -2211,124 +2175,123 @@ class TTSInstructionDialog(DraggableDialog):
             super().keyPressEvent(e)
 
 
-class TTSSettingsWidget(QWidget):
-    """Self-contained TTS settings widget with voice, speed, volume, quality controls."""
+def _get_macos_voices():
+    """Get list of available macOS voices."""
+    import subprocess
+    result = subprocess.run(['say', '-v', '?'], capture_output=True, text=True)
+    voices = []
+    for line in result.stdout.strip().split('\n'):
+        if line:
+            # Format: "VoiceName  lang  # description"
+            parts = line.split()
+            if parts:
+                voices.append(parts[0])
+    return sorted(set(voices))  # Dedupe and sort
 
-    # Voice options: (value, display_label)
-    # Prefixes: say=macOS, F/M=Supertonic, kitten:=Kitten
-    TTS_VOICES = [
+MACOS_VOICES = None  # Lazy-loaded
+
+class TTSSettingsWidget(QWidget):
+    """TTS settings with per-backend configuration. Hides unsupported controls."""
+
+    # Backend options
+    BACKENDS = [
         ('say', 'macOS Say'),
-        # Supertonic voices (66M params, 167x realtime)
-        ('F1', 'Supertonic F1 (Female)'),
-        ('F2', 'Supertonic F2 (Female)'),
-        ('F3', 'Supertonic F3 (Female)'),
-        ('F4', 'Supertonic F4 (Female)'),
-        ('F5', 'Supertonic F5 (Female)'),
-        ('M1', 'Supertonic M1 (Male)'),
-        ('M2', 'Supertonic M2 (Male)'),
-        ('M3', 'Supertonic M3 (Male)'),
-        ('M4', 'Supertonic M4 (Male)'),
-        ('M5', 'Supertonic M5 (Male)'),
-        # Kitten voices (25MB model, ~6x realtime)
-        ('kitten:expr-voice-2-f', 'Kitten Voice 2 (Female)'),
-        ('kitten:expr-voice-2-m', 'Kitten Voice 2 (Male)'),
-        ('kitten:expr-voice-3-f', 'Kitten Voice 3 (Female)'),
-        ('kitten:expr-voice-3-m', 'Kitten Voice 3 (Male)'),
-        ('kitten:expr-voice-4-f', 'Kitten Voice 4 (Female)'),
-        ('kitten:expr-voice-4-m', 'Kitten Voice 4 (Male)'),
-        ('kitten:expr-voice-5-f', 'Kitten Voice 5 (Female)'),
-        ('kitten:expr-voice-5-m', 'Kitten Voice 5 (Male)'),
+        ('supertonic', 'Supertonic'),
+        ('kitten', 'Kitten TTS'),
     ]
 
-    # Voice capability profiles: what each TTS backend supports
-    # Format: 'backend': {'speed': (min, max, default), 'volume': (min, max, default), 'quality': (min, max, default)}
-    # None = not supported (slider will be disabled)
-    # macOS say: -r rate in WPM (90-720, default ~175), no volume/quality control
-    # Supertonic: speed 0.7-2.0, volume 0.0-2.0, quality 1-10
-    # Kitten: speed 0.5-2.0 only (no volume/quality)
-    VOICE_CAPABILITIES = {
-        'say': {
-            'speed': (90, 400, 175),  # WPM (words per minute)
-            'volume': None,
-            'quality': None,
-        },
-        'supertonic': {
-            'speed': (0.7, 2.0, 1.0),  # multiplier
-            'volume': (0.0, 2.0, 1.0),
-            'quality': (1, 10, 5),
-        },
-        'kitten': {
-            'speed': (0.5, 2.0, 1.0),  # multiplier
-            'volume': None,
-            'quality': None,
-        },
-    }
+    # Supertonic voice options
+    SUPERTONIC_VOICES = [
+        ('F1', 'Female 1'), ('F2', 'Female 2'), ('F3', 'Female 3'),
+        ('F4', 'Female 4'), ('F5', 'Female 5'),
+        ('M1', 'Male 1'), ('M2', 'Male 2'), ('M3', 'Male 3'),
+        ('M4', 'Male 4'), ('M5', 'Male 5'),
+    ]
 
-    def _get_voice_backend(self, voice):
-        """Get backend type for a voice value."""
-        if voice == 'say':
-            return 'say'
-        elif voice.startswith('kitten:'):
-            return 'kitten'
-        else:
-            return 'supertonic'
+    # Kitten voice options
+    KITTEN_VOICES = [
+        ('expr-voice-2-f', 'Voice 2 Female'), ('expr-voice-2-m', 'Voice 2 Male'),
+        ('expr-voice-3-f', 'Voice 3 Female'), ('expr-voice-3-m', 'Voice 3 Male'),
+        ('expr-voice-4-f', 'Voice 4 Female'), ('expr-voice-4-m', 'Voice 4 Male'),
+        ('expr-voice-5-f', 'Voice 5 Female'), ('expr-voice-5-m', 'Voice 5 Male'),
+    ]
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._layout = QVBoxLayout(self)
+        self._layout.setContentsMargins(0, 0, 0, 0)
+        self._layout.setSpacing(4)
         self._build_ui()
 
     def _build_ui(self):
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(4)
+        self._layout.addWidget(make_section("Text-to-Speech"))
 
-        layout.addWidget(make_section("Text-to-Speech"))
+        # Backend selector (macOS Say / Supertonic / Kitten)
+        backend_row = QHBoxLayout()
+        backend_row.setSpacing(8)
+        backend_label = QLabel("Engine:")
+        backend_label.setStyleSheet(get_pref_label_css())
+        set_tooltip(backend_label, "TTS engine:\n\nmacOS Say = Built-in system voices\nSupertonic = Fast neural TTS (66M params)\nKitten = Lightweight neural TTS (25MB)")
+        backend_row.addWidget(backend_label)
+        self._backend_combo = QComboBox()
+        self._backend_combo.setStyleSheet(get_combobox_css())
+        for value, label in self.BACKENDS:
+            self._backend_combo.addItem(label, value)
+        idx = [b for b, _ in self.BACKENDS].index(S.SPEAK_BACK_VOICE) if S.SPEAK_BACK_VOICE in [b for b, _ in self.BACKENDS] else 0
+        self._backend_combo.setCurrentIndex(idx)
+        self._backend_combo.currentIndexChanged.connect(self._on_backend_changed)
+        backend_row.addWidget(self._backend_combo, 1)
+        self._layout.addLayout(backend_row)
 
-        # Voice selector
-        voice_row = QHBoxLayout()
-        voice_row.setSpacing(8)
-        voice_label = QLabel("Voice:")
-        voice_label.setStyleSheet(get_pref_label_css())
-        set_tooltip(voice_label, "Voice for Speak Back TTS.\n\nmacOS Say = Built-in system voice\nSupertonic = Fast neural TTS")
-        voice_row.addWidget(voice_label)
+        # Voice selector row (content changes per backend)
+        self._voice_row = QHBoxLayout()
+        self._voice_row.setSpacing(8)
+        self._voice_label = QLabel("Voice:")
+        self._voice_label.setStyleSheet(get_pref_label_css())
+        self._voice_row.addWidget(self._voice_label)
         self._voice_combo = QComboBox()
         self._voice_combo.setStyleSheet(get_combobox_css())
-        for value, label in self.TTS_VOICES:
-            self._voice_combo.addItem(label, value)
-        # Find current voice index
-        voice_values = [v for v, _ in self.TTS_VOICES]
-        idx = voice_values.index(S.SPEAK_BACK_VOICE) if S.SPEAK_BACK_VOICE in voice_values else 0
-        self._voice_combo.setCurrentIndex(idx)
         self._voice_combo.currentIndexChanged.connect(self._on_voice_changed)
-        voice_row.addWidget(self._voice_combo, 1)
-        layout.addLayout(voice_row)
+        self._voice_row.addWidget(self._voice_combo, 1)
+        self._layout.addLayout(self._voice_row)
 
-        # Speed slider (range varies by backend - set initial for supertonic, updated by _update_slider_states)
-        speed_row, self._speed_label, self._speed_slider, self._speed_value = make_slider_row(
-            "Speed:", "Speech speed",
-            7, 20, int(S.SPEAK_BACK_SPEED * 10),
-            lambda v: f"{v/10:.1f}x", self._on_speed_changed, self._on_speed_released
+        # Speed slider (all backends, but different ranges)
+        self._speed_row, self._speed_label, self._speed_slider, self._speed_value = make_slider_row(
+            "Speed:", "Speech speed", 5, 20, 10, lambda v: f"{v/10:.1f}x",
+            self._on_speed_changed, self._on_speed_released
         )
-        layout.addLayout(speed_row)
+        self._layout.addLayout(self._speed_row)
 
-        # Volume slider (supertonic only)
-        vol_row, self._volume_label, self._volume_slider, self._volume_value = make_slider_row(
-            "Volume:", "TTS volume (0.0 mute - 2.0 loud)",
-            0, 20, int(S.SPEAK_BACK_VOLUME * 10),
+        # Volume slider (supertonic only) - store widgets for show/hide
+        self._vol_row, self._vol_label, self._vol_slider, self._vol_value = make_slider_row(
+            "Volume:", "TTS volume (0.0 mute - 2.0 loud)", 0, 20, 10,
             lambda v: f"{v/10:.1f}", self._on_volume_changed, self._on_volume_released
         )
-        layout.addLayout(vol_row)
+        self._vol_widget = QWidget()
+        vol_layout = QHBoxLayout(self._vol_widget)
+        vol_layout.setContentsMargins(0, 0, 0, 0)
+        vol_layout.setSpacing(8)
+        vol_layout.addWidget(self._vol_label)
+        vol_layout.addWidget(self._vol_slider, 1)
+        vol_layout.addWidget(self._vol_value)
+        self._layout.addWidget(self._vol_widget)
 
-        # Steps (quality) slider (supertonic only)
-        steps_row, self._steps_label, self._steps_slider, self._steps_value = make_slider_row(
-            "Quality:", "Synthesis quality (1=fast/low, 10=slow/high)\nRecommended: 3-5 for real-time",
-            1, 10, S.SPEAK_BACK_STEPS,
-            lambda v: str(v), self._on_steps_changed, self._on_steps_released
+        # Quality slider (supertonic only)
+        self._qual_row, self._qual_label, self._qual_slider, self._qual_value = make_slider_row(
+            "Quality:", "Synthesis quality (1=fast, 10=high)", 1, 10, 5,
+            lambda v: str(v), self._on_quality_changed, self._on_quality_released
         )
-        layout.addLayout(steps_row)
+        self._qual_widget = QWidget()
+        qual_layout = QHBoxLayout(self._qual_widget)
+        qual_layout.setContentsMargins(0, 0, 0, 0)
+        qual_layout.setSpacing(8)
+        qual_layout.addWidget(self._qual_label)
+        qual_layout.addWidget(self._qual_slider, 1)
+        qual_layout.addWidget(self._qual_value)
+        self._layout.addWidget(self._qual_widget)
 
-        # Update slider states based on current voice
-        self._update_slider_states()
+        # Initialize UI for current backend
+        self._update_for_backend()
 
         # Append instruction checkbox + edit button
         append_row = QHBoxLayout()
@@ -2336,36 +2299,34 @@ class TTSSettingsWidget(QWidget):
         self._append_checkbox = QCheckBox("Append TTS instruction")
         self._append_checkbox.setChecked(S.SPEAK_BACK_APPEND_INSTRUCTION)
         self._append_checkbox.setStyleSheet(get_checkbox_css())
-        self._append_checkbox.setToolTip("When enabled, appends TTS command to transcriptions\n"
-                                         "so Claude can speak responses aloud.")
+        self._append_checkbox.setToolTip("Appends TTS command to transcriptions for Claude to speak.")
         self._append_checkbox.stateChanged.connect(self._on_append_changed)
         append_row.addWidget(self._append_checkbox)
         self._edit_btn = make_edit_button("Edit the instruction template", self._edit_instruction)
         append_row.addWidget(self._edit_btn)
-        self._copy_instruction_btn = QPushButton()
-        self._copy_instruction_btn.setIcon(load_icon("copy", color=ICON_COLOR_DARK))
-        self._copy_instruction_btn.setFixedWidth(28)
-        self._copy_instruction_btn.setStyleSheet(get_btn_css().replace("padding: 3px 8px;", "padding: 1px 4px;"))
-        self._copy_instruction_btn.setToolTip("Copy TTS instruction to clipboard")
-        self._copy_instruction_btn.clicked.connect(self._copy_tts_instruction)
-        append_row.addWidget(self._copy_instruction_btn)
+        self._copy_btn = QPushButton()
+        self._copy_btn.setIcon(load_icon("copy", color=ICON_COLOR_DARK))
+        self._copy_btn.setFixedWidth(28)
+        self._copy_btn.setStyleSheet(get_btn_css().replace("padding: 3px 8px;", "padding: 1px 4px;"))
+        self._copy_btn.setToolTip("Copy TTS instruction to clipboard")
+        self._copy_btn.clicked.connect(self._copy_tts_instruction)
+        append_row.addWidget(self._copy_btn)
         append_row.addStretch()
-        layout.addLayout(append_row)
+        self._layout.addLayout(append_row)
 
-        # Child checkbox: Only for tmux (indented)
+        # Only for tmux checkbox (indented)
         tmux_only_row = QHBoxLayout()
         tmux_only_row.setSpacing(8)
-        tmux_only_row.addSpacing(20)  # Indent
+        tmux_only_row.addSpacing(20)
         self._tmux_only_checkbox = QCheckBox("Only for tmux")
         self._tmux_only_checkbox.setChecked(S.SPEAK_BACK_TMUX_ONLY)
         self._tmux_only_checkbox.setStyleSheet(get_checkbox_css())
-        self._tmux_only_checkbox.setToolTip("Only append TTS instruction when sending to tmux panes,\n"
-                                            "not when pasting via ⌘V.")
+        self._tmux_only_checkbox.setToolTip("Only append when sending to tmux panes.")
         self._tmux_only_checkbox.setEnabled(S.SPEAK_BACK_APPEND_INSTRUCTION)
         self._tmux_only_checkbox.stateChanged.connect(self._on_tmux_only_changed)
         tmux_only_row.addWidget(self._tmux_only_checkbox)
         tmux_only_row.addStretch()
-        layout.addLayout(tmux_only_row)
+        self._layout.addLayout(tmux_only_row)
 
         # Announce pane checkbox
         announce_row = QHBoxLayout()
@@ -2373,132 +2334,151 @@ class TTSSettingsWidget(QWidget):
         self._announce_checkbox = QCheckBox("Announce tmux pane")
         self._announce_checkbox.setChecked(S.TMUX_ANNOUNCE_PANE)
         self._announce_checkbox.setStyleSheet(get_checkbox_css())
-        set_tooltip(self._announce_checkbox,
-            "Use TTS to announce which pane(s) received the message.\n\n"
-            "When enabled, after sending to a magic phrase pane,\n"
-            "VoiceThing will speak 'sent to <phrase>' using TTS.\n\n"
-            "Example: if panes have phrases 'paper' and 'chicken',\n"
-            "and you say something matching both, you'll hear\n"
-            "'sent to paper chicken'."
-        )
+        set_tooltip(self._announce_checkbox, "Speak which pane(s) received the message.")
         self._announce_checkbox.stateChanged.connect(self._on_announce_changed)
         announce_row.addWidget(self._announce_checkbox)
         announce_row.addStretch()
-        layout.addLayout(announce_row)
+        self._layout.addLayout(announce_row)
+
+    def _get_backend(self):
+        return self._backend_combo.currentData()
+
+    def _get_cfg(self):
+        """Get current backend's config dict."""
+        backend = self._get_backend()
+        if backend == 'say':
+            return S.TTS_SAY
+        elif backend == 'supertonic':
+            return S.TTS_SUPERTONIC
+        else:
+            return S.TTS_KITTEN
+
+    def _save_cfg(self, key, value):
+        """Save a value to current backend's config."""
+        cfg = self._get_cfg()
+        cfg[key] = value
+        # Trigger settings save
+        backend = self._get_backend()
+        if backend == 'say':
+            S.set('TTS_SAY', cfg)
+        elif backend == 'supertonic':
+            S.set('TTS_SUPERTONIC', cfg)
+        else:
+            S.set('TTS_KITTEN', cfg)
+
+    def _update_for_backend(self):
+        """Update UI controls for current backend."""
+        global MACOS_VOICES
+        backend = self._get_backend()
+        cfg = self._get_cfg()
+
+        # Populate voice dropdown
+        self._voice_combo.blockSignals(True)
+        self._voice_combo.clear()
+        if backend == 'say':
+            if MACOS_VOICES is None:
+                MACOS_VOICES = _get_macos_voices()
+            # Add "Default" as first option (uses system default voice)
+            self._voice_combo.addItem("Default (System)", "")
+            for v in MACOS_VOICES:
+                self._voice_combo.addItem(v, v)
+            current = cfg.get('voice', '')
+            if current == '' or current not in MACOS_VOICES:
+                idx = 0  # Default
+            else:
+                idx = MACOS_VOICES.index(current) + 1  # +1 for Default option
+            self._voice_combo.setCurrentIndex(idx)
+            make_combobox_searchable(self._voice_combo)
+        elif backend == 'supertonic':
+            for value, label in self.SUPERTONIC_VOICES:
+                self._voice_combo.addItem(label, value)
+            current = cfg.get('voice', 'F1')
+            idx = [v for v, _ in self.SUPERTONIC_VOICES].index(current) if current in [v for v, _ in self.SUPERTONIC_VOICES] else 0
+            self._voice_combo.setCurrentIndex(idx)
+        else:  # kitten
+            for value, label in self.KITTEN_VOICES:
+                self._voice_combo.addItem(label, value)
+            current = cfg.get('voice', 'expr-voice-3-f')
+            idx = [v for v, _ in self.KITTEN_VOICES].index(current) if current in [v for v, _ in self.KITTEN_VOICES] else 0
+            self._voice_combo.setCurrentIndex(idx)
+        self._voice_combo.blockSignals(False)
+
+        # Update speed slider
+        speed = cfg.get('speed', 175 if backend == 'say' else 1.0)
+        if backend == 'say':
+            self._speed_slider.setRange(90, 400)
+            self._speed_slider.setValue(int(speed))
+            self._speed_value.setText(f"{int(speed)} WPM")
+            set_tooltip(self._speed_label, "Speech rate in words per minute (90-400)")
+        else:
+            min_spd = 5 if backend == 'kitten' else 7
+            self._speed_slider.setRange(min_spd, 20)
+            self._speed_slider.setValue(int(speed * 10))
+            self._speed_value.setText(f"{speed:.1f}x")
+            set_tooltip(self._speed_label, "Speech speed multiplier")
+
+        # Show/hide volume and quality (supertonic only)
+        is_supertonic = (backend == 'supertonic')
+        self._vol_widget.setVisible(is_supertonic)
+        self._qual_widget.setVisible(is_supertonic)
+        if is_supertonic:
+            self._vol_slider.setValue(int(cfg.get('volume', 1.0) * 10))
+            self._vol_value.setText(f"{cfg.get('volume', 1.0):.1f}")
+            self._qual_slider.setValue(cfg.get('steps', 5))
+            self._qual_value.setText(str(cfg.get('steps', 5)))
 
     def _speak_demo(self, text):
-        """Speak demo text (non-blocking)."""
         do_tts(text, block=False)
 
-    def _update_slider_states(self):
-        """Enable/disable and configure sliders based on current voice backend."""
-        voice = self._voice_combo.currentData()
-        backend = self._get_voice_backend(voice)
-        caps = self.VOICE_CAPABILITIES[backend]
-
-        # Speed slider - all backends support speed but with different ranges
-        # macOS say uses WPM (90-400), others use multiplier (0.5-2.0)
-        speed_caps = caps['speed']
-        if speed_caps:
-            self._speed_label.setEnabled(True)
-            self._speed_slider.setEnabled(True)
-            self._speed_value.setEnabled(True)
-            if backend == 'say':
-                # macOS say uses WPM (words per minute)
-                self._speed_slider.setRange(speed_caps[0], speed_caps[1])
-                # If current speed looks like a multiplier (< 50), reset to default WPM
-                current = S.SPEAK_BACK_SPEED
-                if current < 50:
-                    current = speed_caps[2]  # default WPM
-                    S.set('SPEAK_BACK_SPEED', float(current))
-                self._speed_slider.setValue(int(current))
-                self._speed_value.setText(f"{int(current)} WPM")
-                set_tooltip(self._speed_label, f"Speech rate in words per minute ({speed_caps[0]}-{speed_caps[1]})")
-            else:
-                # Supertonic/Kitten use multiplier (0.5-2.0)
-                min_10 = int(speed_caps[0] * 10)
-                max_10 = int(speed_caps[1] * 10)
-                self._speed_slider.setRange(min_10, max_10)
-                # If current speed looks like WPM (> 10), reset to default multiplier
-                current = S.SPEAK_BACK_SPEED
-                if current > 10:
-                    current = speed_caps[2]  # default multiplier
-                    S.set('SPEAK_BACK_SPEED', current)
-                self._speed_slider.setValue(int(current * 10))
-                self._speed_value.setText(f"{current:.1f}x")
-                set_tooltip(self._speed_label, f"Speech speed ({speed_caps[0]}x slow - {speed_caps[1]}x fast)")
-
-        # Volume slider - supertonic only
-        vol_caps = caps['volume']
-        set_slider_row_enabled(self._volume_label, self._volume_slider, self._volume_value, vol_caps is not None)
-        if vol_caps:
-            self._volume_slider.setRange(int(vol_caps[0] * 10), int(vol_caps[1] * 10))
-            self._volume_value.setText(f"{S.SPEAK_BACK_VOLUME:.1f}")
-        else:
-            self._volume_value.setText("N/A")
-
-        # Quality slider - supertonic only
-        qual_caps = caps['quality']
-        set_slider_row_enabled(self._steps_label, self._steps_slider, self._steps_value, qual_caps is not None)
-        if qual_caps:
-            self._steps_slider.setRange(qual_caps[0], qual_caps[1])
-            self._steps_value.setText(str(S.SPEAK_BACK_STEPS))
-        else:
-            self._steps_value.setText("N/A")
-
     # ─────────────────────────────────────────────────────────────────────────
-    # Control handlers
+    # Handlers
     # ─────────────────────────────────────────────────────────────────────────
+
+    def _on_backend_changed(self, index):
+        backend = self._backend_combo.itemData(index)
+        S.set('SPEAK_BACK_VOICE', backend)
+        self._update_for_backend()
+        self._speak_demo(f"{self._backend_combo.currentText()} engine")
 
     def _on_voice_changed(self, index):
+        if index < 0:
+            return
         voice = self._voice_combo.itemData(index)
-        S.set('SPEAK_BACK_VOICE', voice)
-        self._update_slider_states()
-        if voice == 'say':
-            self._speak_demo("macOS Say voice")
-        elif voice.startswith('kitten:'):
-            # e.g. kitten:expr-voice-3-f -> "Kitten voice 3 female"
-            parts = voice.split(':')[1].split('-')  # ['expr', 'voice', '3', 'f']
-            num = parts[2] if len(parts) > 2 else '?'
-            gender = 'female' if parts[-1] == 'f' else 'male'
-            self._speak_demo(f"Kitten voice {num} {gender}")
-        else:
-            label = "Female" if voice.startswith('F') else "Male"
-            self._speak_demo(f"Supertonic {label} {voice[-1]}")
+        display_text = self._voice_combo.currentText()
+        self._save_cfg('voice', voice)
+        self._speak_demo(display_text)
 
     def _on_speed_changed(self, value):
-        voice = self._voice_combo.currentData()
-        backend = self._get_voice_backend(voice)
+        backend = self._get_backend()
         if backend == 'say':
-            # macOS say uses WPM directly
-            S.set('SPEAK_BACK_SPEED', float(value))
+            self._save_cfg('speed', value)
             self._speed_value.setText(f"{value} WPM")
         else:
-            # Supertonic/Kitten use multiplier
-            S.set('SPEAK_BACK_SPEED', value / 10.0)
-            self._speed_value.setText(f"{S.SPEAK_BACK_SPEED:.1f}x")
+            self._save_cfg('speed', value / 10.0)
+            self._speed_value.setText(f"{value/10:.1f}x")
 
     def _on_speed_released(self):
-        voice = self._voice_combo.currentData()
-        backend = self._get_voice_backend(voice)
+        backend = self._get_backend()
+        cfg = self._get_cfg()
+        speed = cfg.get('speed', 175 if backend == 'say' else 1.0)
         if backend == 'say':
-            self._speak_demo(f"{int(S.SPEAK_BACK_SPEED)} words per minute")
+            self._speak_demo(f"{int(speed)} words per minute")
         else:
-            self._speak_demo(f"{S.SPEAK_BACK_SPEED:.1f} speed")
+            self._speak_demo(f"{speed:.1f}x speed")
 
     def _on_volume_changed(self, value):
-        S.set('SPEAK_BACK_VOLUME', value / 10.0)
-        self._volume_value.setText(f"{S.SPEAK_BACK_VOLUME:.1f}")
+        self._save_cfg('volume', value / 10.0)
+        self._vol_value.setText(f"{value/10:.1f}")
 
     def _on_volume_released(self):
-        self._speak_demo(f"Volume {S.SPEAK_BACK_VOLUME:.1f}")
+        self._speak_demo("Volume test")
 
-    def _on_steps_changed(self, value):
-        S.set('SPEAK_BACK_STEPS', value)
-        self._steps_value.setText(f"{value}")
+    def _on_quality_changed(self, value):
+        self._save_cfg('steps', value)
+        self._qual_value.setText(str(value))
 
-    def _on_steps_released(self):
-        self._speak_demo(f"Quality {S.SPEAK_BACK_STEPS}")
+    def _on_quality_released(self):
+        self._speak_demo("Quality test")
 
     def _on_append_changed(self, state):
         enabled = state == Qt.CheckState.Checked.value
@@ -2512,14 +2492,12 @@ class TTSSettingsWidget(QWidget):
         S.set('TMUX_ANNOUNCE_PANE', state == Qt.CheckState.Checked.value)
 
     def _edit_instruction(self):
-        """Open dialog to edit the TTS instruction template."""
         dialog = TTSInstructionDialog(S.SPEAK_BACK_INSTRUCTION_TEMPLATE, self.window())
         dialog.center_on_parent()
         if dialog.exec():
             S.set('SPEAK_BACK_INSTRUCTION_TEMPLATE', dialog.get_text())
 
     def _copy_tts_instruction(self):
-        """Copy the current TTS instruction to clipboard."""
         instruction = S.SPEAK_BACK_INSTRUCTION_TEMPLATE.format(command=build_tts_command())
         QApplication.clipboard().setText(instruction)
         play_chime('copy')
@@ -5418,8 +5396,8 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
                     'LLM_MODEL', 'LLM_PREFIX', 'CHIME_VOLUME', 'CHIME_PITCH',
                     'CHIME_PROGRAM', 'CHIME_THEME', 'SILENCE_SKIP_ENABLED', 'SILENCE_THRESHOLD',
                     'TMUX_TARGET', 'TMUX_PANE_NAMES', 'TMUX_PHRASES_AS_CONTEXT', 'TMUX_ANNOUNCE_PANE', 'RECORDINGS_DIR',
-                    'SPEAK_BACK_SPEED', 'SPEAK_BACK_VOICE', 'SPEAK_BACK_VOLUME', 'SPEAK_BACK_STEPS',
-                    'SPEAK_BACK_APPEND_INSTRUCTION', 'SPEAK_BACK_INSTRUCTION_TEMPLATE']:
+                    'SPEAK_BACK_VOICE', 'TTS_SAY', 'TTS_SUPERTONIC', 'TTS_KITTEN',
+                    'SPEAK_BACK_APPEND_INSTRUCTION', 'SPEAK_BACK_TMUX_ONLY', 'SPEAK_BACK_INSTRUCTION_TEMPLATE']:
             if key in data:
                 S[key] = data[key]
         # SIMPLE_MODE needs toggle pattern (handle both on->off and off->on)
