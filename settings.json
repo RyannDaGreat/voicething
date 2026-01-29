@@ -10,10 +10,17 @@
   "SIMPLE_MODE": false,
   "PET_TYPES": [
     "emmy",
-    "lpc_dog_white"
+    "lpc_dog_white",
+    "lpc_dog_tan",
+    "lpc_dog_golden",
+    "lpc_dog_black",
+    "lpc_cat_white",
+    "lpc_cat_orange",
+    "lpc_cat_gray",
+    "lpc_cat_black"
   ],
   "WHISPER_MODEL": "large-v3",
-  "THEME": "cyberpunk_metal",
+  "THEME": "supervillain",
   "WAKE_WORD_MODEL": "jarvis",
   "TMUX_MODE": true,
   "TMUX_TARGET": "%2",
@@ -23,6 +30,9 @@
     },
     "%11": {
       "phrase": "chicken"
+    },
+    "%229": {
+      "phrase": "star"
     }
   },
   "TMUX_PHRASES_AS_CONTEXT": true,
@@ -42,7 +52,7 @@
   "SPEAK_BACK_SPEED": 1.5,
   "SPEAK_BACK_VOICE": "F4",
   "SPEAK_BACK_VOLUME": 1.0,
-  "SPEAK_BACK_STEPS": 5,
+  "SPEAK_BACK_STEPS": 10,
   "SPEAK_BACK_APPEND_INSTRUCTION": true,
   "SPEAK_BACK_TMUX_ONLY": true,
   "SPEAK_BACK_INSTRUCTION_TEMPLATE": "Please speak back with {command}"
