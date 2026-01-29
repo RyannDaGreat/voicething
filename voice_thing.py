@@ -113,7 +113,8 @@ CHIME_THEMES = {
         'null_text':      (([-10], [-10]), 0.06),       # Low B twice (from stop_rec)
         'llm_start':      (([7, 11],), 0.06),           # E+G# LLM start
         'llm_done':       (([11, 14, 18],), 0.08),      # G#+B+D#6 LLM done
-        'tmux_send':      (([-5], [-1, 2, 6], [-10], [-5, 2, 7]), 0.06),  # E4 → G#B D# → B3 → E4 B4 E5
+        # 'tmux_send':      (([-5], [-1, 2, 6], [-10], [-5, 2, 7]), 0.06),  # E4 → G#B D# → B3 → E4 B4 E5
+        'tmux_send':      ((), 0),  # Silent
     },
     # Minimal: Clean single notes, perfect intervals (octaves, 5ths)
     'minimal': {
@@ -135,7 +136,8 @@ CHIME_THEMES = {
         'null_text':      (([-5], [-5]), 0.04),         # Low E twice (from stop_rec)
         'llm_start':      (([-12, -5],), 0.04),         # A3+E4
         'llm_done':       (([12, 19],), 0.06),          # A5+E6 octave+5th
-        'tmux_send':      (([-5], [2], [-10], [7]), 0.04),  # E4 → B4 → B3 → E5
+        # 'tmux_send':      (([-5], [2], [-10], [7]), 0.04),  # E4 → B4 → B3 → E5
+        'tmux_send':      ((), 0),  # Silent
     },
     # Blues: A blues scale with blue notes (0, 3, 5, 6, 7, 10)
     'blues': {
@@ -157,7 +159,8 @@ CHIME_THEMES = {
         'null_text':      (([-9], [-9]), 0.05),         # Low C twice (from stop_rec)
         'llm_start':      (([-7, -4],), 0.06),          # D4+F4 (Dm feel)
         'llm_done':       (([0, 4, 7, 10],), 0.1),      # A7 blues resolve
-        'tmux_send':      (([-5], [0, 3, 6], [-9], [-5, 3, 7]), 0.06),  # E4 → A C Eb → C4 → E4 C5 E5
+        # 'tmux_send':      (([-5], [0, 3, 6], [-9], [-5, 3, 7]), 0.06),  # E4 → A C Eb → C4 → E4 C5 E5
+        'tmux_send':      ((), 0),  # Silent
     },
     # Ethereal: Sus2/Sus4 only, wide voicings (0, 2, 5, 7, 9)
     # Rapid sequence: Asus2 → Esus4 → Dsus2 → Asus2/E → Asus2 high
@@ -180,7 +183,8 @@ CHIME_THEMES = {
         'null_text':      (([-5], [-5]), 0.06),         # Low E twice (from stop_rec)
         'llm_start':      (([0, 7, 14],), 0.08),        # A+E+B5 (Asus2/E)
         'llm_done':       (([2, 9, 14, 21],), 0.1),     # B+F#+B5+E6 (soar)
-        'tmux_send':      (([-5], [0, 2, 7], [-12], [-5, 2, 9]), 0.06),  # E4 → A B E5 → A3 → E4 B4 F#5
+        # 'tmux_send':      (([-5], [0, 2, 7], [-12], [-5, 2, 9]), 0.06),  # E4 → A B E5 → A3 → E4 B4 F#5
+        'tmux_send':      ((), 0),  # Silent
     },
     # Melancholy: A natural minor (0, 2, 3, 5, 7, 8, 10)
     'melancholy': {
@@ -202,7 +206,8 @@ CHIME_THEMES = {
         'null_text':      (([-5], [-5]), 0.06),         # Low E twice (from stop_rec)
         'llm_start':      (([5, 8, 10],), 0.08),        # D+F+G (Dm7 no root)
         'llm_done':       (([-12, -5, 0, 3],), 0.12),   # Am with low root
-        'tmux_send':      (([-5], [0, 3, 7], [-12], [-5, 3, 8]), 0.06),  # E4 → A C E5 → A3 → E4 C5 F5
+        # 'tmux_send':      (([-5], [0, 3, 7], [-12], [-5, 3, 8]), 0.06),  # E4 → A C E5 → A3 → E4 C5 F5
+        'tmux_send':      ((), 0),  # Silent
     },
     # Bright: A major scale (0, 2, 4, 5, 7, 9, 11)
     'bright': {
@@ -226,7 +231,8 @@ CHIME_THEMES = {
         'null_text':      (([-10],[-10-12,-10+12], [-10]), 0.04),       # Low B twice (from stop_rec)
         'llm_start':      (([-5, 2],), 0.05),            # E4+B (5th buildup)
         'llm_done':       (([0, 4, 7],), 0.06),         # A+C#+E (resolution)
-        'tmux_send':      (([-5], [-1, 2, 6], [-10], [-5, 2, 7]), 0.05),  # E4 → G#B D# → B3 → E4 B4 E5
+        # 'tmux_send':      (([-5], [-1, 2, 6], [-10], [-5, 2, 7]), 0.05),  # E4 → G#B D# → B3 → E4 B4 E5
+        'tmux_send':      ((), 0),  # Silent
     },
     # Jazzy: Extended chords, 7ths, 9ths, 13ths
     'jazzy': {
@@ -248,7 +254,8 @@ CHIME_THEMES = {
         'null_text':      (([-12], [-12]), 0.05),       # Low A twice (from stop_rec root)
         'llm_start':      (([2, 5, 8, 11],), 0.06),     # B+D+F+G# (Bdim7)
         'llm_done':       (([0, 4, 7, 11, 14],), 0.1),  # Amaj9
-        'tmux_send':      (([-5], [-1, 2, 7], [-12], [-5, 2, 10]), 0.05),  # E4 → G# B E5 → A3 → E4 B4 G5
+        # 'tmux_send':      (([-5], [-1, 2, 7], [-12], [-5, 2, 10]), 0.05),  # E4 → G# B E5 → A3 → E4 B4 G5
+        'tmux_send':      ((), 0),  # Silent
     },
 }
 
@@ -590,6 +597,13 @@ def build_tts_command():
     """Build the TTS command string based on current voice settings."""
     if S.SPEAK_BACK_VOICE == 'say':
         return "say 'YOUR_MESSAGE_HERE'"
+    elif S.SPEAK_BACK_VOICE.startswith('kitten:'):
+        kitten_voice = S.SPEAK_BACK_VOICE.split(':', 1)[1]
+        return (
+            f"{sys.executable} -m rp call text_to_speech_via_kitten "
+            f"---text 'YOUR_MESSAGE_HERE' ---voice '{kitten_voice}' "
+            f"--speed {S.SPEAK_BACK_SPEED} --block True"
+        )
     else:
         return (
             f"{sys.executable} -m rp call text_to_speech_via_supertonic "
@@ -609,7 +623,13 @@ LLM_MODELS = [
     "OLLAMA:mistral:7b",
     "OLLAMA:gemma2:9b",
     "OLLAMA:codellama:7b",
-    # OpenAI models (requires API key)
+    # OpenAI GPT-5 models (requires API key)
+    "gpt-5.2",
+    "gpt-5.2-pro",
+    "gpt-5.2-codex",
+    "gpt-5-mini",
+    "gpt-5",
+    # OpenAI GPT-4 models (requires API key)
     "gpt-4o-mini",
     "gpt-4o",
     "gpt-4-turbo",
@@ -809,13 +829,15 @@ def get_menu_css():
     return STYLE.menu_css()
 
 def get_combobox_css():
-    """Get ComboBox CSS - white bg, black text, inverted on hover."""
-    return """
-        QComboBox { background: white; color: black; border: 1px solid #888; padding: 4px 8px; }
-        QComboBox QAbstractItemView { background: white; color: black; selection-background-color: black; selection-color: white; }
-        QComboBox QAbstractItemView::item:hover { background: black; color: white; }
-        QComboBox QLineEdit { background: white; color: black; padding: 0px; margin: 0px; border: none; }
-    """
+    """Get ComboBox CSS - theme-compatible colors."""
+    # Use PANEL_BG_FLAT_CSS for background, TEXT_PRIMARY for text
+    return (
+        f"QComboBox {{ {PANEL_BG_FLAT_CSS} color: {TEXT_PRIMARY}; border: 1px solid {BORDER_COLOR}; padding: 4px 8px; }}"
+        f"QComboBox QAbstractItemView {{ {PANEL_BG_FLAT_CSS} color: {TEXT_PRIMARY}; selection-background-color: {ACCENT}; selection-color: white; }}"
+        f"QComboBox QAbstractItemView::item:hover {{ background: {ACCENT}; color: white; }}"
+        f"QComboBox QLineEdit {{ {PANEL_BG_FLAT_CSS} color: {TEXT_PRIMARY}; padding: 0px; margin: 0px; border: none; }}"
+        f"QComboBox::drop-down {{ border: none; }}"
+    )
 
 def make_combobox_searchable(combo_box):
     """Make a QComboBox searchable with substring filtering (type to filter).
@@ -903,10 +925,7 @@ def make_labeled_textedit(label_text, value, placeholder, tooltip, on_change=Non
     row.addLayout(header)
     edit.setPlainText(value)
     edit.setPlaceholderText(placeholder)
-    edit.setStyleSheet(
-        "QTextEdit { background: white; color: black; border: 1px solid #888; "
-        "padding: 4px 8px; border-radius: 3px; font-family: Menlo, monospace; font-size: 11px; }"
-    )
+    edit.setStyleSheet(get_textedit_css())
     edit.setFixedHeight(height)
     if on_change:
         edit.textChanged.connect(on_change)
@@ -927,6 +946,24 @@ def get_slider_css():
 def get_pref_label_css():
     """Get label CSS for preference dialogs."""
     return f"color: {TEXT_PRIMARY}; font-size: 12px;"
+
+
+def get_textedit_css():
+    """Get text edit CSS for preference dialogs (dark theme compatible)."""
+    return (
+        f"QTextEdit {{ {PANEL_BG_FLAT_CSS} color: {TEXT_PRIMARY}; "
+        f"border: 1px solid {BORDER_COLOR}; font-family: Menlo, monospace; "
+        f"font-size: 11px; padding: 6px; }}" + SCROLLBAR_CSS
+    )
+
+
+def get_lineedit_css():
+    """Get line edit CSS for preference dialogs (dark theme compatible)."""
+    return (
+        f"QLineEdit {{ {PANEL_BG_FLAT_CSS} color: {TEXT_PRIMARY}; "
+        f"border: 1px solid {BORDER_COLOR}; padding: 4px 8px; border-radius: 3px; }}"
+    )
+
 
 _HELP_CURSOR = None
 
@@ -1881,11 +1918,7 @@ class TTSInstructionDialog(DraggableDialog):
         # Text edit
         self._text_edit = QTextEdit()
         self._text_edit.setPlainText(current_text)
-        self._text_edit.setStyleSheet(
-            f"QTextEdit {{ {PANEL_BG_FLAT_CSS} color: {TEXT_PRIMARY}; "
-            f"border: 1px solid {BORDER_COLOR}; font-family: Menlo, monospace; "
-            f"font-size: 11px; padding: 6px; }}" + SCROLLBAR_CSS
-        )
+        self._text_edit.setStyleSheet(get_textedit_css())
         self._text_edit.setMinimumHeight(80)
         layout.addWidget(self._text_edit)
 
@@ -1948,8 +1981,10 @@ class TTSSettingsWidget(QWidget):
     """Self-contained TTS settings widget with voice, speed, volume, quality controls."""
 
     # Voice options: (value, display_label)
+    # Prefixes: say=macOS, F/M=Supertonic, kitten:=Kitten
     TTS_VOICES = [
         ('say', 'macOS Say'),
+        # Supertonic voices (66M params, 167x realtime)
         ('F1', 'Supertonic F1 (Female)'),
         ('F2', 'Supertonic F2 (Female)'),
         ('F3', 'Supertonic F3 (Female)'),
@@ -1960,6 +1995,15 @@ class TTSSettingsWidget(QWidget):
         ('M3', 'Supertonic M3 (Male)'),
         ('M4', 'Supertonic M4 (Male)'),
         ('M5', 'Supertonic M5 (Male)'),
+        # Kitten voices (25MB model, ~6x realtime)
+        ('kitten:expr-voice-2-f', 'Kitten Voice 2 (Female)'),
+        ('kitten:expr-voice-2-m', 'Kitten Voice 2 (Male)'),
+        ('kitten:expr-voice-3-f', 'Kitten Voice 3 (Female)'),
+        ('kitten:expr-voice-3-m', 'Kitten Voice 3 (Male)'),
+        ('kitten:expr-voice-4-f', 'Kitten Voice 4 (Female)'),
+        ('kitten:expr-voice-4-m', 'Kitten Voice 4 (Male)'),
+        ('kitten:expr-voice-5-f', 'Kitten Voice 5 (Female)'),
+        ('kitten:expr-voice-5-m', 'Kitten Voice 5 (Male)'),
     ]
 
     def __init__(self, parent=None):
@@ -2065,6 +2109,13 @@ class TTSSettingsWidget(QWidget):
         self._edit_btn.setToolTip("Edit the instruction template")
         self._edit_btn.clicked.connect(self._edit_instruction)
         append_row.addWidget(self._edit_btn)
+        self._copy_instruction_btn = QPushButton()
+        self._copy_instruction_btn.setIcon(load_icon("copy", color=ICON_COLOR_DARK))
+        self._copy_instruction_btn.setFixedWidth(28)
+        self._copy_instruction_btn.setStyleSheet(get_btn_css().replace("padding: 3px 8px;", "padding: 1px 4px;"))
+        self._copy_instruction_btn.setToolTip("Copy TTS instruction to clipboard")
+        self._copy_instruction_btn.clicked.connect(self._copy_tts_instruction)
+        append_row.addWidget(self._copy_instruction_btn)
         append_row.addStretch()
         layout.addLayout(append_row)
 
@@ -2105,10 +2156,18 @@ class TTSSettingsWidget(QWidget):
     def _speak_demo(self, text):
         """Speak demo text (non-blocking)."""
         def _do_speak():
+            import rp
             if S.SPEAK_BACK_VOICE == 'say':
                 subprocess.run(['say', text])
+            elif S.SPEAK_BACK_VOICE.startswith('kitten:'):
+                kitten_voice = S.SPEAK_BACK_VOICE.split(':', 1)[1]
+                rp.text_to_speech_via_kitten(
+                    text,
+                    voice=kitten_voice,
+                    speed=S.SPEAK_BACK_SPEED,
+                    block=True
+                )
             else:
-                import rp
                 rp.text_to_speech_via_supertonic(
                     text,
                     voice=S.SPEAK_BACK_VOICE,
@@ -2127,6 +2186,12 @@ class TTSSettingsWidget(QWidget):
         S.set('SPEAK_BACK_VOICE', voice)
         if voice == 'say':
             self._speak_demo("macOS Say voice")
+        elif voice.startswith('kitten:'):
+            # e.g. kitten:expr-voice-3-f -> "Kitten voice 3 female"
+            parts = voice.split(':')[1].split('-')  # ['expr', 'voice', '3', 'f']
+            num = parts[2] if len(parts) > 2 else '?'
+            gender = 'female' if parts[-1] == 'f' else 'male'
+            self._speak_demo(f"Kitten voice {num} {gender}")
         else:
             label = "Female" if voice.startswith('F') else "Male"
             self._speak_demo(f"Supertonic {label} {voice[-1]}")
@@ -2169,6 +2234,12 @@ class TTSSettingsWidget(QWidget):
         dialog.center_on_parent()
         if dialog.exec():
             S.set('SPEAK_BACK_INSTRUCTION_TEMPLATE', dialog.get_text())
+
+    def _copy_tts_instruction(self):
+        """Copy the current TTS instruction to clipboard."""
+        instruction = S.SPEAK_BACK_INSTRUCTION_TEMPLATE.format(command=build_tts_command())
+        QApplication.clipboard().setText(instruction)
+        play_chime('copy')
 
 
 class PrefsDialog(DraggableDialog):
@@ -2611,10 +2682,7 @@ class PrefsDialog(DraggableDialog):
         self.context_edit = QLineEdit()
         self.context_edit.setText(S.CUSTOM_WORDS)
         self.context_edit.setPlaceholderText("e.g. \"Wall-E, Wally, PyTorch, CUDA\"")
-        self.context_edit.setStyleSheet(
-            "QLineEdit { background: white; color: black; border: 1px solid #888; "
-            "padding: 4px 8px; border-radius: 3px; }"
-        )
+        self.context_edit.setStyleSheet(get_lineedit_css())
         self.context_edit.textChanged.connect(self._on_context_changed)
         context_row.addWidget(self.context_edit, 1)
         settings_box.addLayout(context_row)
@@ -4291,6 +4359,9 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         menu = QMenu()
         menu.addAction("Show", self.show)
         menu.addSeparator()
+        # Cancel Recording (only visible when recording)
+        self._cancel_action = menu.addAction("Cancel Recording", self.cancel_recording)
+        self._cancel_action.setVisible(False)
         # Add menu items from ACTIONS
         for action_id, key, icon_name, desc, menu_text in ACTIONS:
             if menu_text:
@@ -4492,10 +4563,18 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
     def _speak_announcement(self, text):
         """Speak an announcement using TTS (non-blocking)."""
         def _do_speak():
+            import rp
             if S.SPEAK_BACK_VOICE == 'say':
                 subprocess.run(['say', text])
+            elif S.SPEAK_BACK_VOICE.startswith('kitten:'):
+                kitten_voice = S.SPEAK_BACK_VOICE.split(':', 1)[1]
+                rp.text_to_speech_via_kitten(
+                    text,
+                    voice=kitten_voice,
+                    speed=S.SPEAK_BACK_SPEED,
+                    block=True
+                )
             else:
-                import rp
                 rp.text_to_speech_via_supertonic(
                     text,
                     voice=S.SPEAK_BACK_VOICE,
@@ -4764,6 +4843,9 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         opacity = 0.9 if state == "recording" else 0.3
         self.timer_label.set_opacity(opacity)
         self._update_buttons()
+        # Update tray menu cancel action visibility
+        if hasattr(self, '_cancel_action'):
+            self._cancel_action.setVisible(state == "recording")
 
     # --- Settings hooks - UI updates only (called after S.set changes value) ---
     def _on_pet_types_changed(self, pet_types):
