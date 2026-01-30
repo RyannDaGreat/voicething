@@ -1983,7 +1983,7 @@ class TmuxPreviewWidget(QTextEdit):
     def _send_to_tmux(self, key_str, modifiers=None):
         """Send a key to the target tmux pane."""
         if not self._target_pane:
-            print(f"[tmux-preview] No target pane set")
+            # print(f"[tmux-preview] No target pane set")
             return
 
         # Build tmux key argument
@@ -1997,15 +1997,15 @@ class TmuxPreviewWidget(QTextEdit):
             result = subprocess.run(['tmux', 'send-keys', '-t', self._target_pane, key_arg],
                                    capture_output=True, text=True)
             if result.returncode != 0:
-                print(f"[tmux-preview] send-keys failed: {result.stderr}")
+                pass  # print(f"[tmux-preview] send-keys failed: {result.stderr}")
         except FileNotFoundError:
-            print(f"[tmux-preview] tmux not found")
+            pass  # print(f"[tmux-preview] tmux not found")
 
     def keyPressEvent(self, event):
         """Forward keyboard input to tmux pane."""
         key = event.key()
         text = event.text()
-        print(f"[tmux-preview] keyPress: key={key}, text={repr(text)}, target={self._target_pane}, focused={self.hasFocus()}")
+        # print(f"[tmux-preview] keyPress: key={key}, text={repr(text)}, target={self._target_pane}, focused={self.hasFocus()}")
 
         if not self._target_pane:
             super().keyPressEvent(event)
@@ -2337,28 +2337,30 @@ class TmuxSelectionDialog(DraggableDialog):
 
     def _poll_preview_loop(self):
         """Background thread: poll for tmux pane changes."""
-        print("[tmux-poll] Thread started")
+        # print("[tmux-poll] Thread started")
         while not self._poll_stop.is_set():
             pane_id = self._hover_pane_id or self._selected_pane_id
             if pane_id:
                 text = _get_tmux_scrollback(pane_id, use_cache=False)
                 if text != self._last_preview_text:
-                    print(f"[tmux-poll] Content changed for {pane_id}")
+                    # print(f"[tmux-poll] Content changed for {pane_id}")
                     self._last_preview_text = text
                     if text is not None:
                         html = _ansi_to_html(text)
                         self._preview_changed.emit(pane_id, html)
             self._poll_stop.wait(0.1)  # Sleep 100ms between polls
-        print("[tmux-poll] Thread stopped")
+        # print("[tmux-poll] Thread stopped")
 
     def _on_preview_changed(self, pane_id, html):
         """Slot: update preview from background thread (runs on main thread)."""
         current_pane = self._hover_pane_id or self._selected_pane_id
         if pane_id != current_pane:
             return  # Pane changed since signal was emitted
-        self.preview.setHtml(html)
+        # Preserve scroll position during update
         sb = self.preview.verticalScrollBar()
-        sb.setValue(sb.maximum())
+        scroll_pos = sb.value()
+        self.preview.setHtml(html)
+        sb.setValue(scroll_pos)
 
     def _start_polling(self):
         """Start the background preview polling thread."""
@@ -2367,7 +2369,7 @@ class TmuxSelectionDialog(DraggableDialog):
         self._poll_stop.clear()
         self._poll_thread = threading.Thread(target=self._poll_preview_loop, daemon=True)
         self._poll_thread.start()
-        print("[tmux-poll] Starting poll thread")
+        # print("[tmux-poll] Starting poll thread")
 
     def _stop_polling(self):
         """Stop the background preview polling thread."""
@@ -2378,7 +2380,7 @@ class TmuxSelectionDialog(DraggableDialog):
 
     def showEvent(self, event):
         """Start polling when dialog is shown."""
-        print("[tmux-dialog] showEvent called")
+        # print("[tmux-dialog] showEvent called")
         super().showEvent(event)
         self._start_polling()
 
