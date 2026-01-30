@@ -1585,12 +1585,9 @@ class ModelDialog(OptionsDialog):
 # AI coder process names - panes running these get a star
 AI_CODER_PROCESSES = ['claude', 'opencode', 'gemini', 'aider', 'cursor']
 
-# Scrollback cache with 30 second TTL
-try:
-    from cachetools import TTLCache, cached
-    _scrollback_cache = TTLCache(maxsize=100, ttl=30)
-except ImportError:
-    _scrollback_cache = {}  # Fallback to simple dict (no expiry)
+# Cache of rendered HTML for each pane (pane_id -> html)
+# Polling thread writes to this, UI reads from it for instant display
+_pane_html_cache = {}
 
 
 def _get_tmux_pane_state(target, lines=50):
@@ -1649,18 +1646,8 @@ def _get_tmux_cursor(target):
     return None
 
 
-def _get_tmux_scrollback(target, lines=50, use_cache=True):
-    """Get scrollback from tmux pane (includes ANSI escape codes).
-
-    Args:
-        target: Tmux pane ID
-        lines: Number of lines to capture
-        use_cache: If True, use 30s TTL cache. Set False for realtime polling.
-    """
-    # Check cache first (if enabled)
-    if use_cache and target in _scrollback_cache:
-        return _scrollback_cache[target]
-
+def _get_tmux_scrollback(target, lines=50):
+    """Get scrollback from tmux pane (includes ANSI escape codes)."""
     try:
         # -e flag preserves ANSI escape sequences for colors
         result = subprocess.run(
@@ -1668,10 +1655,7 @@ def _get_tmux_scrollback(target, lines=50, use_cache=True):
             capture_output=True, text=True, timeout=2
         )
         if result.returncode == 0:
-            text = result.stdout
-            if use_cache:
-                _scrollback_cache[target] = text
-            return text
+            return result.stdout
         return None
     except (subprocess.TimeoutExpired, FileNotFoundError):
         return None
@@ -2254,7 +2238,7 @@ class TmuxSelectionDialog(DraggableDialog):
         btn_row.setSpacing(8)
 
         # Enable tmux mode checkbox
-        self.enable_checkbox = QCheckBox("Enable tmux mode")
+        self.enable_checkbox = QCheckBox("U  Enable tmux mode")
         self.enable_checkbox.setChecked(S.TMUX_MODE)
         self.enable_checkbox.setStyleSheet(get_checkbox_css())
         set_tooltip(self.enable_checkbox,
@@ -2263,6 +2247,17 @@ class TmuxSelectionDialog(DraggableDialog):
             "will be sent directly to the matching tmux panes."
         )
         btn_row.addWidget(self.enable_checkbox)
+
+        # Dark/light mode toggle button for terminal preview
+        self._preview_dark_mode = True  # Start in dark mode
+        self.theme_btn = QPushButton()
+        self.theme_btn.setIcon(load_icon("sun", ICON_COLOR_DARK))
+        self.theme_btn.setIconSize(QSize(16, 16))
+        self.theme_btn.setFixedSize(28, 28)
+        self.theme_btn.setStyleSheet(get_btn_css())
+        self.theme_btn.clicked.connect(self._toggle_preview_theme)
+        set_tooltip(self.theme_btn, "D  Toggle dark/light terminal background")
+        btn_row.addWidget(self.theme_btn)
 
         btn_row.addStretch()
         cancel_btn = QPushButton("Esc  Cancel")
@@ -2428,14 +2423,32 @@ class TmuxSelectionDialog(DraggableDialog):
         return super().eventFilter(obj, event)
 
     def _update_preview(self, pane_id):
-        """Update preview panel with scrollback from pane (with ANSI colors)."""
+        """Update preview panel with scrollback from pane (with ANSI colors).
+
+        First tries to display cached HTML instantly, then falls back to fetching fresh.
+        The polling thread will update the cache continuously once running.
+        """
+        global _pane_html_cache
         self.preview_label.setText(f"Preview: {pane_id}")
         self.preview.set_target(pane_id)
+
+        # Try cached HTML first for instant display
+        cached_html = _pane_html_cache.get(pane_id)
+        if cached_html:
+            self._last_preview_html = cached_html
+            self.preview.setHtml(cached_html)
+            sb = self.preview.verticalScrollBar()
+            sb.setValue(sb.maximum())
+            return
+
+        # No cache - fetch fresh (blocking, but only on first view)
         text = _get_tmux_scrollback(pane_id)
         cursor_info = _get_tmux_cursor(pane_id)
         self._last_preview_text = text
         if text is not None:
             html = _ansi_to_html(text, cursor_info=cursor_info)
+            _pane_html_cache[pane_id] = html  # Seed the cache
+            self._last_preview_html = html
             self.preview.setHtml(html)
             sb = self.preview.verticalScrollBar()
             sb.setValue(sb.maximum())
@@ -2444,6 +2457,7 @@ class TmuxSelectionDialog(DraggableDialog):
 
     def _poll_thread_func(self):
         """Background thread: run persistent bash loop that outputs pane content."""
+        global _pane_html_cache
         SEPARATOR = "---TMUX_FRAME_END---"
         last_html = None
 
@@ -2500,6 +2514,8 @@ done
                                 pass
 
                             html = _ansi_to_html(text, cursor_info=cursor_info)
+                            # Write to cache for instant display on pane switch
+                            _pane_html_cache[current_pane] = html
                             if html != last_html:
                                 last_html = html
                                 self._preview_changed.emit(html)
@@ -2599,6 +2615,9 @@ done
         elif e.key() == Qt.Key.Key_U:
             # Toggle tmux mode checkbox
             self.enable_checkbox.setChecked(not self.enable_checkbox.isChecked())
+        elif e.key() == Qt.Key.Key_D:
+            # Toggle dark/light mode for terminal preview
+            self._toggle_preview_theme()
         else:
             super().keyPressEvent(e)
 
@@ -2607,6 +2626,41 @@ done
         if self.preview.hasFocus():
             self.preview.clearFocus()
         super().mousePressEvent(e)
+
+    def _toggle_preview_theme(self):
+        """Toggle between dark and light terminal preview background."""
+        self._preview_dark_mode = not self._preview_dark_mode
+        if self._preview_dark_mode:
+            # Dark mode: dark bg, light text
+            self.theme_btn.setIcon(load_icon("sun", ICON_COLOR_DARK))
+            self.preview._unfocused_style = (
+                f"QTextEdit {{ background: #1a1a1a; color: #cccccc; "
+                f"border: 1px solid {BORDER_COLOR}; font-family: Menlo, monospace; "
+                f"font-size: 10px; padding: 4px; }}"
+                + SCROLLBAR_CSS
+            )
+            self.preview._focused_style = (
+                f"QTextEdit {{ background: #1a1a1a; color: #cccccc; "
+                f"border: 5px solid #00cccc; font-family: Menlo, monospace; "
+                f"font-size: 10px; padding: 4px; }}"
+                + SCROLLBAR_CSS
+            )
+        else:
+            # Light mode: light bg, dark text
+            self.theme_btn.setIcon(load_icon("moon", ICON_COLOR_DARK))
+            self.preview._unfocused_style = (
+                f"QTextEdit {{ background: #f5f5f5; color: #1a1a1a; "
+                f"border: 1px solid {BORDER_COLOR}; font-family: Menlo, monospace; "
+                f"font-size: 10px; padding: 4px; }}"
+                + SCROLLBAR_CSS
+            )
+            self.preview._focused_style = (
+                f"QTextEdit {{ background: #f5f5f5; color: #1a1a1a; "
+                f"border: 5px solid #00cccc; font-family: Menlo, monospace; "
+                f"font-size: 10px; padding: 4px; }}"
+                + SCROLLBAR_CSS
+            )
+        self.preview._update_style()
 
 
 class TextEditDialog(DraggableDialog):

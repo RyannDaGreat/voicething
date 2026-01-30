@@ -7,10 +7,8 @@
   "AUTO_ENTER": true,
   "WAKE_WORD_ENABLED": false,
   "SIMPLE_MODE": false,
-  "PET_TYPES": [
-    "emmy"
-  ],
-  "WHISPER_MODEL": "small",
+  "PET_TYPES": [],
+  "WHISPER_MODEL": "large-v3",
   "THEME": "macos_2005",
   "WAKEWORD_ENGINE": "macos",
   "WAKEWORD_OPENWAKEWORD": {
@@ -22,7 +20,7 @@
     "use_tmux_phrases": true
   },
   "TMUX_MODE": true,
-  "TMUX_TARGET": "%2",
+  "TMUX_TARGET": "%229",
   "TMUX_PANE_NAMES": {
     "%2": {
       "phrase": "paper"
@@ -75,13 +73,13 @@
       "height": 460
     },
     "tmux_selection": {
-      "x": 191,
-      "y": 222,
-      "width": 1220,
-      "height": 785,
+      "x": 28,
+      "y": 24,
+      "width": 1694,
+      "height": 1067,
       "splitter": [
-        412,
-        771
+        577,
+        1080
       ]
     },
     "preferences": {
