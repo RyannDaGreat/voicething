@@ -6149,9 +6149,8 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         self.tray_icon_timer.stop()
         self.tray.setIcon(_get_menubar_icon())  # Reset to template icon
         play_chime('cancel')  # Minor: cancel
-        # Reset wake word model to clear any buffered audio that might cause false triggers
-        if self.wake_word_engine is not None:
-            self.wake_word_engine.reset()
+        # Resume wake word listener (resets _is_recording flag so it can detect wake words again)
+        self._resume_wake_word_listener()
         self.hide_signal.emit()
 
     def _format_word_list(self, words: list) -> str:
