@@ -11,6 +11,9 @@ WakeWordCallback = Callable[[np.ndarray], None]
 # Callback for stop signal (wake word said while recording)
 StopCallback = Callable[[], None]
 
+# Callback for cancel signal (cancel phrase said while recording)
+CancelCallback = Callable[[], None]
+
 
 class WakeWordEngine(ABC):
     """Abstract base class for wake word detection engines."""
@@ -19,16 +22,23 @@ class WakeWordEngine(ABC):
     name: str = "base"
     display_name: str = "Base Engine"
 
-    def __init__(self, on_wake: WakeWordCallback, on_stop: Optional[StopCallback] = None):
+    def __init__(
+        self,
+        on_wake: WakeWordCallback,
+        on_stop: Optional[StopCallback] = None,
+        on_cancel: Optional[CancelCallback] = None,
+    ):
         """
         Initialize engine with callbacks.
 
         Args:
             on_wake: Called when wake word detected (receives pre-buffer audio)
             on_stop: Called when wake word detected during recording (stop signal)
+            on_cancel: Called when cancel phrase detected during recording
         """
         self.on_wake = on_wake
         self.on_stop = on_stop
+        self.on_cancel = on_cancel
         self._running = False
 
     @abstractmethod

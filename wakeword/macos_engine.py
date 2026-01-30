@@ -13,7 +13,7 @@ from typing import Optional, List
 
 import numpy as np
 
-from .base import WakeWordEngine, WakeWordCallback, StopCallback
+from .base import WakeWordEngine, WakeWordCallback, StopCallback, CancelCallback
 
 # Create the delegate class once at module level to avoid ObjC class redefinition errors
 _SpeechDelegateClass = None
@@ -36,10 +36,18 @@ def _get_delegate_class():
                 phrase = str(command)
                 print(f"[wakeword] macOS recognized: '{phrase}' (recording={_delegate_engine._is_recording})")
 
-                # Check if this is a tmux-only phrase (start only, no stop)
-                is_tmux_phrase = phrase.lower() in _delegate_engine._tmux_phrases_lower
+                # Check phrase types
+                phrase_lower = phrase.lower()
+                is_tmux_phrase = phrase_lower in _delegate_engine._tmux_phrases_lower
+                is_cancel_phrase = phrase_lower in _delegate_engine._cancel_phrases_lower
 
                 if _delegate_engine._is_recording:
+                    # Cancel phrases cancel the recording
+                    if is_cancel_phrase:
+                        print(f"[wakeword] Cancel phrase detected: '{phrase}'")
+                        if _delegate_engine.on_cancel:
+                            _delegate_engine.on_cancel()
+                        return
                     # Tmux phrases can't stop recording, only regular phrases can
                     if is_tmux_phrase:
                         print(f"[wakeword] Ignoring tmux phrase during recording")
@@ -47,6 +55,10 @@ def _get_delegate_class():
                     if _delegate_engine.on_stop:
                         _delegate_engine.on_stop()
                 else:
+                    # Cancel phrases do nothing when not recording
+                    if is_cancel_phrase:
+                        print(f"[wakeword] Ignoring cancel phrase (not recording)")
+                        return
                     # Store the detected phrase (for tmux routing prefix)
                     _delegate_engine.last_detected_phrase = phrase if is_tmux_phrase else None
                     # macOS doesn't have a pre-buffer, pass empty array
@@ -74,8 +86,10 @@ class MacOSWakeWordEngine(WakeWordEngine):
         self,
         on_wake: WakeWordCallback,
         on_stop: Optional[StopCallback] = None,
+        on_cancel: Optional[CancelCallback] = None,
         phrases: Optional[List[str]] = None,
         tmux_phrases: Optional[List[str]] = None,
+        cancel_phrases: Optional[List[str]] = None,
     ):
         """
         Initialize macOS wake word engine.
@@ -83,10 +97,12 @@ class MacOSWakeWordEngine(WakeWordEngine):
         Args:
             on_wake: Callback when wake word detected
             on_stop: Callback when wake word detected during recording
+            on_cancel: Callback when cancel phrase detected during recording
             phrases: List of phrases to listen for (comma-separated string also accepted)
             tmux_phrases: Tmux pane phrases (start only, not stop)
+            cancel_phrases: Phrases that cancel recording (comma-separated string also accepted)
         """
-        super().__init__(on_wake, on_stop)
+        super().__init__(on_wake, on_stop, on_cancel)
 
         # Parse phrases (accept string or list)
         if phrases is None:
@@ -106,8 +122,17 @@ class MacOSWakeWordEngine(WakeWordEngine):
         else:
             self._tmux_phrases = list(tmux_phrases) if tmux_phrases else []
 
-        # Lowercase set for quick lookup
+        # Parse cancel phrases
+        if cancel_phrases is None:
+            self._cancel_phrases = []
+        elif isinstance(cancel_phrases, str):
+            self._cancel_phrases = [p.strip() for p in cancel_phrases.split(',') if p.strip()]
+        else:
+            self._cancel_phrases = list(cancel_phrases) if cancel_phrases else []
+
+        # Lowercase sets for quick lookup
         self._tmux_phrases_lower = {p.lower() for p in self._tmux_phrases}
+        self._cancel_phrases_lower = {p.lower() for p in self._cancel_phrases}
 
         self._recognizer = None
         self._delegate = None
@@ -152,8 +177,8 @@ class MacOSWakeWordEngine(WakeWordEngine):
 
             self._delegate = self._create_delegate()
             self._recognizer.setDelegate_(self._delegate)
-            # Combine regular phrases + tmux phrases
-            all_phrases = self._phrases + self._tmux_phrases
+            # Combine regular phrases + tmux phrases + cancel phrases
+            all_phrases = self._phrases + self._tmux_phrases + self._cancel_phrases
             self._recognizer.setCommands_(all_phrases)
             self._recognizer.setBlocksOtherRecognizers_(True)
             self._recognizer.startListening()
