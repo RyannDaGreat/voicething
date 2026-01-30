@@ -5,20 +5,20 @@
   "SOUND_ENABLED": true,
   "LLM_ENABLED": false,
   "AUTO_ENTER": true,
-  "WAKE_WORD_ENABLED": false,
+  "WAKE_WORD_ENABLED": true,
   "SIMPLE_MODE": false,
   "PET_TYPES": [
     "emmy"
   ],
   "WHISPER_MODEL": "large-v3",
   "THEME": "macos_2005",
-  "WAKEWORD_ENGINE": "openwakeword",
+  "WAKEWORD_ENGINE": "macos",
   "WAKEWORD_OPENWAKEWORD": {
     "model": "jarvis",
-    "sensitivity": 0.2
+    "sensitivity": 0.02
   },
   "WAKEWORD_MACOS": {
-    "phrases": "nixy"
+    "phrases": "paper"
   },
   "TMUX_MODE": true,
   "TMUX_TARGET": "%2",
@@ -54,9 +54,9 @@
   },
   "TTS_SUPERTONIC": {
     "voice": "F4",
-    "speed": 1.0,
+    "speed": 1.5,
     "volume": 1.0,
-    "steps": 5
+    "steps": 10
   },
   "TTS_KITTEN": {
     "voice": "expr-voice-3-f",

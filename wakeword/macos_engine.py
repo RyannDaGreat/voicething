@@ -15,6 +15,35 @@ import numpy as np
 
 from .base import WakeWordEngine, WakeWordCallback, StopCallback
 
+# Create the delegate class once at module level to avoid ObjC class redefinition errors
+_SpeechDelegateClass = None
+_delegate_engine = None  # Reference to current engine for callback
+
+
+def _get_delegate_class():
+    """Get or create the SpeechDelegate class (only once per process)."""
+    global _SpeechDelegateClass
+    if _SpeechDelegateClass is None:
+        import objc
+        from Foundation import NSObject
+
+        class SpeechDelegate(NSObject):
+            def speechRecognizer_didRecognizeCommand_(self, sender, command):
+                global _delegate_engine
+                if _delegate_engine is None:
+                    return
+                phrase = str(command)
+                print(f"[wakeword] macOS recognized: '{phrase}'")
+                if _delegate_engine._is_recording:
+                    if _delegate_engine.on_stop:
+                        _delegate_engine.on_stop()
+                else:
+                    # macOS doesn't have a pre-buffer, pass empty array
+                    _delegate_engine.on_wake(np.array([], dtype=np.float32))
+
+        _SpeechDelegateClass = SpeechDelegate
+    return _SpeechDelegateClass
+
 
 class MacOSWakeWordEngine(WakeWordEngine):
     """Native macOS speech recognition for wake word detection."""
@@ -58,24 +87,11 @@ class MacOSWakeWordEngine(WakeWordEngine):
         self._should_stop = threading.Event()
 
     def _create_delegate(self):
-        """Create the Objective-C delegate for speech recognition callbacks."""
-        import objc
-        from Foundation import NSObject
-
-        engine = self  # Capture reference for callback
-
-        class SpeechDelegate(NSObject):
-            def speechRecognizer_didRecognizeCommand_(self, sender, command):
-                phrase = str(command)
-                print(f"[wakeword] macOS recognized: '{phrase}'")
-                if engine._is_recording:
-                    if engine.on_stop:
-                        engine.on_stop()
-                else:
-                    # macOS doesn't have a pre-buffer, pass empty array
-                    engine.on_wake(np.array([], dtype=np.float32))
-
-        return SpeechDelegate.alloc().init()
+        """Create the Objective-C delegate instance."""
+        global _delegate_engine
+        _delegate_engine = self
+        DelegateClass = _get_delegate_class()
+        return DelegateClass.alloc().init()
 
     def _run_event_loop(self):
         """Run the macOS event loop in a background thread."""
