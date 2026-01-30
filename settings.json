@@ -5,7 +5,7 @@
   "SOUND_ENABLED": true,
   "LLM_ENABLED": false,
   "AUTO_ENTER": true,
-  "WAKE_WORD_ENABLED": true,
+  "WAKE_WORD_ENABLED": false,
   "SIMPLE_MODE": false,
   "PET_TYPES": [
     "emmy"
