@@ -354,6 +354,9 @@ DEFAULTS = dict(
     SPEAK_BACK_APPEND_INSTRUCTION=True,  # Append TTS instruction to transcriptions
     SPEAK_BACK_TMUX_ONLY=False,  # Only append TTS instruction when sending to tmux (not paste)
     SPEAK_BACK_INSTRUCTION_TEMPLATE="Please speak back with ({command} &)",
+    # Window geometry settings
+    RESTORE_WINDOW_GEOMETRY=True,  # Restore window positions/sizes on startup
+    WINDOW_GEOMETRY={},  # window_name -> {x, y, width, height}
 )
 S = Settings(**DEFAULTS)
 # =============================================================================
@@ -1577,10 +1580,14 @@ def _get_tmux_scrollback(target, lines=50):
 def _ansi_to_html(text: str) -> str:
     """Convert ANSI escape sequences to HTML for QTextEdit.
 
-    Supports:
-    - SGR codes: colors (30-37, 90-97 fg; 40-47, 100-107 bg), bold, italic, underline
+    Supports all rp.fansi features:
+    - SGR codes: colors (30-37, 90-97 fg; 40-47, 100-107 bg)
     - 256-color: 38;5;N and 48;5;N
     - True color: 38;2;R;G;B and 48;2;R;G;B
+    - Styles: bold, dim, italic, underline, blink, reverse, hidden, strikethrough
+    - Advanced: overline, superscript, subscript
+    - Underline variants: double, curly, dotted, dashed + underline color
+    - Hyperlinks: OSC 8 sequences
     """
     import html
     import re
@@ -1608,12 +1615,37 @@ def _ansi_to_html(text: str) -> str:
             v = (n - 232) * 10 + 8
             return f'#{v:02x}{v:02x}{v:02x}'
 
+    # First, handle OSC 8 hyperlinks: \x1b]8;;URL\x1b\\TEXT\x1b]8;;\x1b\\
+    # Convert to placeholder, then restore after main processing
+    links = []
+    def save_link(m):
+        url = m.group(1)
+        content = m.group(2)
+        idx = len(links)
+        links.append((url, content))
+        return f'\x00LINK{idx}\x00'
+    text = re.sub(r'\x1b\]8;;([^\x1b]*)\x1b\\([^\x1b]*)\x1b\]8;;\x1b\\', save_link, text)
+
     # Parse ANSI sequences
     result = []
-    styles = {'bold': False, 'italic': False, 'underline': False, 'fg': None, 'bg': None}
+    styles = {
+        'bold': False, 'dim': False, 'italic': False, 'underline': False,
+        'underline_style': None,  # None, 'double', 'wavy', 'dotted', 'dashed'
+        'underline_color': None,
+        'blink': False, 'reverse': False, 'hidden': False, 'strike': False,
+        'overline': False, 'fg': None, 'bg': None,
+    }
 
-    # Split on ANSI escape sequences
-    parts = re.split(r'\x1b\[([0-9;]*)m', text)
+    def reset_styles():
+        return {
+            'bold': False, 'dim': False, 'italic': False, 'underline': False,
+            'underline_style': None, 'underline_color': None,
+            'blink': False, 'reverse': False, 'hidden': False, 'strike': False,
+            'overline': False, 'fg': None, 'bg': None,
+        }
+
+    # Split on ANSI escape sequences (SGR codes)
+    parts = re.split(r'\x1b\[([0-9;:]*)m', text)
 
     for i, part in enumerate(parts):
         if i % 2 == 0:
@@ -1623,14 +1655,51 @@ def _ansi_to_html(text: str) -> str:
                 style_parts = []
                 if styles['bold']:
                     style_parts.append('font-weight:bold')
+                if styles['dim']:
+                    style_parts.append('opacity:0.6')
                 if styles['italic']:
                     style_parts.append('font-style:italic')
+                if styles['hidden']:
+                    style_parts.append('visibility:hidden')
+
+                # Underline with variants
                 if styles['underline']:
-                    style_parts.append('text-decoration:underline')
-                if styles['fg']:
-                    style_parts.append(f"color:{styles['fg']}")
-                if styles['bg']:
-                    style_parts.append(f"background-color:{styles['bg']}")
+                    ul_style = styles['underline_style']
+                    if ul_style == 'double':
+                        style_parts.append('text-decoration:underline double')
+                    elif ul_style == 'wavy':
+                        style_parts.append('text-decoration:underline wavy')
+                    elif ul_style == 'dotted':
+                        style_parts.append('text-decoration:underline dotted')
+                    elif ul_style == 'dashed':
+                        style_parts.append('text-decoration:underline dashed')
+                    else:
+                        style_parts.append('text-decoration:underline')
+                    if styles['underline_color']:
+                        style_parts.append(f"text-decoration-color:{styles['underline_color']}")
+
+                if styles['strike']:
+                    if 'text-decoration' in ''.join(style_parts):
+                        # Append to existing
+                        style_parts = [s.replace('text-decoration:', 'text-decoration:line-through ') if 'text-decoration:' in s else s for s in style_parts]
+                    else:
+                        style_parts.append('text-decoration:line-through')
+
+                if styles['overline']:
+                    if 'text-decoration' in ''.join(style_parts):
+                        style_parts = [s.replace('text-decoration:', 'text-decoration:overline ') if 'text-decoration:' in s else s for s in style_parts]
+                    else:
+                        style_parts.append('text-decoration:overline')
+
+                fg = styles['fg']
+                bg = styles['bg']
+                if styles['reverse']:
+                    fg, bg = bg or '#cccccc', fg or '#1a1a1a'
+
+                if fg:
+                    style_parts.append(f"color:{fg}")
+                if bg:
+                    style_parts.append(f"background-color:{bg}")
 
                 escaped = html.escape(part)
                 if style_parts:
@@ -1638,12 +1707,12 @@ def _ansi_to_html(text: str) -> str:
                 else:
                     result.append(escaped)
         else:
-            # ANSI codes
+            # ANSI codes (may use : or ; as separator for underline variants)
             if not part or part == '0':
-                # Reset
-                styles = {'bold': False, 'italic': False, 'underline': False, 'fg': None, 'bg': None}
+                styles = reset_styles()
             else:
-                codes = part.split(';')
+                # Handle both ; and : separators
+                codes = re.split(r'[;:]', part)
                 j = 0
                 while j < len(codes):
                     try:
@@ -1653,63 +1722,135 @@ def _ansi_to_html(text: str) -> str:
                         continue
 
                     if code == 0:
-                        styles = {'bold': False, 'italic': False, 'underline': False, 'fg': None, 'bg': None}
+                        styles = reset_styles()
                     elif code == 1:
                         styles['bold'] = True
+                    elif code == 2:
+                        styles['dim'] = True
                     elif code == 3:
                         styles['italic'] = True
                     elif code == 4:
                         styles['underline'] = True
+                        # Check for underline variant (4:1, 4:2, etc)
+                        if j + 1 < len(codes):
+                            try:
+                                variant = int(codes[j + 1])
+                                if variant == 0:
+                                    styles['underline'] = False
+                                elif variant == 1:
+                                    styles['underline_style'] = None  # single
+                                elif variant == 2:
+                                    styles['underline_style'] = 'double'
+                                elif variant == 3:
+                                    styles['underline_style'] = 'wavy'
+                                elif variant == 4:
+                                    styles['underline_style'] = 'dotted'
+                                elif variant == 5:
+                                    styles['underline_style'] = 'dashed'
+                                j += 1
+                            except ValueError:
+                                pass
+                    elif code == 5:
+                        styles['blink'] = True
+                    elif code == 6:
+                        styles['blink'] = True  # fast blink, treat same
+                    elif code == 7:
+                        styles['reverse'] = True
+                    elif code == 8:
+                        styles['hidden'] = True
+                    elif code == 9:
+                        styles['strike'] = True
+                    elif code == 21:
+                        styles['underline_style'] = 'double'  # alt double underline
                     elif code == 22:
                         styles['bold'] = False
+                        styles['dim'] = False
                     elif code == 23:
                         styles['italic'] = False
                     elif code == 24:
                         styles['underline'] = False
+                        styles['underline_style'] = None
+                    elif code == 25:
+                        styles['blink'] = False
+                    elif code == 27:
+                        styles['reverse'] = False
+                    elif code == 28:
+                        styles['hidden'] = False
+                    elif code == 29:
+                        styles['strike'] = False
                     elif 30 <= code <= 37:
                         styles['fg'] = COLORS[code - 30]
                     elif 40 <= code <= 47:
                         styles['bg'] = COLORS[code - 40]
+                    elif code == 53:
+                        styles['overline'] = True
+                    elif code == 55:
+                        styles['overline'] = False
+                    elif code == 58:
+                        # Underline color (58;5;N or 58;2;R;G;B)
+                        if j + 2 < len(codes):
+                            try:
+                                mode = int(codes[j + 1])
+                                if mode == 5 and j + 2 < len(codes):
+                                    styles['underline_color'] = color_256(int(codes[j + 2]))
+                                    j += 2
+                                elif mode == 2 and j + 4 < len(codes):
+                                    r, g, b = int(codes[j + 2]), int(codes[j + 3]), int(codes[j + 4])
+                                    styles['underline_color'] = f'#{r:02x}{g:02x}{b:02x}'
+                                    j += 4
+                            except (ValueError, IndexError):
+                                pass
+                    elif code == 59:
+                        styles['underline_color'] = None  # default underline color
                     elif 90 <= code <= 97:
                         styles['fg'] = BRIGHT_COLORS[code - 90]
                     elif 100 <= code <= 107:
                         styles['bg'] = BRIGHT_COLORS[code - 100]
-                    elif code == 38 and j + 2 < len(codes):
+                    elif code == 38:
                         # Extended foreground
-                        try:
-                            mode = int(codes[j + 1])
-                            if mode == 5 and j + 2 < len(codes):
-                                # 256 color
-                                styles['fg'] = color_256(int(codes[j + 2]))
-                                j += 2
-                            elif mode == 2 and j + 4 < len(codes):
-                                # True color
-                                r, g, b = int(codes[j + 2]), int(codes[j + 3]), int(codes[j + 4])
-                                styles['fg'] = f'#{r:02x}{g:02x}{b:02x}'
-                                j += 4
-                        except (ValueError, IndexError):
-                            pass
-                    elif code == 48 and j + 2 < len(codes):
+                        if j + 2 < len(codes):
+                            try:
+                                mode = int(codes[j + 1])
+                                if mode == 5 and j + 2 < len(codes):
+                                    styles['fg'] = color_256(int(codes[j + 2]))
+                                    j += 2
+                                elif mode == 2 and j + 4 < len(codes):
+                                    r, g, b = int(codes[j + 2]), int(codes[j + 3]), int(codes[j + 4])
+                                    styles['fg'] = f'#{r:02x}{g:02x}{b:02x}'
+                                    j += 4
+                            except (ValueError, IndexError):
+                                pass
+                    elif code == 48:
                         # Extended background
-                        try:
-                            mode = int(codes[j + 1])
-                            if mode == 5 and j + 2 < len(codes):
-                                styles['bg'] = color_256(int(codes[j + 2]))
-                                j += 2
-                            elif mode == 2 and j + 4 < len(codes):
-                                r, g, b = int(codes[j + 2]), int(codes[j + 3]), int(codes[j + 4])
-                                styles['bg'] = f'#{r:02x}{g:02x}{b:02x}'
-                                j += 4
-                        except (ValueError, IndexError):
-                            pass
+                        if j + 2 < len(codes):
+                            try:
+                                mode = int(codes[j + 1])
+                                if mode == 5 and j + 2 < len(codes):
+                                    styles['bg'] = color_256(int(codes[j + 2]))
+                                    j += 2
+                                elif mode == 2 and j + 4 < len(codes):
+                                    r, g, b = int(codes[j + 2]), int(codes[j + 3]), int(codes[j + 4])
+                                    styles['bg'] = f'#{r:02x}{g:02x}{b:02x}'
+                                    j += 4
+                            except (ValueError, IndexError):
+                                pass
                     elif code == 39:
-                        styles['fg'] = None  # Default fg
+                        styles['fg'] = None
                     elif code == 49:
-                        styles['bg'] = None  # Default bg
+                        styles['bg'] = None
+                    # Note: 73 (superscript) and 74 (subscript) not widely supported in terminals
                     j += 1
 
+    html_out = ''.join(result)
+
+    # Restore hyperlinks
+    for idx, (url, content) in enumerate(links):
+        escaped_content = html.escape(content)
+        html_out = html_out.replace(f'\x00LINK{idx}\x00',
+            f'<a href="{html.escape(url)}" style="color:#5599ff">{escaped_content}</a>')
+
     # Wrap in pre to preserve whitespace
-    return '<pre style="margin:0;white-space:pre-wrap">' + ''.join(result) + '</pre>'
+    return '<pre style="margin:0;white-space:pre-wrap;font-family:Menlo,monospace">' + html_out + '</pre>'
 
 
 class TmuxSelectionDialog(DraggableDialog):
