@@ -11,7 +11,7 @@
     "emmy"
   ],
   "WHISPER_MODEL": "large-v3",
-  "THEME": "macos_2005",
+  "THEME": "cyberpunk_metal",
   "WAKEWORD_ENGINE": "macos",
   "WAKEWORD_OPENWAKEWORD": {
     "model": "jarvis",
@@ -65,5 +65,7 @@
   },
   "SPEAK_BACK_APPEND_INSTRUCTION": true,
   "SPEAK_BACK_TMUX_ONLY": true,
-  "SPEAK_BACK_INSTRUCTION_TEMPLATE": "Please speak back with {command}"
+  "SPEAK_BACK_INSTRUCTION_TEMPLATE": "Please speak back with {command}",
+  "RESTORE_WINDOW_GEOMETRY": true,
+  "WINDOW_GEOMETRY": {}
 }
