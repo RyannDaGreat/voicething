@@ -29,7 +29,7 @@ from AppKit import NSWorkspace, NSApplicationActivateIgnoringOtherApps
 from pynput import keyboard
 from pynput.keyboard import Controller as KeyboardController, Key
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QSize, QPointF, QRect, QRectF, QPropertyAnimation, QEasingCurve, pyqtProperty, QEvent, QSortFilterProxyModel
-from PyQt6.QtGui import QPainter, QColor, QPen, QIcon, QFont, QFontDatabase, QPolygonF, QLinearGradient, QBrush, QPainterPath, QPixmap, QCursor
+from PyQt6.QtGui import QPainter, QColor, QPen, QIcon, QFont, QFontDatabase, QPolygonF, QLinearGradient, QRadialGradient, QBrush, QPainterPath, QPixmap, QCursor
 from PyQt6.QtSvg import QSvgRenderer
 from PyQt6.QtWidgets import (
     QApplication,
@@ -347,6 +347,10 @@ DEFAULTS = dict(
     CHIME_PROGRAM=127,  # Program number (0-127), single source of truth
     CHIME_PITCH=12,  # Pitch shift in semitones (-24 to +24)
     CHIME_THEME='bright',  # Chime theme (default, blues, melancholy, bright)
+    # Per-theme audio settings (reverb, chorus) keyed by chime theme name
+    CHIME_AUDIO_SETTINGS={
+        '_default': {'reverb': 0.4, 'chorus': 0.3},  # Fallback for themes without settings
+    },
     RECORDINGS_DIR=DEFAULT_RECORDINGS_DIR,  # Folder for audio recordings and transcripts
     ALWAYS_ON_TOP=True,  # Keep window above other windows
     SPEAK_BACK_VOICE='say',  # TTS backend: 'say', 'supertonic', or 'kitten'
@@ -1069,6 +1073,43 @@ def load_chime_log_from_file():
             if line:
                 entries.append(json.loads(line))
     return entries
+
+
+def get_audio_settings(theme_name=None):
+    """Get audio settings (reverb, chorus) for a chime theme.
+
+    Returns dict with 'reverb' and 'chorus' keys (0.0 to 1.0).
+    Falls back to '_default' if theme has no settings.
+    """
+    theme = theme_name or S.CHIME_THEME
+    settings = S.CHIME_AUDIO_SETTINGS.get(theme)
+    if settings is None:
+        settings = S.CHIME_AUDIO_SETTINGS.get('_default', {'reverb': 0.4, 'chorus': 0.3})
+    return settings
+
+
+def set_audio_settings(theme_name, reverb=None, chorus=None):
+    """Set audio settings for a chime theme and apply to synth."""
+    settings = get_audio_settings(theme_name)
+    if reverb is not None:
+        settings['reverb'] = reverb
+    if chorus is not None:
+        settings['chorus'] = chorus
+    S.CHIME_AUDIO_SETTINGS[theme_name] = settings
+    # Settings auto-save on app close via closeEvent
+    apply_audio_settings(theme_name)
+
+
+def apply_audio_settings(theme_name=None):
+    """Apply the audio settings for a theme to the synth."""
+    from synth import set_reverb, set_chorus
+    settings = get_audio_settings(theme_name)
+    # Reverb: map 0-1 to room_size 0.2-0.9 and level 0.1-0.6
+    reverb_amt = settings.get('reverb', 0.4)
+    set_reverb(room_size=0.2 + reverb_amt * 0.7, level=0.1 + reverb_amt * 0.5)
+    # Chorus: map 0-1 to level 0-0.6 and depth 2-12
+    chorus_amt = settings.get('chorus', 0.3)
+    set_chorus(level=chorus_amt * 0.6, depth=2 + chorus_amt * 10)
 
 
 def clear_chime_log():
@@ -3700,46 +3741,53 @@ class PrefsDialog(DraggableDialog):
         # Notification Chime Instrument section (merged volume + instrument)
         theme_box.addWidget(make_section("Notification Chime Instrument"))
 
-        # Volume slider with mute (at top)
-        vol_row = QHBoxLayout()
-        vol_row.setSpacing(4)
-        vol_label = QLabel("Volume:")
-        vol_label.setStyleSheet(get_pref_label_css())
-        vol_row.addWidget(vol_label)
-        self.vol_slider = QSlider(Qt.Orientation.Horizontal)
-        self.vol_slider.setRange(0, 100)
-        self.vol_slider.setValue(int(S.CHIME_VOLUME * 100))
-        self.vol_slider.setStyleSheet(get_slider_css())
-        self.vol_slider.setEnabled(S.SOUND_ENABLED)
-        self.vol_slider.valueChanged.connect(self._on_volume_changed)
-        vol_row.addWidget(self.vol_slider, 1)
-        self.vol_value = QLabel(f"{int(S.CHIME_VOLUME * 100)}%")
-        self.vol_value.setStyleSheet(get_pref_label_css() + " min-width: 30px;")
-        vol_row.addWidget(self.vol_value)
+        # Rotary knobs row: Volume, Pitch, Reverb, Chorus
+        knobs_row = QHBoxLayout()
+        knobs_row.setSpacing(4)
+        knobs_row.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        # Volume knob
+        self.vol_knob = RotaryKnob("Vol", min_val=0.0, max_val=1.0, value=S.CHIME_VOLUME,
+                                    fmt="{:.0%}", size=44)
+        self.vol_knob.setEnabled(S.SOUND_ENABLED)
+        self.vol_knob.valueChanged.connect(self._on_volume_knob_changed)
+        set_tooltip(self.vol_knob, "Chime volume (drag up/down or scroll)")
+        knobs_row.addWidget(self.vol_knob)
+
+        # Pitch knob
+        self.pitch_knob = RotaryKnob("Pitch", min_val=-24, max_val=24, value=S.CHIME_PITCH,
+                                      fmt="{:+.0f}", size=44)
+        self.pitch_knob.valueChanged.connect(self._on_pitch_knob_changed)
+        set_tooltip(self.pitch_knob, "Pitch shift in semitones (-24 to +24)")
+        knobs_row.addWidget(self.pitch_knob)
+
+        # Get current audio settings for this theme
+        audio_settings = get_audio_settings()
+
+        # Reverb knob
+        self.reverb_knob = RotaryKnob("Reverb", min_val=0.0, max_val=1.0,
+                                       value=audio_settings.get('reverb', 0.4),
+                                       fmt="{:.0%}", size=44)
+        self.reverb_knob.valueChanged.connect(self._on_reverb_changed)
+        set_tooltip(self.reverb_knob, "Reverb amount (per chime theme)")
+        knobs_row.addWidget(self.reverb_knob)
+
+        # Chorus knob
+        self.chorus_knob = RotaryKnob("Chorus", min_val=0.0, max_val=1.0,
+                                       value=audio_settings.get('chorus', 0.3),
+                                       fmt="{:.0%}", size=44)
+        self.chorus_knob.valueChanged.connect(self._on_chorus_changed)
+        set_tooltip(self.chorus_knob, "Chorus/shimmer amount (per chime theme)")
+        knobs_row.addWidget(self.chorus_knob)
+
+        # Mute checkbox at end of row
         self.mute_checkbox = QCheckBox("Mute")
         self.mute_checkbox.setChecked(not S.SOUND_ENABLED)
         self.mute_checkbox.setStyleSheet(get_checkbox_css())
         self.mute_checkbox.stateChanged.connect(self._on_mute_changed)
-        vol_row.addWidget(self.mute_checkbox)
-        theme_box.addLayout(vol_row)
+        knobs_row.addWidget(self.mute_checkbox)
 
-        # Pitch slider (-24 to +24 semitones)
-        pitch_row = QHBoxLayout()
-        pitch_row.setSpacing(4)
-        pitch_label = QLabel("Pitch:")
-        pitch_label.setStyleSheet(get_pref_label_css())
-        set_tooltip(pitch_label, "Pitch shift in semitones (-24 to +24)")
-        pitch_row.addWidget(pitch_label)
-        self.pitch_slider = QSlider(Qt.Orientation.Horizontal)
-        self.pitch_slider.setRange(-24, 24)
-        self.pitch_slider.setValue(S.CHIME_PITCH)
-        self.pitch_slider.setStyleSheet(get_slider_css())
-        self.pitch_slider.valueChanged.connect(self._on_pitch_changed)
-        pitch_row.addWidget(self.pitch_slider, 1)
-        self.pitch_value = QLabel(f"{S.CHIME_PITCH:+d}")
-        self.pitch_value.setStyleSheet(get_pref_label_css() + " min-width: 30px;")
-        pitch_row.addWidget(self.pitch_value)
-        theme_box.addLayout(pitch_row)
+        theme_box.addLayout(knobs_row)
 
         # Instrument grid with icons (plays demo on click)
         from synth import get_preset_name
@@ -4348,20 +4396,29 @@ class PrefsDialog(DraggableDialog):
 
     def _on_mute_changed(self, state):
         S.set('SOUND_ENABLED', state != Qt.CheckState.Checked.value)
-        self.vol_slider.setEnabled(S.SOUND_ENABLED)
+        self.vol_knob.setEnabled(S.SOUND_ENABLED)
 
-    def _on_volume_changed(self, value):
-        S.CHIME_VOLUME = value / 100.0
-        self.vol_value.setText(f"{value}%")
+    def _on_volume_knob_changed(self, value):
+        S.CHIME_VOLUME = value
 
-    def _on_pitch_changed(self, value):
-        S.CHIME_PITCH = value
-        self.pitch_value.setText(f"{value:+d}")
+    def _on_pitch_knob_changed(self, value):
+        S.CHIME_PITCH = int(round(value))
         self.piano.update()  # Redraw piano with shifted keys
+
+    def _on_reverb_changed(self, value):
+        set_audio_settings(S.CHIME_THEME, reverb=value)
+
+    def _on_chorus_changed(self, value):
+        set_audio_settings(S.CHIME_THEME, chorus=value)
 
     def _on_chime_theme_changed(self, index):
         theme = self.chime_theme_combo.currentData()
         S.CHIME_THEME = theme
+        # Update reverb/chorus knobs to match new theme's settings
+        audio_settings = get_audio_settings(theme)
+        self.reverb_knob.setValue(audio_settings.get('reverb', 0.4), emit=False)
+        self.chorus_knob.setValue(audio_settings.get('chorus', 0.3), emit=False)
+        apply_audio_settings(theme)
         # Play demo to hear the new theme
         import threading
         threading.Thread(target=lambda: play_chime('demo'), daemon=True).start()
@@ -4953,6 +5010,285 @@ class Mini7Segment(QWidget):
                     p.setPen(QPen(QColor(60, 60, 60, 80), seg_thick, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
                 x1, y1, x2, y2 = seg_coords[j]
                 p.drawLine(x_off + x1, y_off + y1, x_off + x2, y_off + y2)
+
+
+class RotaryKnob(QWidget):
+    """Theme-aware rotary knob with label below. Emits valueChanged(float)."""
+
+    valueChanged = pyqtSignal(float)
+
+    def __init__(self, label, min_val=0.0, max_val=1.0, value=0.5, fmt="{:.0%}",
+                 size=44, color=None, parent=None):
+        """
+        Args:
+            label: Text label shown below knob
+            min_val: Minimum value
+            max_val: Maximum value
+            value: Initial value
+            fmt: Format string for value display (e.g. "{:.0%}", "{:+d}", "{:.1f}")
+            size: Knob diameter in pixels
+            color: Accent color (defaults to theme accent)
+        """
+        super().__init__(parent)
+        self._label = label
+        self._min = min_val
+        self._max = max_val
+        self._value = value
+        self._fmt = fmt
+        self._size = size
+        self._color = color
+        self._dragging = False
+        self._drag_start_y = 0
+        self._drag_start_val = 0
+        self.setFixedSize(size + 10, size + 24)  # Room for label below
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setMouseTracking(True)
+
+    def value(self):
+        return self._value
+
+    def setValue(self, val, emit=True):
+        val = max(self._min, min(self._max, val))
+        if val != self._value:
+            self._value = val
+            self.update()
+            if emit:
+                self.valueChanged.emit(val)
+
+    def setColor(self, color):
+        self._color = color
+        self.update()
+
+    def paintEvent(self, event):
+        import math
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        w, h = self.width(), self.height()
+        cx, cy = w // 2, self._size // 2 + 2
+        r = self._size // 2 - 2
+        ratio = (self._value - self._min) / (self._max - self._min) if self._max > self._min else 0
+        accent = self._color or QColor(STYLE.accent_css)
+
+        # Get theme-specific knob style
+        knob_style = getattr(STYLE, 'knob_style', 'modern')
+        body_dark = QColor(getattr(STYLE, 'knob_body_dark', '#282828'))
+        body_light = QColor(getattr(STYLE, 'knob_body_light', '#505050'))
+        notch_style = getattr(STYLE, 'knob_notch_style', 'line')
+        show_ticks = getattr(STYLE, 'knob_tickmarks', False)
+        has_glow = getattr(STYLE, 'knob_glow', False)
+
+        # Draw tick marks if enabled
+        if show_ticks:
+            self._draw_tickmarks(p, cx, cy, r, accent if has_glow else QColor(80, 80, 80))
+
+        # Draw track arc
+        track_alpha = 100 if has_glow else 150
+        track_color = QColor(accent.red(), accent.green(), accent.blue(), 50) if has_glow else QColor(60, 60, 60, track_alpha)
+        p.setPen(QPen(track_color, 3, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        track_rect = QRect(cx - r, cy - r, r * 2, r * 2)
+        p.drawArc(track_rect, 225 * 16, -270 * 16)
+
+        # Value arc with optional glow
+        if has_glow and ratio > 0.01:
+            glow_color = QColor(accent.red(), accent.green(), accent.blue(), 60)
+            p.setPen(QPen(glow_color, 7, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+            span = int(-270 * ratio * 16)
+            p.drawArc(track_rect, 225 * 16, span)
+
+        p.setPen(QPen(accent, 3, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        span = int(-270 * ratio * 16)
+        p.drawArc(track_rect, 225 * 16, span)
+
+        # Knob body - style-specific rendering
+        body_r = r - 5
+        self._draw_knob_body(p, cx, cy, body_r, body_dark, body_light, knob_style)
+
+        # Indicator notch - style-specific
+        angle = math.radians(225 - 270 * ratio)
+        self._draw_notch(p, cx, cy, body_r, angle, accent, notch_style)
+
+        # Label below
+        p.setPen(QColor(TEXT_SECONDARY))
+        p.setFont(QFont(STYLE.font, 9))
+        p.drawText(QRect(0, self._size + 4, w, 18), Qt.AlignmentFlag.AlignCenter, self._label)
+
+    def _draw_tickmarks(self, p, cx, cy, r, color):
+        """Draw tick marks around the knob arc."""
+        import math
+        p.setPen(QPen(color, 1))
+        for i in range(11):  # 11 ticks for 10 divisions
+            angle = math.radians(225 - 270 * i / 10)
+            outer_r = r + 3
+            inner_r = r + 1 if i % 5 else r - 1  # Longer ticks at 0, 50%, 100%
+            x1, y1 = cx + inner_r * math.cos(angle), cy - inner_r * math.sin(angle)
+            x2, y2 = cx + outer_r * math.cos(angle), cy - outer_r * math.sin(angle)
+            p.drawLine(int(x1), int(y1), int(x2), int(y2))
+
+    def _draw_knob_body(self, p, cx, cy, r, dark, light, style):
+        """Draw the knob body with style-specific appearance."""
+        if style in ('aqua', 'aero'):
+            # Glossy Aqua/Aero style - cylindrical highlight
+            grad = QLinearGradient(cx - r, cy, cx + r, cy)
+            grad.setColorAt(0, dark)
+            grad.setColorAt(0.2, light)
+            grad.setColorAt(0.5, QColor(255, 255, 255, 180))  # Bright center
+            grad.setColorAt(0.8, light)
+            grad.setColorAt(1, dark)
+            p.setBrush(QBrush(grad))
+            p.setPen(QPen(dark.darker(120), 1))
+            p.drawEllipse(cx - r, cy - r, r * 2, r * 2)
+            # Inner highlight
+            hl_grad = QRadialGradient(cx, cy - r * 0.4, r * 0.6)
+            hl_grad.setColorAt(0, QColor(255, 255, 255, 120))
+            hl_grad.setColorAt(1, QColor(255, 255, 255, 0))
+            p.setBrush(QBrush(hl_grad))
+            p.setPen(Qt.PenStyle.NoPen)
+            p.drawEllipse(cx - r + 4, cy - r + 2, (r - 4) * 2, int(r * 0.8))
+        elif style == 'win95':
+            # Beveled Win95 style
+            p.setBrush(QBrush(light))
+            p.setPen(QPen(QColor(255, 255, 255), 1))
+            p.drawEllipse(cx - r, cy - r, r * 2, r * 2)
+            # Inner bevel shadow
+            p.setPen(QPen(dark, 2))
+            p.drawArc(cx - r + 2, cy - r + 2, (r - 2) * 2, (r - 2) * 2, 225 * 16, 180 * 16)
+        elif style in ('industrial', 'evil'):
+            # Heavy industrial/evil style with thick border
+            body_grad = QRadialGradient(cx - r * 0.2, cy - r * 0.2, r * 1.3)
+            body_grad.setColorAt(0, light)
+            body_grad.setColorAt(0.7, dark)
+            body_grad.setColorAt(1, dark.darker(130))
+            p.setBrush(QBrush(body_grad))
+            p.setPen(QPen(dark.darker(150), 2))
+            p.drawEllipse(cx - r, cy - r, r * 2, r * 2)
+        elif style in ('jelly', 'neon'):
+            # Glossy jelly/neon style
+            body_grad = QRadialGradient(cx - r * 0.3, cy - r * 0.3, r * 1.5)
+            body_grad.setColorAt(0, light.lighter(130))
+            body_grad.setColorAt(0.4, light)
+            body_grad.setColorAt(0.8, dark)
+            body_grad.setColorAt(1, dark.darker(120))
+            p.setBrush(QBrush(body_grad))
+            p.setPen(QPen(dark.darker(110), 1))
+            p.drawEllipse(cx - r, cy - r, r * 2, r * 2)
+            # Glossy highlight
+            hl_grad = QRadialGradient(cx - r * 0.2, cy - r * 0.4, r * 0.5)
+            hl_grad.setColorAt(0, QColor(255, 255, 255, 150))
+            hl_grad.setColorAt(1, QColor(255, 255, 255, 0))
+            p.setBrush(QBrush(hl_grad))
+            p.setPen(Qt.PenStyle.NoPen)
+            p.drawEllipse(cx - r + 3, cy - r + 2, int(r * 1.2), int(r * 0.7))
+        elif style == 'vintage':
+            # Vintage wood/brass dial
+            body_grad = QRadialGradient(cx, cy, r)
+            body_grad.setColorAt(0, light.lighter(110))
+            body_grad.setColorAt(0.6, light)
+            body_grad.setColorAt(0.9, dark)
+            body_grad.setColorAt(1, dark.darker(120))
+            p.setBrush(QBrush(body_grad))
+            p.setPen(QPen(dark.darker(140), 1))
+            p.drawEllipse(cx - r, cy - r, r * 2, r * 2)
+            # Inner ring
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.setPen(QPen(dark.darker(110), 1))
+            p.drawEllipse(cx - r + 3, cy - r + 3, (r - 3) * 2, (r - 3) * 2)
+        else:
+            # Modern/default - clean gradient
+            body_grad = QRadialGradient(cx, cy - r * 0.3, r * 1.4)
+            body_grad.setColorAt(0, light)
+            body_grad.setColorAt(0.6, dark)
+            body_grad.setColorAt(1, dark.darker(120))
+            p.setBrush(QBrush(body_grad))
+            p.setPen(QPen(dark.darker(130), 1))
+            p.drawEllipse(cx - r, cy - r, r * 2, r * 2)
+
+    def _draw_notch(self, p, cx, cy, r, angle, accent, style):
+        """Draw the indicator notch with style-specific appearance."""
+        import math
+        if style == 'dot':
+            # Dot indicator
+            dot_r = r - 4
+            dx = cx + dot_r * math.cos(angle)
+            dy = cy - dot_r * math.sin(angle)
+            p.setBrush(QBrush(accent))
+            p.setPen(Qt.PenStyle.NoPen)
+            p.drawEllipse(int(dx) - 3, int(dy) - 3, 6, 6)
+        elif style == 'needle':
+            # Needle/pointer style
+            needle_len = r - 2
+            nx = cx + needle_len * math.cos(angle)
+            ny = cy - needle_len * math.sin(angle)
+            # Draw needle with tapered shape
+            perp = angle + math.pi / 2
+            base_w = 3
+            bx1 = cx + base_w * math.cos(perp)
+            by1 = cy - base_w * math.sin(perp)
+            bx2 = cx - base_w * math.cos(perp)
+            by2 = cy + base_w * math.sin(perp)
+            from PyQt6.QtGui import QPolygonF
+            from PyQt6.QtCore import QPointF
+            needle = QPolygonF([QPointF(bx1, by1), QPointF(nx, ny), QPointF(bx2, by2)])
+            p.setBrush(QBrush(accent))
+            p.setPen(QPen(accent.darker(120), 1))
+            p.drawPolygon(needle)
+            # Center cap
+            p.setBrush(QBrush(QColor(40, 40, 40)))
+            p.drawEllipse(cx - 4, cy - 4, 8, 8)
+        elif style == 'arrow':
+            # Arrow pointer (industrial)
+            arrow_len = r - 3
+            nx = cx + arrow_len * math.cos(angle)
+            ny = cy - arrow_len * math.sin(angle)
+            inner_r = r * 0.35
+            ix = cx + inner_r * math.cos(angle)
+            iy = cy - inner_r * math.sin(angle)
+            p.setPen(QPen(accent, 4, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+            p.drawLine(int(ix), int(iy), int(nx), int(ny))
+            # Arrowhead
+            head_angle = 0.4
+            head_len = 6
+            for sign in [-1, 1]:
+                hx = nx - head_len * math.cos(angle + sign * head_angle)
+                hy = ny + head_len * math.sin(angle + sign * head_angle)
+                p.drawLine(int(nx), int(ny), int(hx), int(hy))
+        else:
+            # Line (default) - simple radial line
+            notch_r = r - 4
+            nx = cx + notch_r * math.cos(angle)
+            ny = cy - notch_r * math.sin(angle)
+            inner_r = r * 0.4
+            ix = cx + inner_r * math.cos(angle)
+            iy = cy - inner_r * math.sin(angle)
+            p.setPen(QPen(accent, 3, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+            p.drawLine(int(ix), int(iy), int(nx), int(ny))
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._dragging = True
+            self._drag_start_y = event.pos().y()
+            self._drag_start_val = self._value
+            self.setCursor(Qt.CursorShape.ClosedHandCursor)
+
+    def mouseMoveEvent(self, event):
+        if self._dragging:
+            dy = self._drag_start_y - event.pos().y()
+            sensitivity = (self._max - self._min) / 100  # Full range over 100px drag
+            new_val = self._drag_start_val + dy * sensitivity
+            self.setValue(new_val)
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._dragging = False
+            self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+    def wheelEvent(self, event):
+        delta = event.angleDelta().y()
+        step = (self._max - self._min) / 50  # 50 steps for full range
+        if delta > 0:
+            self.setValue(self._value + step)
+        else:
+            self.setValue(self._value - step)
 
 
 class TimerWidget(QWidget):

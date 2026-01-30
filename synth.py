@@ -118,16 +118,32 @@ def get_preset_name(program):
         return f"Preset {program}"
 
 
-def set_reverb(room_size=0.5, level=0.4):
+def set_reverb(room_size=0.5, level=0.4, damping=0.5):
     """Set reverb parameters for decay control.
 
     Args:
         room_size: 0.0-1.0, larger = longer decay
         level: 0.0-1.0, reverb wet level
+        damping: 0.0-1.0, high frequency damping (higher = warmer)
     """
     synth, _ = _get_native_synth()
     synth.setting('synth.reverb.room-size', room_size)
     synth.setting('synth.reverb.level', level)
+    synth.setting('synth.reverb.damp', damping)
+
+
+def set_chorus(level=0.5, speed=0.3, depth=8.0):
+    """Set chorus parameters for width/shimmer.
+
+    Args:
+        level: 0.0-1.0, chorus wet level
+        speed: 0.1-5.0, modulation rate in Hz
+        depth: 0.0-21.0, modulation depth in ms
+    """
+    synth, _ = _get_native_synth()
+    synth.setting('synth.chorus.level', level)
+    synth.setting('synth.chorus.speed', speed)
+    synth.setting('synth.chorus.depth', depth)
 
 
 def set_instrument(name='bells'):

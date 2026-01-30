@@ -60,6 +60,14 @@ class CyberpunkMetalStyle(BaseStyle):
     # Slider - bright cyan groove on dark metal
     slider_groove = "rgba(0,255,255,0.3)"
 
+    # Rotary knob - cyberpunk style with glow
+    knob_style = "cyber"
+    knob_body_dark = "#101518"
+    knob_body_light = "#252a30"
+    knob_notch_style = "line"
+    knob_tickmarks = True
+    knob_glow = True
+
     # Waveform - cyan oscilloscope with glow
     waveform_color = CYAN
     waveform_glow = True

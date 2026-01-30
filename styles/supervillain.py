@@ -58,6 +58,14 @@ class SupervillainStyle(BaseStyle):
     # Slider - blood red groove on black void
     slider_groove = "rgba(200,20,20,0.4)"
 
+    # Rotary knob - EVIL dark style with red glow
+    knob_style = "evil"
+    knob_body_dark = "#080508"
+    knob_body_light = "#201820"
+    knob_notch_style = "arrow"
+    knob_tickmarks = True
+    knob_glow = True
+
     # Waveform - blood red pulse
     waveform_color = BLOOD_RED
     waveform_glow = True

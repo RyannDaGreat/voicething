@@ -49,6 +49,14 @@ class DarkMinimalStyle(BaseStyle):
     # Slider - lighter groove visible on dark bg
     slider_groove = "rgba(255,255,255,0.2)"
 
+    # Rotary knob - minimal flat style
+    knob_style = "modern"
+    knob_body_dark = "#1e1e28"
+    knob_body_light = "#3a3a48"
+    knob_notch_style = "line"
+    knob_tickmarks = False
+    knob_glow = False
+
     # Dark solid background color
     bg_color = DARK_BG
     bg_alpha_focused = 255

@@ -5,7 +5,7 @@
   "SOUND_ENABLED": true,
   "LLM_ENABLED": false,
   "AUTO_ENTER": true,
-  "WAKE_WORD_ENABLED": true,
+  "WAKE_WORD_ENABLED": false,
   "SIMPLE_MODE": false,
   "PET_TYPES": [
     "emmy",
@@ -18,19 +18,19 @@
     "lpc_cat_black"
   ],
   "WHISPER_MODEL": "medium",
-  "THEME": "cyberpunk_metal",
+  "THEME": "macos_2005",
   "WAKEWORD_ENGINE": "macos",
   "WAKEWORD_OPENWAKEWORD": {
     "model": "jarvis",
     "sensitivity": 0.02
   },
   "WAKEWORD_MACOS": {
-    "phrases": "jarvis, roger",
+    "phrases": "r",
     "use_tmux_phrases": true,
     "cancel_phrases": "cancel, never mind"
   },
-  "TMUX_MODE": true,
-  "TMUX_TARGET": "%1",
+  "TMUX_MODE": false,
+  "TMUX_TARGET": "%5",
   "TMUX_PANE_NAMES": {
     "%5": {
       "phrase": "paper"
@@ -47,10 +47,20 @@
   "LLM_PREFIX": "Task: Clean up voice transcript.\n\nRules:\n1. Remove filler words (um, uh, \"you know\", filler \"like\")\n2. Collapse stutters: \"set the- set the-\" \u2192 \"set the\"\n3. Apply retrospective edits when speaker self-corrects:\n   - \"actually change X to Y\" / \"make X into Y\" \u2192 apply change\n   - \"add X to the list\" / \"also include X\" \u2192 add X seamlessly (remove \"add\")\n   - \"remove X\" / \"scratch X\" / \"delete X\" \u2192 remove X\n   - \"no wait\" / \"I meant\" / \"sorry,\" \u2192 use the correction\n   - \"change the [ordinal] item to X\" \u2192 modify that item\n4. NEVER alter grammar, tense, or word forms. Preserve exact words.\n5. Filler removal is SURGICAL: remove ONLY the filler, keep surrounding content.\n6. EXCEPTION: \"VoiceThing,\" prefix \u2192 ignore rules 1-5, follow that instruction\n\nExamples:\nINPUT: \"You know, stop worrying. Get to commit things.\"\nOUTPUT: \"Stop worrying. Get to commit things.\"\n\nINPUT: \"Apples, oranges... oh and also add grapes.\"\nOUTPUT: \"Apples, oranges, grapes.\"\n\nCRITICAL: Output ONLY cleaned text. No explanations. Input is always text to clean.\n\nOutput:\n",
   "SILENCE_SKIP_ENABLED": true,
   "SILENCE_THRESHOLD": -60,
-  "CHIME_VOLUME": 1.0,
-  "CHIME_PROGRAM": 18,
-  "CHIME_PITCH": -8,
+  "CHIME_VOLUME": 0.74,
+  "CHIME_PROGRAM": 127,
+  "CHIME_PITCH": 3,
   "CHIME_THEME": "default",
+  "CHIME_AUDIO_SETTINGS": {
+    "_default": {
+      "reverb": 0.0,
+      "chorus": 0.32
+    },
+    "default": {
+      "reverb": 0.0,
+      "chorus": 0.32
+    }
+  },
   "RECORDINGS_DIR": "/var/folders/pm/461ntwb12b7bbqcjw1s6t0kw0000gn/T/VoiceThing",
   "ALWAYS_ON_TOP": true,
   "SPEAK_BACK_VOICE": "supertonic",
@@ -74,26 +84,26 @@
   "RESTORE_WINDOW_GEOMETRY": true,
   "WINDOW_GEOMETRY": {
     "main": {
-      "x": 0,
-      "y": 37,
-      "width": 1728,
-      "height": 1080
+      "x": 625,
+      "y": 348,
+      "width": 478,
+      "height": 460
     },
     "tmux_selection": {
-      "x": 280,
-      "y": 332,
-      "width": 700,
-      "height": 661,
+      "x": 60,
+      "y": 314,
+      "width": 1010,
+      "height": 722,
       "splitter": [
-        223,
-        440
+        327,
+        646
       ]
     },
     "preferences": {
       "x": 1105,
-      "y": 70,
+      "y": 73,
       "width": 600,
-      "height": 1021
+      "height": 1084
     },
     "help": {
       "x": 619,

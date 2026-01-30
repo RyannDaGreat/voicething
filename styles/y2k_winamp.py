@@ -61,6 +61,14 @@ class Y2KWinampStyle(BaseStyle):
     # Slider - lime green groove on dark Winamp panel
     slider_groove = "rgba(0,255,0,0.25)"
 
+    # Rotary knob - classic Winamp chrome EQ style
+    knob_style = "winamp"
+    knob_body_dark = "#1a1a1a"
+    knob_body_light = "#4a4a4a"
+    knob_notch_style = "line"
+    knob_tickmarks = True
+    knob_glow = True
+
     # Waveform - classic Winamp lime green on dark
     waveform_color = WINAMP_GREEN
     waveform_glow = True

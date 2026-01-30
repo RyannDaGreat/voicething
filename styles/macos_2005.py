@@ -58,6 +58,14 @@ class MacOS2005Style(BaseStyle):
     # Slider - dark groove on light brushed metal background
     slider_groove = "rgba(80,80,90,0.6)"
 
+    # Rotary knob - Aqua glossy style
+    knob_style = "aqua"
+    knob_body_dark = "#a0a0a8"
+    knob_body_light = "#e8e8f0"
+    knob_notch_style = "needle"
+    knob_tickmarks = True
+    knob_glow = False
+
     # Waveform - green oscilloscope with glow and Aqua panel
     waveform_color = GREEN_OSCILLOSCOPE
     waveform_glow = True

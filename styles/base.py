@@ -116,6 +116,14 @@ class BaseStyle:
     slider_handle = None  # None = use accent_css
     slider_fill = None  # None = use accent_css
 
+    # Rotary knob style: "modern", "aqua", "industrial", "cyber", "vintage"
+    knob_style = "modern"
+    knob_body_dark = "#282828"  # Knob body gradient dark
+    knob_body_light = "#505050"  # Knob body gradient light
+    knob_notch_style = "line"  # "line", "dot", "needle", "arrow"
+    knob_tickmarks = False  # Show tick marks around arc
+    knob_glow = False  # Glow on value arc
+
     def title_style(self, size=18):
         return f"color: {self.text_primary}; font-size: {size}px; font-family: {self.font};"
 
