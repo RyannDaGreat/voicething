@@ -5,12 +5,12 @@
   "SOUND_ENABLED": true,
   "LLM_ENABLED": false,
   "AUTO_ENTER": true,
-  "WAKE_WORD_ENABLED": false,
+  "WAKE_WORD_ENABLED": true,
   "SIMPLE_MODE": false,
   "PET_TYPES": [
     "emmy"
   ],
-  "WHISPER_MODEL": "large-v3",
+  "WHISPER_MODEL": "small",
   "THEME": "macos_2005",
   "WAKEWORD_ENGINE": "macos",
   "WAKEWORD_OPENWAKEWORD": {
@@ -22,7 +22,7 @@
     "use_tmux_phrases": true
   },
   "TMUX_MODE": true,
-  "TMUX_TARGET": "%11",
+  "TMUX_TARGET": "%2",
   "TMUX_PANE_NAMES": {
     "%2": {
       "phrase": "paper"
@@ -40,7 +40,7 @@
   "AUTO_PASTE": true,
   "LLM_MODEL": "OPENAI:gpt-5",
   "LLM_PREFIX": "Task: Clean up voice transcript.\n\nRules:\n1. Remove filler words (um, uh, \"you know\", filler \"like\")\n2. Collapse stutters: \"set the- set the-\" \u2192 \"set the\"\n3. Apply retrospective edits when speaker self-corrects:\n   - \"actually change X to Y\" / \"make X into Y\" \u2192 apply change\n   - \"add X to the list\" / \"also include X\" \u2192 add X seamlessly (remove \"add\")\n   - \"remove X\" / \"scratch X\" / \"delete X\" \u2192 remove X\n   - \"no wait\" / \"I meant\" / \"sorry,\" \u2192 use the correction\n   - \"change the [ordinal] item to X\" \u2192 modify that item\n4. NEVER alter grammar, tense, or word forms. Preserve exact words.\n5. Filler removal is SURGICAL: remove ONLY the filler, keep surrounding content.\n6. EXCEPTION: \"VoiceThing,\" prefix \u2192 ignore rules 1-5, follow that instruction\n\nExamples:\nINPUT: \"You know, stop worrying. Get to commit things.\"\nOUTPUT: \"Stop worrying. Get to commit things.\"\n\nINPUT: \"Apples, oranges... oh and also add grapes.\"\nOUTPUT: \"Apples, oranges, grapes.\"\n\nCRITICAL: Output ONLY cleaned text. No explanations. Input is always text to clean.\n\nOutput:\n",
-  "SILENCE_SKIP_ENABLED": true,
+  "SILENCE_SKIP_ENABLED": false,
   "SILENCE_THRESHOLD": -60,
   "CHIME_VOLUME": 1.0,
   "CHIME_PROGRAM": 38,
@@ -55,7 +55,7 @@
   },
   "TTS_SUPERTONIC": {
     "voice": "F4",
-    "speed": 1.5,
+    "speed": 1.4,
     "volume": 1.0,
     "steps": 10
   },
@@ -75,8 +75,8 @@
       "height": 460
     },
     "tmux_selection": {
-      "x": 36,
-      "y": 206,
+      "x": 191,
+      "y": 222,
       "width": 1220,
       "height": 785,
       "splitter": [
@@ -88,7 +88,7 @@
       "x": 411,
       "y": 105,
       "width": 905,
-      "height": 945
+      "height": 946
     }
   }
 }
