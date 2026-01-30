@@ -47,8 +47,6 @@ def _get_delegate_class():
                     if _delegate_engine.on_stop:
                         _delegate_engine.on_stop()
                 else:
-                    # Store which phrase triggered (for tmux prepending)
-                    _delegate_engine.last_trigger_phrase = phrase if is_tmux_phrase else None
                     # macOS doesn't have a pre-buffer, pass empty array
                     _delegate_engine.on_wake(np.array([], dtype=np.float32))
 
@@ -84,12 +82,9 @@ class MacOSWakeWordEngine(WakeWordEngine):
             on_wake: Callback when wake word detected
             on_stop: Callback when wake word detected during recording
             phrases: List of phrases to listen for (comma-separated string also accepted)
-            tmux_phrases: Tmux pane phrases (start only, prepended to transcription)
+            tmux_phrases: Tmux pane phrases (start only, not stop)
         """
         super().__init__(on_wake, on_stop)
-
-        # Track the phrase that triggered recording (for tmux prepending)
-        self.last_trigger_phrase = None
 
         # Parse phrases (accept string or list)
         if phrases is None:
