@@ -332,6 +332,9 @@ DEFAULTS = dict(
     TMUX_MODE=False,
     TMUX_TARGET='%',  # Tmux pane target (% = current pane)
     TMUX_PANE_NAMES={},  # pane_id -> {phrase: str}
+    TMUX_PREVIEW_DARK_MODE=True,  # Dark/light terminal preview background
+    TMUX_PREVIEW_ANSI_COLORS=True,  # Enable ANSI color rendering
+    TMUX_PREVIEW_FONT_SIZE=10,  # Terminal preview font size
     TMUX_PHRASES_AS_CONTEXT=True,  # Include tmux phrases in context words
     TMUX_ANNOUNCE_PANE=False,  # Announce pane names via TTS when sending
     AUTO_COPY=True,   # Copy transcription to clipboard before paste
@@ -2110,13 +2113,17 @@ class TmuxPreviewWidget(QTextEdit):
         """Forward keyboard input to tmux pane."""
         key = event.key()
         text = event.text()
+        mods = event.modifiers()
         # print(f"[tmux-preview] keyPress: key={key}, text={repr(text)}, target={self._target_pane}, focused={self.hasFocus()}")
+
+        # Let dialog shortcut keys pass through (no modifiers)
+        if not mods and key in (Qt.Key.Key_I, Qt.Key.Key_O, Qt.Key.Key_D, Qt.Key.Key_A, Qt.Key.Key_U):
+            event.ignore()
+            return
 
         if not self._target_pane:
             super().keyPressEvent(event)
             return
-
-        mods = event.modifiers()
 
         # Build modifier list
         modifiers = []
@@ -2268,17 +2275,18 @@ class TmuxSelectionDialog(DraggableDialog):
         btn_row.addWidget(self.tmux_toggle_btn)
 
         # Preview controls: theme toggle, ANSI toggle, font size +/-
-        self._preview_dark_mode = True
-        self._ansi_colors_enabled = True
-        self._preview_font_size = 10  # Default font size
+        # Load from settings
+        self._preview_dark_mode = S.TMUX_PREVIEW_DARK_MODE
+        self._ansi_colors_enabled = S.TMUX_PREVIEW_ANSI_COLORS
+        self._preview_font_size = S.TMUX_PREVIEW_FONT_SIZE
 
         # Dark/light mode toggle (checkable button like toolbar)
         self.theme_btn = QPushButton("D")
-        self.theme_btn.setIcon(load_icon("sun", ICON_COLOR_DARK))
+        self.theme_btn.setIcon(load_icon("sun" if self._preview_dark_mode else "moon", ICON_COLOR_DARK))
         self.theme_btn.setIconSize(QSize(16, 16))
         self.theme_btn.setStyleSheet(get_btn_css())
         self.theme_btn.setCheckable(True)
-        self.theme_btn.setChecked(True)  # Dark mode on by default
+        self.theme_btn.setChecked(self._preview_dark_mode)
         self.theme_btn.clicked.connect(self._toggle_preview_theme)
         set_tooltip(self.theme_btn, "D  Toggle dark/light terminal background")
         btn_row.addWidget(self.theme_btn)
@@ -2289,27 +2297,27 @@ class TmuxSelectionDialog(DraggableDialog):
         self.ansi_btn.setIconSize(QSize(16, 16))
         self.ansi_btn.setStyleSheet(get_btn_css())
         self.ansi_btn.setCheckable(True)
-        self.ansi_btn.setChecked(True)  # ANSI on by default
+        self.ansi_btn.setChecked(self._ansi_colors_enabled)
         self.ansi_btn.clicked.connect(self._on_ansi_toggle)
         set_tooltip(self.ansi_btn, "A  Toggle ANSI color rendering")
         btn_row.addWidget(self.ansi_btn)
 
-        # Font size decrease
-        self.font_minus_btn = QPushButton("-")
-        self.font_minus_btn.setIcon(load_icon("minus", ICON_COLOR_DARK))
+        # Font size decrease (zoom out)
+        self.font_minus_btn = QPushButton("O")
+        self.font_minus_btn.setIcon(load_icon("zoom-out", ICON_COLOR_DARK))
         self.font_minus_btn.setIconSize(QSize(16, 16))
         self.font_minus_btn.setStyleSheet(get_btn_css())
         self.font_minus_btn.clicked.connect(self._decrease_font_size)
-        set_tooltip(self.font_minus_btn, "-  Decrease preview font size")
+        set_tooltip(self.font_minus_btn, "O  Zoom out (decrease font size)")
         btn_row.addWidget(self.font_minus_btn)
 
-        # Font size increase
-        self.font_plus_btn = QPushButton("+")
-        self.font_plus_btn.setIcon(load_icon("plus", ICON_COLOR_DARK))
+        # Font size increase (zoom in)
+        self.font_plus_btn = QPushButton("I")
+        self.font_plus_btn.setIcon(load_icon("zoom-in", ICON_COLOR_DARK))
         self.font_plus_btn.setIconSize(QSize(16, 16))
         self.font_plus_btn.setStyleSheet(get_btn_css())
         self.font_plus_btn.clicked.connect(self._increase_font_size)
-        set_tooltip(self.font_plus_btn, "+  Increase preview font size")
+        set_tooltip(self.font_plus_btn, "I  Zoom in (increase font size)")
         btn_row.addWidget(self.font_plus_btn)
 
         btn_row.addStretch()
@@ -2662,11 +2670,11 @@ done
         elif e.key() == Qt.Key.Key_A:
             # Toggle ANSI colors
             self.ansi_btn.click()
-        elif e.key() == Qt.Key.Key_Plus or e.key() == Qt.Key.Key_Equal:
-            # Increase font size (+ or = for convenience)
+        elif e.key() == Qt.Key.Key_I:
+            # Zoom in
             self._increase_font_size()
-        elif e.key() == Qt.Key.Key_Minus:
-            # Decrease font size
+        elif e.key() == Qt.Key.Key_O:
+            # Zoom out
             self._decrease_font_size()
         else:
             super().keyPressEvent(e)
@@ -2703,24 +2711,28 @@ done
     def _toggle_preview_theme(self, checked=None):
         """Toggle between dark and light terminal preview background."""
         self._preview_dark_mode = self.theme_btn.isChecked()
+        S.set('TMUX_PREVIEW_DARK_MODE', self._preview_dark_mode)
         self._update_preview_style()
 
     def _on_ansi_toggle(self, checked=None):
         """Toggle ANSI color rendering and invalidate cache to force refresh."""
         global _pane_html_cache
         self._ansi_colors_enabled = self.ansi_btn.isChecked()
+        S.set('TMUX_PREVIEW_ANSI_COLORS', self._ansi_colors_enabled)
         _pane_html_cache.clear()
 
     def _increase_font_size(self):
         """Increase preview font size."""
         if self._preview_font_size < 24:
             self._preview_font_size += 1
+            S.set('TMUX_PREVIEW_FONT_SIZE', self._preview_font_size)
             self._update_preview_style()
 
     def _decrease_font_size(self):
         """Decrease preview font size."""
         if self._preview_font_size > 6:
             self._preview_font_size -= 1
+            S.set('TMUX_PREVIEW_FONT_SIZE', self._preview_font_size)
             self._update_preview_style()
 
     def _on_tmux_toggle(self, checked=None):

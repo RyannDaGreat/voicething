@@ -32,6 +32,9 @@
       "phrase": "star"
     }
   },
+  "TMUX_PREVIEW_DARK_MODE": true,
+  "TMUX_PREVIEW_ANSI_COLORS": true,
+  "TMUX_PREVIEW_FONT_SIZE": 10,
   "TMUX_PHRASES_AS_CONTEXT": true,
   "TMUX_ANNOUNCE_PANE": true,
   "AUTO_COPY": true,
