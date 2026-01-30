@@ -34,10 +34,20 @@ def _get_delegate_class():
                     return
                 phrase = str(command)
                 print(f"[wakeword] macOS recognized: '{phrase}'")
+
+                # Check if this is a tmux-only phrase (start only, no stop)
+                is_tmux_phrase = phrase.lower() in _delegate_engine._tmux_phrases_lower
+
                 if _delegate_engine._is_recording:
+                    # Tmux phrases can't stop recording, only regular phrases can
+                    if is_tmux_phrase:
+                        print(f"[wakeword] Ignoring tmux phrase during recording")
+                        return
                     if _delegate_engine.on_stop:
                         _delegate_engine.on_stop()
                 else:
+                    # Store which phrase triggered (for tmux prepending)
+                    _delegate_engine.last_trigger_phrase = phrase if is_tmux_phrase else None
                     # macOS doesn't have a pre-buffer, pass empty array
                     _delegate_engine.on_wake(np.array([], dtype=np.float32))
 
@@ -46,7 +56,12 @@ def _get_delegate_class():
 
 
 class MacOSWakeWordEngine(WakeWordEngine):
-    """Native macOS speech recognition for wake word detection."""
+    """Native macOS speech recognition for wake word detection.
+
+    Supports two types of phrases:
+    - Regular phrases: Can start AND stop recording
+    - Tmux phrases: Can ONLY start recording (not stop), and prepend to transcription
+    """
 
     name = "macos"
     display_name = "macOS Native"
@@ -59,6 +74,7 @@ class MacOSWakeWordEngine(WakeWordEngine):
         on_wake: WakeWordCallback,
         on_stop: Optional[StopCallback] = None,
         phrases: Optional[List[str]] = None,
+        tmux_phrases: Optional[List[str]] = None,
     ):
         """
         Initialize macOS wake word engine.
@@ -67,8 +83,12 @@ class MacOSWakeWordEngine(WakeWordEngine):
             on_wake: Callback when wake word detected
             on_stop: Callback when wake word detected during recording
             phrases: List of phrases to listen for (comma-separated string also accepted)
+            tmux_phrases: Tmux pane phrases (start only, prepended to transcription)
         """
         super().__init__(on_wake, on_stop)
+
+        # Track the phrase that triggered recording (for tmux prepending)
+        self.last_trigger_phrase = None
 
         # Parse phrases (accept string or list)
         if phrases is None:
@@ -79,6 +99,17 @@ class MacOSWakeWordEngine(WakeWordEngine):
                 self._phrases = self.DEFAULT_PHRASES.copy()
         else:
             self._phrases = list(phrases) if phrases else self.DEFAULT_PHRASES.copy()
+
+        # Parse tmux phrases (start only, not stop)
+        if tmux_phrases is None:
+            self._tmux_phrases = []
+        elif isinstance(tmux_phrases, str):
+            self._tmux_phrases = [p.strip() for p in tmux_phrases.split(',') if p.strip()]
+        else:
+            self._tmux_phrases = list(tmux_phrases) if tmux_phrases else []
+
+        # Lowercase set for quick lookup
+        self._tmux_phrases_lower = {p.lower() for p in self._tmux_phrases}
 
         self._recognizer = None
         self._delegate = None
@@ -119,7 +150,9 @@ class MacOSWakeWordEngine(WakeWordEngine):
 
             self._delegate = self._create_delegate()
             self._recognizer.setDelegate_(self._delegate)
-            self._recognizer.setCommands_(self._phrases)
+            # Combine regular phrases + tmux phrases
+            all_phrases = self._phrases + self._tmux_phrases
+            self._recognizer.setCommands_(all_phrases)
             self._recognizer.setBlocksOtherRecognizers_(True)
             self._recognizer.startListening()
 
