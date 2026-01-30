@@ -1954,44 +1954,10 @@ def _ansi_to_html(text: str, cursor_info=None, scrollback_lines=50) -> str:
         html_out = html_out.replace(f'\x00LINK{idx}\x00',
             f'<a href="{html.escape(url)}" style="color:#5599ff">{escaped_content}</a>')
 
-    # Insert cursor marker if cursor_info provided
-    if cursor_info:
-        cursor_x, cursor_y, pane_height = cursor_info
-        # Calculate which line in our captured text corresponds to cursor_y
-        # cursor_y is relative to visible pane (0 = top of visible)
-        # We captured scrollback_lines of history + visible pane
-        # The cursor line in captured output = scrollback_lines - pane_height + cursor_y
-        # But if we captured less than that, adjust accordingly
-        lines = html_out.split('\n')
-        total_lines = len(lines)
-        # Cursor is at cursor_y from bottom of visible area
-        # Visible area is the last pane_height lines
-        cursor_line = total_lines - pane_height + cursor_y
-        if 0 <= cursor_line < total_lines:
-            line = lines[cursor_line]
-            # Insert cursor at cursor_x position (handling HTML tags)
-            # Simple approach: count visible chars, insert cursor span
-            cursor_span = '<span style="background:#00ff00;color:#000">▏</span>'
-            # We need to insert after cursor_x visible characters
-            # This is tricky with HTML tags - use a simple approach
-            visible_count = 0
-            insert_pos = 0
-            in_tag = False
-            for idx, ch in enumerate(line):
-                if ch == '<':
-                    in_tag = True
-                elif ch == '>':
-                    in_tag = False
-                elif not in_tag:
-                    if visible_count == cursor_x:
-                        insert_pos = idx
-                        break
-                    visible_count += 1
-            else:
-                # Cursor is at or past end of line
-                insert_pos = len(line)
-            lines[cursor_line] = line[:insert_pos] + cursor_span + line[insert_pos:]
-            html_out = '\n'.join(lines)
+    # TODO: Cursor rendering disabled - was causing HTML rendering issues
+    # The cursor positioning in HTML with nested spans and entities is complex
+    # if cursor_info:
+    #     ... cursor rendering code ...
 
     # Wrap in pre to preserve whitespace
     return '<pre style="margin:0;white-space:pre-wrap;font-family:Menlo,monospace">' + html_out + '</pre>'
@@ -2040,9 +2006,15 @@ class TmuxPreviewWidget(QTextEdit):
         self.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
         self.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
         self.setMinimumWidth(280)
-        self._base_style = (
+        self._unfocused_style = (
             f"QTextEdit {{ background: #1a1a1a; color: #cccccc; "
             f"border: 1px solid {BORDER_COLOR}; font-family: Menlo, monospace; "
+            f"font-size: 10px; padding: 4px; }}"
+            + SCROLLBAR_CSS
+        )
+        self._focused_style = (
+            f"QTextEdit {{ background: #1a1a1a; color: #cccccc; "
+            f"border: 5px solid #00cccc; font-family: Menlo, monospace; "
             f"font-size: 10px; padding: 4px; }}"
             + SCROLLBAR_CSS
         )
@@ -2054,17 +2026,10 @@ class TmuxPreviewWidget(QTextEdit):
 
     def _update_style(self):
         """Update style based on focus state."""
-        focused = self.hasFocus()
-        if focused:
-            self.setStyleSheet(self._base_style)
+        if self.hasFocus():
+            self.setStyleSheet(self._focused_style)
         else:
-            # Dimmed when unfocused
-            self.setStyleSheet(
-                f"QTextEdit {{ background: #1a1a1a; color: #666666; "
-                f"border: 1px solid {BORDER_COLOR}; font-family: Menlo, monospace; "
-                f"font-size: 10px; padding: 4px; }}"
-                + SCROLLBAR_CSS
-            )
+            self.setStyleSheet(self._unfocused_style)
 
     def focusInEvent(self, event):
         """Show keyboard hint when focused."""
@@ -2595,6 +2560,12 @@ done
             self.enable_checkbox.setChecked(not self.enable_checkbox.isChecked())
         else:
             super().keyPressEvent(e)
+
+    def mousePressEvent(self, e):
+        """Clear focus from preview when clicking elsewhere in dialog."""
+        if self.preview.hasFocus():
+            self.preview.clearFocus()
+        super().mousePressEvent(e)
 
 
 class TextEditDialog(DraggableDialog):
