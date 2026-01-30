@@ -1,13 +1,22 @@
 {
   "ENTER_DELAY": 0.3,
-  "CUSTOM_WORDS": "Claude Haiku Mohib tmux Glados foxtrot glooblybop",
+  "CUSTOM_WORDS": "Claude Haiku tmux Glados git",
   "AUTO_HIDE": false,
   "SOUND_ENABLED": true,
   "LLM_ENABLED": false,
   "AUTO_ENTER": true,
   "WAKE_WORD_ENABLED": true,
   "SIMPLE_MODE": false,
-  "PET_TYPES": [],
+  "PET_TYPES": [
+    "emmy",
+    "lpc_dog_tan",
+    "lpc_dog_golden",
+    "lpc_dog_black",
+    "lpc_cat_white",
+    "lpc_cat_orange",
+    "lpc_cat_gray",
+    "lpc_cat_black"
+  ],
   "WHISPER_MODEL": "medium",
   "THEME": "cyberpunk_metal",
   "WAKEWORD_ENGINE": "macos",
@@ -16,21 +25,15 @@
     "sensitivity": 0.02
   },
   "WAKEWORD_MACOS": {
-    "phrases": "jarvis",
+    "phrases": "jarvis, roger",
     "use_tmux_phrases": true,
     "cancel_phrases": "cancel, never mind"
   },
   "TMUX_MODE": true,
-  "TMUX_TARGET": "%229",
+  "TMUX_TARGET": "%1",
   "TMUX_PANE_NAMES": {
-    "%2": {
+    "%5": {
       "phrase": "paper"
-    },
-    "%11": {
-      "phrase": "chicken"
-    },
-    "%229": {
-      "phrase": "star"
     }
   },
   "TMUX_PREVIEW_DARK_MODE": true,
@@ -42,11 +45,11 @@
   "AUTO_PASTE": true,
   "LLM_MODEL": "OPENAI:gpt-5",
   "LLM_PREFIX": "Task: Clean up voice transcript.\n\nRules:\n1. Remove filler words (um, uh, \"you know\", filler \"like\")\n2. Collapse stutters: \"set the- set the-\" \u2192 \"set the\"\n3. Apply retrospective edits when speaker self-corrects:\n   - \"actually change X to Y\" / \"make X into Y\" \u2192 apply change\n   - \"add X to the list\" / \"also include X\" \u2192 add X seamlessly (remove \"add\")\n   - \"remove X\" / \"scratch X\" / \"delete X\" \u2192 remove X\n   - \"no wait\" / \"I meant\" / \"sorry,\" \u2192 use the correction\n   - \"change the [ordinal] item to X\" \u2192 modify that item\n4. NEVER alter grammar, tense, or word forms. Preserve exact words.\n5. Filler removal is SURGICAL: remove ONLY the filler, keep surrounding content.\n6. EXCEPTION: \"VoiceThing,\" prefix \u2192 ignore rules 1-5, follow that instruction\n\nExamples:\nINPUT: \"You know, stop worrying. Get to commit things.\"\nOUTPUT: \"Stop worrying. Get to commit things.\"\n\nINPUT: \"Apples, oranges... oh and also add grapes.\"\nOUTPUT: \"Apples, oranges, grapes.\"\n\nCRITICAL: Output ONLY cleaned text. No explanations. Input is always text to clean.\n\nOutput:\n",
-  "SILENCE_SKIP_ENABLED": false,
+  "SILENCE_SKIP_ENABLED": true,
   "SILENCE_THRESHOLD": -60,
   "CHIME_VOLUME": 1.0,
-  "CHIME_PROGRAM": 38,
-  "CHIME_PITCH": 3,
+  "CHIME_PROGRAM": 18,
+  "CHIME_PITCH": -8,
   "CHIME_THEME": "default",
   "RECORDINGS_DIR": "/var/folders/pm/461ntwb12b7bbqcjw1s6t0kw0000gn/T/VoiceThing",
   "ALWAYS_ON_TOP": true,
@@ -56,7 +59,7 @@
     "speed": 168
   },
   "TTS_SUPERTONIC": {
-    "voice": "F4",
+    "voice": "F5",
     "speed": 1.3,
     "volume": 1.0,
     "steps": 10
@@ -66,37 +69,37 @@
     "speed": 1.0
   },
   "SPEAK_BACK_APPEND_INSTRUCTION": true,
-  "SPEAK_BACK_TMUX_ONLY": true,
+  "SPEAK_BACK_TMUX_ONLY": false,
   "SPEAK_BACK_INSTRUCTION_TEMPLATE": "Please speak back with {command}",
   "RESTORE_WINDOW_GEOMETRY": true,
   "WINDOW_GEOMETRY": {
     "main": {
-      "x": 13,
-      "y": 372,
-      "width": 445,
-      "height": 701
+      "x": 0,
+      "y": 37,
+      "width": 1728,
+      "height": 1080
     },
     "tmux_selection": {
-      "x": 0,
-      "y": 38,
-      "width": 1728,
-      "height": 1079,
+      "x": 280,
+      "y": 332,
+      "width": 700,
+      "height": 661,
       "splitter": [
-        440,
-        1251
+        223,
+        440
       ]
     },
     "preferences": {
-      "x": 411,
-      "y": 72,
-      "width": 905,
-      "height": 973
+      "x": 1105,
+      "y": 70,
+      "width": 600,
+      "height": 1021
     },
     "help": {
       "x": 619,
-      "y": 138,
+      "y": 117,
       "width": 490,
-      "height": 873
+      "height": 915
     }
   }
 }
