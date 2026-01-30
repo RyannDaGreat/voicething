@@ -2116,10 +2116,6 @@ class TmuxPreviewWidget(QTextEdit):
         mods = event.modifiers()
         # print(f"[tmux-preview] keyPress: key={key}, text={repr(text)}, target={self._target_pane}, focused={self.hasFocus()}")
 
-        # Let dialog shortcut keys pass through (no modifiers)
-        if not mods and key in (Qt.Key.Key_I, Qt.Key.Key_O, Qt.Key.Key_D, Qt.Key.Key_A, Qt.Key.Key_U):
-            event.ignore()
-            return
 
         if not self._target_pane:
             super().keyPressEvent(event)
@@ -2654,25 +2650,27 @@ done
             }
 
     def keyPressEvent(self, e):
+        # When preview is focused, let it handle all keys (sends to tmux)
+        # Only Escape should still work to close dialog
+        if self.preview.hasFocus() and e.key() != Qt.Key.Key_Escape:
+            # Forward to preview widget
+            self.preview.keyPressEvent(e)
+            return
+
         if e.key() == Qt.Key.Key_Escape:
             self.reject()
         elif e.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
             if self.table.state() != QTableWidget.State.EditingState:
                 self._accept_selection()
         elif e.key() == Qt.Key.Key_U:
-            # Toggle tmux mode checkbox
             self.tmux_toggle_btn.click()
         elif e.key() == Qt.Key.Key_D:
-            # Toggle dark/light mode for terminal preview
             self.theme_btn.click()
         elif e.key() == Qt.Key.Key_A:
-            # Toggle ANSI colors
             self.ansi_btn.click()
         elif e.key() == Qt.Key.Key_I:
-            # Zoom in
             self._increase_font_size()
         elif e.key() == Qt.Key.Key_O:
-            # Zoom out
             self._decrease_font_size()
         else:
             super().keyPressEvent(e)
