@@ -1593,10 +1593,16 @@ except ImportError:
     _scrollback_cache = {}  # Fallback to simple dict (no expiry)
 
 
-def _get_tmux_scrollback(target, lines=50):
-    """Get scrollback from tmux pane with caching (includes ANSI escape codes)."""
-    # Check cache first
-    if target in _scrollback_cache:
+def _get_tmux_scrollback(target, lines=50, use_cache=True):
+    """Get scrollback from tmux pane (includes ANSI escape codes).
+
+    Args:
+        target: Tmux pane ID
+        lines: Number of lines to capture
+        use_cache: If True, use 30s TTL cache. Set False for realtime polling.
+    """
+    # Check cache first (if enabled)
+    if use_cache and target in _scrollback_cache:
         return _scrollback_cache[target]
 
     try:
@@ -1607,7 +1613,8 @@ def _get_tmux_scrollback(target, lines=50):
         )
         if result.returncode == 0:
             text = result.stdout
-            _scrollback_cache[target] = text
+            if use_cache:
+                _scrollback_cache[target] = text
             return text
         return None
     except (subprocess.TimeoutExpired, FileNotFoundError):
@@ -2330,16 +2337,19 @@ class TmuxSelectionDialog(DraggableDialog):
 
     def _poll_preview_loop(self):
         """Background thread: poll for tmux pane changes."""
-        while not self._poll_stop.wait(0.25):  # Poll every 250ms
+        print("[tmux-poll] Thread started")
+        while not self._poll_stop.is_set():
             pane_id = self._hover_pane_id or self._selected_pane_id
-            if not pane_id:
-                continue
-            text = _get_tmux_scrollback(pane_id)
-            if text != self._last_preview_text:
-                self._last_preview_text = text
-                if text is not None:
-                    html = _ansi_to_html(text)
-                    self._preview_changed.emit(pane_id, html)
+            if pane_id:
+                text = _get_tmux_scrollback(pane_id, use_cache=False)
+                if text != self._last_preview_text:
+                    print(f"[tmux-poll] Content changed for {pane_id}")
+                    self._last_preview_text = text
+                    if text is not None:
+                        html = _ansi_to_html(text)
+                        self._preview_changed.emit(pane_id, html)
+            self._poll_stop.wait(0.1)  # Sleep 100ms between polls
+        print("[tmux-poll] Thread stopped")
 
     def _on_preview_changed(self, pane_id, html):
         """Slot: update preview from background thread (runs on main thread)."""
@@ -2352,11 +2362,12 @@ class TmuxSelectionDialog(DraggableDialog):
 
     def _start_polling(self):
         """Start the background preview polling thread."""
-        if self._poll_thread is not None:
+        if self._poll_thread is not None and self._poll_thread.is_alive():
             return
         self._poll_stop.clear()
         self._poll_thread = threading.Thread(target=self._poll_preview_loop, daemon=True)
         self._poll_thread.start()
+        print("[tmux-poll] Starting poll thread")
 
     def _stop_polling(self):
         """Stop the background preview polling thread."""
@@ -2367,6 +2378,7 @@ class TmuxSelectionDialog(DraggableDialog):
 
     def showEvent(self, event):
         """Start polling when dialog is shown."""
+        print("[tmux-dialog] showEvent called")
         super().showEvent(event)
         self._start_polling()
 

@@ -77,11 +77,11 @@
     "tmux_selection": {
       "x": 36,
       "y": 206,
-      "width": 1017,
-      "height": 739,
+      "width": 1220,
+      "height": 785,
       "splitter": [
-        588,
-        392
+        412,
+        771
       ]
     }
   }
