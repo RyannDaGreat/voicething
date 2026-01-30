@@ -31,9 +31,10 @@ def _get_delegate_class():
             def speechRecognizer_didRecognizeCommand_(self, sender, command):
                 global _delegate_engine
                 if _delegate_engine is None:
+                    print(f"[wakeword] macOS recognized but no engine (ignoring)")
                     return
                 phrase = str(command)
-                print(f"[wakeword] macOS recognized: '{phrase}'")
+                print(f"[wakeword] macOS recognized: '{phrase}' (recording={_delegate_engine._is_recording})")
 
                 # Check if this is a tmux-only phrase (start only, no stop)
                 is_tmux_phrase = phrase.lower() in _delegate_engine._tmux_phrases_lower
@@ -193,11 +194,13 @@ class MacOSWakeWordEngine(WakeWordEngine):
     def pause(self) -> None:
         """Pause during recording."""
         self._is_recording = True
+        print(f"[wakeword] macOS paused (_is_recording=True)")
         # macOS recognizer keeps running but we track state
 
     def resume(self) -> None:
         """Resume after recording."""
         self._is_recording = False
+        print(f"[wakeword] macOS resumed (_is_recording=False)")
 
     def reset(self) -> None:
         """Reset state (no-op for macOS)."""

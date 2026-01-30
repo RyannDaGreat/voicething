@@ -5105,7 +5105,17 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
     def _get_status_text(self):
         """Get status text based on current state."""
         if self.state == "idle":
-            return f"Say '{self._get_wake_word_display()}'" if S.WAKE_WORD_ENABLED else "Double-tap ⌥"
+            if S.WAKE_WORD_ENABLED:
+                words = self._get_all_wake_words()
+                if len(words) == 1:
+                    return f"Say '{words[0]}'"
+                elif len(words) == 2:
+                    return f"Say '{words[0]}' or '{words[1]}'"
+                else:
+                    # "Say 'A', 'B', or 'C'"
+                    quoted = [f"'{w}'" for w in words]
+                    return f"Say {', '.join(quoted[:-1])}, or {quoted[-1]}"
+            return "Double-tap ⌥"
         elif self.state == "recording":
             return "Recording"
         elif self.state == "transcribing":
@@ -5189,7 +5199,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         self._update_status()
 
     def _get_wake_word_display(self) -> str:
-        """Get display name for current wake word configuration."""
+        """Get display name for current wake word configuration (first phrase only, for tooltip)."""
         engine = S.WAKEWORD_ENGINE
         if engine == 'openwakeword':
             model = S.WAKEWORD_OPENWAKEWORD.get('model', 'computer')
@@ -5198,6 +5208,21 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
             phrases = S.WAKEWORD_MACOS.get('phrases', 'hey computer')
             first = phrases.split(',')[0].strip() if phrases else 'hey computer'
             return first
+
+    def _get_all_wake_words(self) -> list:
+        """Get all active wake words/phrases as a list."""
+        engine = S.WAKEWORD_ENGINE
+        if engine == 'openwakeword':
+            model = S.WAKEWORD_OPENWAKEWORD.get('model', 'computer')
+            return [get_wake_word_display(model)]
+        else:
+            # macOS: get all configured phrases
+            phrases_str = S.WAKEWORD_MACOS.get('phrases', 'hey computer')
+            phrases = [p.strip() for p in phrases_str.split(',') if p.strip()]
+            # Add tmux phrases if enabled
+            if listening_for_tmux_panes_as_wakewords():
+                phrases.extend(get_tmux_phrases_list())
+            return phrases if phrases else ['hey computer']
 
     def toggle_auto_hide(self):
         S.set('AUTO_HIDE', not S.AUTO_HIDE)
