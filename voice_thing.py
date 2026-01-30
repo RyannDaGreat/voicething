@@ -915,6 +915,27 @@ def get_lineedit_css():
     )
 
 
+def get_tmux_phrases_list() -> list:
+    """Get list of all tmux pane phrases."""
+    phrases = []
+    for info in S.TMUX_PANE_NAMES.values():
+        phrase = info.get('phrase', '')
+        if phrase:
+            phrases.append(phrase)
+    return phrases
+
+
+def get_tmux_phrases_checkbox_label(checked: bool) -> str:
+    """Get label for +Tmux Phrases checkbox, showing phrases when checked."""
+    base = "+Tmux Phrases"
+    if not checked:
+        return base
+    phrases = get_tmux_phrases_list()
+    if phrases:
+        return f"{base} ({', '.join(phrases)})"
+    return base
+
+
 _HELP_CURSOR = None
 
 def _get_help_cursor():
@@ -2438,12 +2459,13 @@ class WakeWordSettingsWidget(QWidget):
         phrases_row.addWidget(self._phrases_edit, 1)
         macos_layout.addLayout(phrases_row)
 
-        # +Tmux phrases checkbox
+        # +Tmux Phrases checkbox
         tmux_row = QHBoxLayout()
         tmux_row.setSpacing(8)
-        self._tmux_phrases_checkbox = QCheckBox("+Tmux phrases")
+        checked = S.WAKEWORD_MACOS.get('use_tmux_phrases', False)
+        self._tmux_phrases_checkbox = QCheckBox(get_tmux_phrases_checkbox_label(checked))
         self._tmux_phrases_checkbox.setStyleSheet(get_checkbox_css())
-        self._tmux_phrases_checkbox.setChecked(S.WAKEWORD_MACOS.get('use_tmux_phrases', False))
+        self._tmux_phrases_checkbox.setChecked(checked)
         self._update_tmux_phrases_tooltip()
         self._tmux_phrases_checkbox.stateChanged.connect(self._on_tmux_phrases_changed)
         tmux_row.addWidget(self._tmux_phrases_checkbox)
@@ -2502,9 +2524,11 @@ class WakeWordSettingsWidget(QWidget):
         self.settings_changed.emit()
 
     def _on_tmux_phrases_changed(self, state):
+        checked = state == Qt.CheckState.Checked.value
         cfg = S.WAKEWORD_MACOS.copy()
-        cfg['use_tmux_phrases'] = (state == Qt.CheckState.Checked.value)
+        cfg['use_tmux_phrases'] = checked
         S.set('WAKEWORD_MACOS', cfg)
+        self._tmux_phrases_checkbox.setText(get_tmux_phrases_checkbox_label(checked))
         self.settings_changed.emit()
 
     def _update_tmux_phrases_tooltip(self):
@@ -2948,19 +2972,16 @@ class PrefsDialog(DraggableDialog):
         # Tmux phrases as context words
         phrases_ctx_row = QHBoxLayout()
         phrases_ctx_row.setSpacing(8)
-        self.phrases_ctx_check = QCheckBox("+tmux phrases")
+        self.phrases_ctx_check = QCheckBox(get_tmux_phrases_checkbox_label(S.TMUX_PHRASES_AS_CONTEXT))
         self.phrases_ctx_check.setChecked(S.TMUX_PHRASES_AS_CONTEXT)
         self.phrases_ctx_check.setStyleSheet(get_checkbox_css())
         set_tooltip(self.phrases_ctx_check,
-            "Include tmux magic phrases as context words.\n"
+            "Include tmux pane phrases as context words.\n"
             "Helps Whisper recognize phrase words in speech."
         )
         self.phrases_ctx_check.stateChanged.connect(self._on_phrases_ctx_changed)
         phrases_ctx_row.addWidget(self.phrases_ctx_check)
-        self.phrases_ctx_label = QLabel("")
-        self.phrases_ctx_label.setStyleSheet(f"color: #888; font-size: 11px;")
-        self._update_phrases_ctx_label()
-        phrases_ctx_row.addWidget(self.phrases_ctx_label, 1)
+        phrases_ctx_row.addStretch()
         settings_box.addLayout(phrases_ctx_row)
 
         # LLM section
@@ -3291,22 +3312,9 @@ class PrefsDialog(DraggableDialog):
         S.CUSTOM_WORDS = text
 
     def _on_phrases_ctx_changed(self, state):
-        S.TMUX_PHRASES_AS_CONTEXT = bool(state)
-        self._update_phrases_ctx_label()
-
-    def _update_phrases_ctx_label(self):
-        """Show all phrase words in gray if checkbox is checked."""
-        if S.TMUX_PHRASES_AS_CONTEXT and S.TMUX_PANE_NAMES:
-            words = set()
-            for info in S.TMUX_PANE_NAMES.values():
-                phrase = info.get('phrase', '')
-                words.update(phrase.split())
-            if words:
-                self.phrases_ctx_label.setText(' '.join(sorted(words)))
-            else:
-                self.phrases_ctx_label.setText("")
-        else:
-            self.phrases_ctx_label.setText("")
+        checked = bool(state)
+        S.TMUX_PHRASES_AS_CONTEXT = checked
+        self.phrases_ctx_check.setText(get_tmux_phrases_checkbox_label(checked))
 
     def _on_llm_enabled_changed(self, state):
         S.set('LLM_ENABLED', state == Qt.CheckState.Checked.value)

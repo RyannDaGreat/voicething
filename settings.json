@@ -5,7 +5,7 @@
   "SOUND_ENABLED": true,
   "LLM_ENABLED": false,
   "AUTO_ENTER": true,
-  "WAKE_WORD_ENABLED": false,
+  "WAKE_WORD_ENABLED": true,
   "SIMPLE_MODE": false,
   "PET_TYPES": [
     "emmy"
@@ -18,7 +18,8 @@
     "sensitivity": 0.02
   },
   "WAKEWORD_MACOS": {
-    "phrases": "paper,"
+    "phrases": "jarvis",
+    "use_tmux_phrases": true
   },
   "TMUX_MODE": true,
   "TMUX_TARGET": "%2",
