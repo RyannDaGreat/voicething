@@ -2191,7 +2191,31 @@ class TmuxSelectionDialog(DraggableDialog):
         layout.setContentsMargins(15, 15, 15, 15)
         layout.setSpacing(8)
 
-        layout.addWidget(make_title("Tmux Pane Manager"))
+        # Title row with traffic light buttons
+        title_row = QHBoxLayout()
+        title_row.setSpacing(6)
+
+        # Close button (red)
+        self.close_btn = TrafficLightButton("rgb(255, 95, 87)", "rgb(255, 120, 110)", "macos-close")
+        self.close_btn.setToolTip("Close")
+        self.close_btn.clicked.connect(self.reject)
+        title_row.addWidget(self.close_btn)
+
+        # Maximize/restore button (green)
+        self._pre_maximize_geometry = None
+        self.maximize_btn = TrafficLightButton("rgb(52, 199, 89)", "rgb(80, 220, 110)", "macos-fullscreen")
+        self.maximize_btn.setToolTip("Maximize (M)")
+        self.maximize_btn.clicked.connect(self._toggle_maximize)
+        title_row.addWidget(self.maximize_btn)
+
+        title_row.addWidget(make_title("Tmux Pane Manager"), 1)
+
+        # Spacer to balance buttons
+        spacer = QWidget()
+        spacer.setFixedWidth(30)
+        title_row.addWidget(spacer)
+
+        layout.addLayout(title_row)
 
         # Main content: table on left, preview on right
         self.splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -2677,6 +2701,8 @@ done
             self._increase_font_size()
         elif e.key() == Qt.Key.Key_O:
             self._decrease_font_size()
+        elif e.key() == Qt.Key.Key_M:
+            self._toggle_maximize()
         else:
             super().keyPressEvent(e)
 
@@ -2755,6 +2781,24 @@ done
         """Toggle tmux mode and update button icon."""
         is_on = self.tmux_toggle_btn.isChecked()
         self.tmux_toggle_btn.setIcon(load_icon("tmux" if is_on else "tmux-off", ICON_COLOR_DARK))
+
+    def _toggle_maximize(self):
+        """Toggle between maximized and normal window size."""
+        from PyQt6.QtWidgets import QApplication
+        screen = QApplication.primaryScreen().availableGeometry()
+
+        if self._pre_maximize_geometry is None:
+            # Save current geometry and maximize
+            self._pre_maximize_geometry = self.geometry()
+            self.setGeometry(screen)
+            self.maximize_btn.set_icon_name("macos-collapse")
+            self.maximize_btn.setToolTip("Restore (M)")
+        else:
+            # Restore previous geometry
+            self.setGeometry(self._pre_maximize_geometry)
+            self._pre_maximize_geometry = None
+            self.maximize_btn.set_icon_name("macos-fullscreen")
+            self.maximize_btn.setToolTip("Maximize (M)")
 
     def select_pane(self, pane_id):
         """Select a pane by ID - called when text is sent to a tmux pane."""
