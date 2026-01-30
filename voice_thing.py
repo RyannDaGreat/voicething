@@ -2184,6 +2184,8 @@ class TmuxSelectionDialog(DraggableDialog):
         self._poll_stop = threading.Event()
         self._poll_thread = None
         self._preview_changed.connect(self._on_preview_changed)
+        # Install event filter to catch clicks anywhere and clear preview focus
+        self.installEventFilter(self)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(15, 15, 15, 15)
@@ -2650,10 +2652,13 @@ done
             }
 
     def keyPressEvent(self, e):
-        # When preview is focused, let it handle all keys (sends to tmux)
-        # Only Escape should still work to close dialog
-        if self.preview.hasFocus() and e.key() != Qt.Key.Key_Escape:
-            # Forward to preview widget
+        # Only forward to preview if it's actually focused
+        # Use focusWidget() for more reliable check
+        focused = self.focusWidget()
+        preview_focused = focused is self.preview
+
+        if preview_focused and e.key() != Qt.Key.Key_Escape:
+            # Forward to preview widget (sends to tmux)
             self.preview.keyPressEvent(e)
             return
 
@@ -2675,10 +2680,27 @@ done
         else:
             super().keyPressEvent(e)
 
+    def eventFilter(self, obj, event):
+        """Clear preview focus when clicking anywhere except on the preview."""
+        from PyQt6.QtCore import QEvent
+        if event.type() == QEvent.Type.MouseButtonPress:
+            # Check if click is on preview widget
+            if self.focusWidget() is self.preview:
+                # Get click position in global coords
+                click_pos = event.globalPosition().toPoint()
+                preview_rect = self.preview.geometry()
+                preview_global = self.preview.mapToGlobal(preview_rect.topLeft())
+                preview_rect.moveTopLeft(preview_global)
+                if not preview_rect.contains(click_pos):
+                    self.preview.clearFocus()
+                    self.setFocus()
+        return super().eventFilter(obj, event)
+
     def mousePressEvent(self, e):
         """Clear focus from preview when clicking elsewhere in dialog."""
-        if self.preview.hasFocus():
-            self.preview.clearFocus()
+        # Clear preview focus so shortcuts work again
+        if self.focusWidget() is self.preview:
+            self.setFocus()
         super().mousePressEvent(e)
 
     def _update_preview_style(self):
@@ -2733,6 +2755,16 @@ done
         """Toggle tmux mode and update button icon."""
         is_on = self.tmux_toggle_btn.isChecked()
         self.tmux_toggle_btn.setIcon(load_icon("tmux" if is_on else "tmux-off", ICON_COLOR_DARK))
+
+    def select_pane(self, pane_id):
+        """Select a pane by ID - called when text is sent to a tmux pane."""
+        for row, data in enumerate(self._pane_data):
+            if data['pane_id'] == pane_id:
+                self.table.selectRow(row)
+                self._selected_pane_id = pane_id
+                if self._hover_pane_id is None:
+                    self._update_preview(pane_id)
+                break
 
 
 class TextEditDialog(DraggableDialog):
@@ -5210,6 +5242,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         # Non-settings instance state
         self.wake_word_engine = None  # Wake word engine instance (from wakeword module)
         self._tmux_wake_prefix = None  # Tmux phrase that triggered recording (for prefix)
+        self._tmux_dialog = None  # Reference to open TmuxSelectionDialog (if any)
 
         self.setWindowTitle(APP_NAME)
         self._apply_window_flags(show=False)
@@ -5677,6 +5710,12 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
                 subprocess.run(['tmux', 'send-keys', '-t', target, 'Enter'], check=True)
             phrase = S.TMUX_PANE_NAMES.get(target, {}).get('phrase', target)
             print(f"Sent to tmux '{phrase}' ({target}): {text[:50]}{'...' if len(text) > 50 else ''}")
+            # Update tmux dialog selection if open
+            if self._tmux_dialog is not None:
+                self._tmux_dialog.select_pane(target)
+            # Announce pane name via TTS if enabled
+            if S.TMUX_ANNOUNCE_PANE:
+                self._speak_announcement(f"Sent to {phrase}")
         except subprocess.CalledProcessError as e:
             print(f"tmux send-keys failed: {e}")
         except FileNotFoundError:
@@ -6143,11 +6182,12 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
 
     def show_tmux_selection(self):
         """Show dialog to select tmux target pane."""
-        dialog = TmuxSelectionDialog(S.TMUX_TARGET, self)
-        dialog.center_on_parent()
-        if dialog.exec():
-            S.set('TMUX_TARGET', dialog.selected_target)
+        self._tmux_dialog = TmuxSelectionDialog(S.TMUX_TARGET, self)
+        self._tmux_dialog.center_on_parent()
+        if self._tmux_dialog.exec():
+            S.set('TMUX_TARGET', self._tmux_dialog.selected_target)
             self._save_settings()
+        self._tmux_dialog = None
 
     def _start_wake_word_listener(self):
         """Start wake word detection using the configured engine."""
@@ -6227,6 +6267,13 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
             # Clear it after reading
             if hasattr(self.wake_word_engine, 'last_detected_phrase'):
                 self.wake_word_engine.last_detected_phrase = None
+            # If tmux dialog is open, select the matching pane immediately
+            if self._tmux_wake_prefix and self._tmux_dialog is not None:
+                phrase_lower = self._tmux_wake_prefix.lower()
+                for pane_id, info in S.TMUX_PANE_NAMES.items():
+                    if info.get('phrase', '').lower() == phrase_lower:
+                        self._tmux_dialog.select_pane(pane_id)
+                        break
         # Use signal to call start_recording on main thread with pre_buffer
         if pre_buffer is None:
             pre_buffer = np.array([], dtype=np.float32)
