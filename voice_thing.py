@@ -1890,6 +1890,156 @@ def _ansi_to_html(text: str) -> str:
     return '<pre style="margin:0;white-space:pre-wrap;font-family:Menlo,monospace">' + html_out + '</pre>'
 
 
+class TmuxPreviewWidget(QTextEdit):
+    """Focusable tmux pane preview with keyboard input forwarding.
+
+    Like the piano widget:
+    - Click to focus
+    - Shows hint label when focused
+    - 50% opacity when unfocused
+    - Keyboard input is sent to tmux pane
+    """
+
+    # Qt key to tmux key name mapping
+    QT_TO_TMUX_KEYS = {
+        Qt.Key.Key_Backspace: "BSpace",
+        Qt.Key.Key_Delete: "DC",
+        Qt.Key.Key_Down: "Down",
+        Qt.Key.Key_End: "End",
+        Qt.Key.Key_Return: "Enter",
+        Qt.Key.Key_Enter: "Enter",
+        Qt.Key.Key_Escape: "Escape",
+        Qt.Key.Key_F1: "F1", Qt.Key.Key_F2: "F2", Qt.Key.Key_F3: "F3", Qt.Key.Key_F4: "F4",
+        Qt.Key.Key_F5: "F5", Qt.Key.Key_F6: "F6", Qt.Key.Key_F7: "F7", Qt.Key.Key_F8: "F8",
+        Qt.Key.Key_F9: "F9", Qt.Key.Key_F10: "F10", Qt.Key.Key_F11: "F11", Qt.Key.Key_F12: "F12",
+        Qt.Key.Key_Home: "Home",
+        Qt.Key.Key_Left: "Left",
+        Qt.Key.Key_PageDown: "PageDown",
+        Qt.Key.Key_PageUp: "PageUp",
+        Qt.Key.Key_Right: "Right",
+        Qt.Key.Key_Space: "Space",
+        Qt.Key.Key_Tab: "Tab",
+        Qt.Key.Key_Up: "Up",
+    }
+
+    # Special chars needing escape in tmux
+    TMUX_SPECIAL_CHARS = {';': '\\;', '#': '\\#', ',': '\\,'}
+
+    def __init__(self, hint_label=None, parent=None):
+        super().__init__(parent)
+        self.hint_label = hint_label
+        self._target_pane = None
+        self.setReadOnly(True)
+        self.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
+        self.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
+        self.setMinimumWidth(280)
+        self._base_style = (
+            f"QTextEdit {{ background: #1a1a1a; color: #cccccc; "
+            f"border: 1px solid {BORDER_COLOR}; font-family: Menlo, monospace; "
+            f"font-size: 10px; padding: 4px; }}"
+            + SCROLLBAR_CSS
+        )
+        self._update_style()
+
+    def set_target(self, pane_id):
+        """Set the tmux pane to send keys to."""
+        self._target_pane = pane_id
+
+    def _update_style(self):
+        """Update style based on focus state."""
+        focused = self.hasFocus()
+        if focused:
+            self.setStyleSheet(self._base_style)
+        else:
+            # Dimmed when unfocused
+            self.setStyleSheet(
+                f"QTextEdit {{ background: #1a1a1a; color: #666666; "
+                f"border: 1px solid {BORDER_COLOR}; font-family: Menlo, monospace; "
+                f"font-size: 10px; padding: 4px; }}"
+                + SCROLLBAR_CSS
+            )
+
+    def focusInEvent(self, event):
+        """Show keyboard hint when focused."""
+        if self.hint_label:
+            self.hint_label.setText("Type to send keys to tmux pane")
+        self._update_style()
+        super().focusInEvent(event)
+
+    def focusOutEvent(self, event):
+        """Hide keyboard hint when unfocused."""
+        if self.hint_label:
+            self.hint_label.setText("")
+        self._update_style()
+        super().focusOutEvent(event)
+
+    def _send_to_tmux(self, key_str, modifiers=None):
+        """Send a key to the target tmux pane."""
+        if not self._target_pane:
+            return
+
+        # Build tmux key argument
+        if modifiers:
+            mod_prefix = '-'.join(modifiers)
+            key_arg = f"{mod_prefix}-{key_str}"
+        else:
+            key_arg = key_str
+
+        try:
+            subprocess.run(['tmux', 'send-keys', '-t', self._target_pane, key_arg],
+                          check=True, capture_output=True)
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            pass
+
+    def keyPressEvent(self, event):
+        """Forward keyboard input to tmux pane."""
+        if not self._target_pane:
+            super().keyPressEvent(event)
+            return
+
+        key = event.key()
+        text = event.text()
+        mods = event.modifiers()
+
+        # Build modifier list
+        modifiers = []
+        if mods & Qt.KeyboardModifier.ControlModifier:
+            modifiers.append('C')
+        if mods & Qt.KeyboardModifier.AltModifier:
+            modifiers.append('M')
+        if mods & Qt.KeyboardModifier.ShiftModifier and key in self.QT_TO_TMUX_KEYS:
+            # Only add shift for special keys, not for regular shifted chars
+            modifiers.append('S')
+
+        # Check for special keys
+        if key in self.QT_TO_TMUX_KEYS:
+            tmux_key = self.QT_TO_TMUX_KEYS[key]
+            self._send_to_tmux(tmux_key, modifiers if modifiers else None)
+        elif text and not (mods & Qt.KeyboardModifier.ControlModifier):
+            # Regular character - send as-is (escape special chars)
+            char = text
+            if char in self.TMUX_SPECIAL_CHARS:
+                char = self.TMUX_SPECIAL_CHARS[char]
+            # Alt sends escape prefix for terminal apps
+            if mods & Qt.KeyboardModifier.AltModifier:
+                self._send_to_tmux('Escape')
+                self._send_to_tmux(char)
+            else:
+                self._send_to_tmux(char)
+        elif text and (mods & Qt.KeyboardModifier.ControlModifier):
+            # Ctrl+letter -> C-letter
+            char = text.lower() if text else chr(key).lower()
+            self._send_to_tmux(char, ['C'])
+        else:
+            # Unhandled - pass to parent
+            super().keyPressEvent(event)
+
+    def mousePressEvent(self, event):
+        """Click to focus."""
+        self.setFocus()
+        super().mousePressEvent(event)
+
+
 class TmuxSelectionDialog(DraggableDialog):
     """Dialog to select tmux pane target with flat table and voice routing."""
     window_name = "tmux_selection"
@@ -1915,7 +2065,7 @@ class TmuxSelectionDialog(DraggableDialog):
         layout.addWidget(make_title("Tmux Pane Manager"))
 
         # Main content: table on left, preview on right
-        splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.splitter = QSplitter(Qt.Orientation.Horizontal)
 
         # Table widget
         self.table = QTableWidget()
@@ -1942,7 +2092,7 @@ class TmuxSelectionDialog(DraggableDialog):
         self.table.cellChanged.connect(self._on_cell_changed)
         self.table.itemSelectionChanged.connect(self._on_selection_changed)
         self.table.viewport().installEventFilter(self)  # For hover preview
-        splitter.addWidget(self.table)
+        self.splitter.addWidget(self.table)
 
         # Right side: preview
         preview_container = QWidget()
@@ -1954,21 +2104,18 @@ class TmuxSelectionDialog(DraggableDialog):
         self.preview_label.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 10px; font-family: Menlo, monospace;")
         preview_layout.addWidget(self.preview_label)
 
-        self.preview = QTextEdit()
-        self.preview.setReadOnly(True)
-        self.preview.setStyleSheet(
-            f"QTextEdit {{ background: #1a1a1a; color: #cccccc; "
-            f"border: 1px solid {BORDER_COLOR}; font-family: Menlo, monospace; "
-            f"font-size: 10px; padding: 4px; }}"
-            + SCROLLBAR_CSS
-        )
-        self.preview.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
-        self.preview.setMinimumWidth(280)
-        preview_layout.addWidget(self.preview, 1)
+        # Hint label for keyboard interaction (like piano)
+        self.preview_hint = QLabel("")
+        self.preview_hint.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 9px;")
+        self.preview_hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        splitter.addWidget(preview_container)
-        splitter.setSizes([420, 280])
-        layout.addWidget(splitter, 1)
+        self.preview = TmuxPreviewWidget(hint_label=self.preview_hint)
+        preview_layout.addWidget(self.preview, 1)
+        preview_layout.addWidget(self.preview_hint)
+
+        self.splitter.addWidget(preview_container)
+        self.splitter.setSizes([420, 280])
+        layout.addWidget(self.splitter, 1)
 
         # Not running message
         self.not_running_label = QLabel("tmux is not running")
@@ -2158,6 +2305,7 @@ class TmuxSelectionDialog(DraggableDialog):
     def _update_preview(self, pane_id):
         """Update preview panel with scrollback from pane (with ANSI colors)."""
         self.preview_label.setText(f"Preview: {pane_id}")
+        self.preview.set_target(pane_id)
         text = _get_tmux_scrollback(pane_id)
         if text is not None:
             html = _ansi_to_html(text)
@@ -2186,6 +2334,24 @@ class TmuxSelectionDialog(DraggableDialog):
         """Revert tmux mode on cancel."""
         S.set('TMUX_MODE', self._orig_tmux_mode)
         super().reject()
+
+    def center_on_parent(self):
+        """Restore saved geometry including splitter position."""
+        super().center_on_parent()
+        # Restore splitter sizes if saved
+        if self.window_name and S.RESTORE_WINDOW_GEOMETRY:
+            geom = S.WINDOW_GEOMETRY.get(self.window_name)
+            if geom and 'splitter' in geom:
+                self.splitter.setSizes(geom['splitter'])
+
+    def _save_geometry(self):
+        """Save window geometry including splitter position."""
+        if self.window_name:
+            S.WINDOW_GEOMETRY[self.window_name] = {
+                'x': self.x(), 'y': self.y(),
+                'width': self.width(), 'height': self.height(),
+                'splitter': self.splitter.sizes(),
+            }
 
     def keyPressEvent(self, e):
         if e.key() == Qt.Key.Key_Escape:
