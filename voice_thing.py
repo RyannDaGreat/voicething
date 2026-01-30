@@ -1976,6 +1976,7 @@ class TmuxPreviewWidget(QTextEdit):
     def _send_to_tmux(self, key_str, modifiers=None):
         """Send a key to the target tmux pane."""
         if not self._target_pane:
+            print(f"[tmux-preview] No target pane set")
             return
 
         # Build tmux key argument
@@ -1986,19 +1987,23 @@ class TmuxPreviewWidget(QTextEdit):
             key_arg = key_str
 
         try:
-            subprocess.run(['tmux', 'send-keys', '-t', self._target_pane, key_arg],
-                          check=True, capture_output=True)
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            pass
+            result = subprocess.run(['tmux', 'send-keys', '-t', self._target_pane, key_arg],
+                                   capture_output=True, text=True)
+            if result.returncode != 0:
+                print(f"[tmux-preview] send-keys failed: {result.stderr}")
+        except FileNotFoundError:
+            print(f"[tmux-preview] tmux not found")
 
     def keyPressEvent(self, event):
         """Forward keyboard input to tmux pane."""
+        key = event.key()
+        text = event.text()
+        print(f"[tmux-preview] keyPress: key={key}, text={repr(text)}, target={self._target_pane}, focused={self.hasFocus()}")
+
         if not self._target_pane:
             super().keyPressEvent(event)
             return
 
-        key = event.key()
-        text = event.text()
         mods = event.modifiers()
 
         # Build modifier list
@@ -2044,6 +2049,9 @@ class TmuxSelectionDialog(DraggableDialog):
     """Dialog to select tmux pane target with flat table and voice routing."""
     window_name = "tmux_selection"
 
+    # Signal for thread-safe preview updates
+    _preview_changed = pyqtSignal(str, str)  # (pane_id, html_content)
+
     # Column indices
     COL_ADDRESS = 0
     COL_PANE_ID = 1
@@ -2057,6 +2065,10 @@ class TmuxSelectionDialog(DraggableDialog):
         self._selected_pane_id = None
         self._pane_data = []  # List of {address, pane_id, process, target}
         self._orig_tmux_mode = S.TMUX_MODE  # Store original for cancel
+        self._poll_stop = threading.Event()
+        self._poll_thread = None
+        self._last_preview_text = None  # For change detection
+        self._preview_changed.connect(self._on_preview_changed)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(15, 15, 15, 15)
@@ -2307,6 +2319,7 @@ class TmuxSelectionDialog(DraggableDialog):
         self.preview_label.setText(f"Preview: {pane_id}")
         self.preview.set_target(pane_id)
         text = _get_tmux_scrollback(pane_id)
+        self._last_preview_text = text
         if text is not None:
             html = _ansi_to_html(text)
             self.preview.setHtml(html)
@@ -2314,6 +2327,53 @@ class TmuxSelectionDialog(DraggableDialog):
             sb.setValue(sb.maximum())
         else:
             self.preview.setPlainText(f"(cannot preview {pane_id})")
+
+    def _poll_preview_loop(self):
+        """Background thread: poll for tmux pane changes."""
+        while not self._poll_stop.wait(0.25):  # Poll every 250ms
+            pane_id = self._hover_pane_id or self._selected_pane_id
+            if not pane_id:
+                continue
+            text = _get_tmux_scrollback(pane_id)
+            if text != self._last_preview_text:
+                self._last_preview_text = text
+                if text is not None:
+                    html = _ansi_to_html(text)
+                    self._preview_changed.emit(pane_id, html)
+
+    def _on_preview_changed(self, pane_id, html):
+        """Slot: update preview from background thread (runs on main thread)."""
+        current_pane = self._hover_pane_id or self._selected_pane_id
+        if pane_id != current_pane:
+            return  # Pane changed since signal was emitted
+        self.preview.setHtml(html)
+        sb = self.preview.verticalScrollBar()
+        sb.setValue(sb.maximum())
+
+    def _start_polling(self):
+        """Start the background preview polling thread."""
+        if self._poll_thread is not None:
+            return
+        self._poll_stop.clear()
+        self._poll_thread = threading.Thread(target=self._poll_preview_loop, daemon=True)
+        self._poll_thread.start()
+
+    def _stop_polling(self):
+        """Stop the background preview polling thread."""
+        self._poll_stop.set()
+        if self._poll_thread is not None:
+            self._poll_thread.join(timeout=0.5)
+            self._poll_thread = None
+
+    def showEvent(self, event):
+        """Start polling when dialog is shown."""
+        super().showEvent(event)
+        self._start_polling()
+
+    def hideEvent(self, event):
+        """Stop polling when dialog is hidden."""
+        self._stop_polling()
+        super().hideEvent(event)
 
     def _accept_selection(self):
         """Accept and save."""

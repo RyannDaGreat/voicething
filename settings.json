@@ -22,7 +22,7 @@
     "use_tmux_phrases": true
   },
   "TMUX_MODE": true,
-  "TMUX_TARGET": "%2",
+  "TMUX_TARGET": "%11",
   "TMUX_PANE_NAMES": {
     "%2": {
       "phrase": "paper"
@@ -75,10 +75,14 @@
       "height": 460
     },
     "tmux_selection": {
-      "x": 188,
-      "y": 195,
+      "x": 36,
+      "y": 206,
       "width": 1017,
-      "height": 739
+      "height": 739,
+      "splitter": [
+        588,
+        392
+      ]
     }
   }
 }
