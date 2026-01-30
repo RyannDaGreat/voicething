@@ -2298,15 +2298,6 @@ class TmuxSelectionDialog(DraggableDialog):
         set_tooltip(self.ansi_btn, "A  Toggle ANSI color rendering")
         btn_row.addWidget(self.ansi_btn)
 
-        # Font size decrease (zoom out)
-        self.font_minus_btn = QPushButton("O")
-        self.font_minus_btn.setIcon(load_icon("zoom-out", ICON_COLOR_DARK))
-        self.font_minus_btn.setIconSize(QSize(16, 16))
-        self.font_minus_btn.setStyleSheet(get_btn_css())
-        self.font_minus_btn.clicked.connect(self._decrease_font_size)
-        set_tooltip(self.font_minus_btn, "O  Zoom out (decrease font size)")
-        btn_row.addWidget(self.font_minus_btn)
-
         # Font size increase (zoom in)
         self.font_plus_btn = QPushButton("I")
         self.font_plus_btn.setIcon(load_icon("zoom-in", ICON_COLOR_DARK))
@@ -2315,6 +2306,15 @@ class TmuxSelectionDialog(DraggableDialog):
         self.font_plus_btn.clicked.connect(self._increase_font_size)
         set_tooltip(self.font_plus_btn, "I  Zoom in (increase font size)")
         btn_row.addWidget(self.font_plus_btn)
+
+        # Font size decrease (zoom out)
+        self.font_minus_btn = QPushButton("O")
+        self.font_minus_btn.setIcon(load_icon("zoom-out", ICON_COLOR_DARK))
+        self.font_minus_btn.setIconSize(QSize(16, 16))
+        self.font_minus_btn.setStyleSheet(get_btn_css())
+        self.font_minus_btn.clicked.connect(self._decrease_font_size)
+        set_tooltip(self.font_minus_btn, "O  Zoom out (decrease font size)")
+        btn_row.addWidget(self.font_minus_btn)
 
         btn_row.addStretch()
         cancel_btn = QPushButton("Esc  Cancel")
