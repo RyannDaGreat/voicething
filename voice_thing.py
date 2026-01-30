@@ -2494,15 +2494,13 @@ class TmuxSelectionDialog(DraggableDialog):
         self.preview_label.setText(f"Preview: {pane_id}")
         self.preview.set_target(pane_id)
 
-        # Display cached HTML instantly, or loading placeholder
+        # Display cached HTML instantly if available (don't show loading - poll will update shortly)
         cached_html = _pane_html_cache.get(pane_id)
         if cached_html:
             self._last_preview_html = cached_html
             self.preview.setHtml(cached_html)
             sb = self.preview.verticalScrollBar()
             sb.setValue(sb.maximum())
-        else:
-            self.preview.setPlainText(f"(loading {pane_id}...)")
 
     def _poll_thread_func(self):
         """Background thread: run persistent bash loop that outputs pane content."""
@@ -2715,11 +2713,9 @@ done
         self._update_preview_style()
 
     def _on_ansi_toggle(self, checked=None):
-        """Toggle ANSI color rendering and invalidate cache to force refresh."""
-        global _pane_html_cache
+        """Toggle ANSI color rendering (poll thread will re-render shortly)."""
         self._ansi_colors_enabled = self.ansi_btn.isChecked()
         S.set('TMUX_PREVIEW_ANSI_COLORS', self._ansi_colors_enabled)
-        _pane_html_cache.clear()
 
     def _increase_font_size(self):
         """Increase preview font size."""
