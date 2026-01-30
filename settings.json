@@ -1,19 +1,25 @@
 {
   "ENTER_DELAY": 0.3,
-  "WAKE_WORD_SENSITIVITY": 0.19,
   "CUSTOM_WORDS": "Claude Haiku Mohib tmux Glados foxtrot glooblybop",
   "AUTO_HIDE": false,
   "SOUND_ENABLED": true,
   "LLM_ENABLED": false,
   "AUTO_ENTER": true,
-  "WAKE_WORD_ENABLED": true,
+  "WAKE_WORD_ENABLED": false,
   "SIMPLE_MODE": false,
   "PET_TYPES": [
     "emmy"
   ],
   "WHISPER_MODEL": "large-v3",
-  "THEME": "cyberpunk_metal",
-  "WAKE_WORD_MODEL": "jarvis",
+  "THEME": "macos_2005",
+  "WAKEWORD_ENGINE": "openwakeword",
+  "WAKEWORD_OPENWAKEWORD": {
+    "model": "jarvis",
+    "sensitivity": 0.2
+  },
+  "WAKEWORD_MACOS": {
+    "phrases": "nixy"
+  },
   "TMUX_MODE": true,
   "TMUX_TARGET": "%2",
   "TMUX_PANE_NAMES": {
@@ -48,7 +54,7 @@
   },
   "TTS_SUPERTONIC": {
     "voice": "F4",
-    "speed": 1.1,
+    "speed": 1.0,
     "volume": 1.0,
     "steps": 5
   },

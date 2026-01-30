@@ -73,7 +73,6 @@ APP_NAME = "VoiceThing"
 _VOICETHING_DIR       = os.path.dirname(__file__)
 SETTINGS_FILE         = os.path.join(_VOICETHING_DIR, "settings.json")
 ASSETS_DIR            = os.path.join(_VOICETHING_DIR, "assets")
-WAKE_WORD_CACHE_DIR   = os.path.join(_VOICETHING_DIR, ".wake_word_cache")
 DEFAULT_RECORDINGS_DIR = os.path.join(tempfile.gettempdir(), APP_NAME)
 
 # Audio settings
@@ -259,158 +258,15 @@ CHIME_THEMES = {
     },
 }
 
-# Wake word detection constants
-WAKE_WORD_BUFFER_SECONDS = 2  # Seconds of audio to capture before wake word
-WAKE_WORD_FRAME_SAMPLES = 1280  # 80ms chunks for OpenWakeWord (16kHz * 0.08)
-WAKE_WORD_COOLDOWN = 2.0  # Seconds to ignore wake word after triggering
-
-# Built-in openWakeWord models (no download needed, use name directly)
-BUILTIN_WAKE_WORDS = ["alexa", "hey_mycroft", "hey_jarvis", "hey_rhasspy"]
-
-# Community wake word models - download with download_community_wake_word()
-# From home-assistant-wakewords-collection (cloned): https://github.com/RyannDaGreat/home-assistant-wakewords-collection
-# Format: {name: path} - most use v2 if available
-_COMMUNITY_WAKE_WORD_BASE = "https://raw.githubusercontent.com/RyannDaGreat/home-assistant-wakewords-collection/main/en"
-COMMUNITY_WAKE_WORDS = {
-    # A
-    "ae_ttuddae": "ae-ttuddae/ae-ttuddae.onnx",
-    "alfred": "alfred/alfred.onnx",
-    "alice": "Alice/Alice.onnx",
-    "andromeda": "andromeda/andromeda.onnx",
-    # B
-    "barclay": "barclay/Barclay.onnx",
-    "bartolo": "bartolo/Bartolo.onnx",
-    # C
-    "choo_choo_homie": "choo_choo_homie/choo_choo_homie.onnx",
-    "computer": "computer/computer_v2.onnx",
-    # D
-    "darth_vader": "darth_vader/Darth_Vader.onnx",
-    "do_you_read_me_hal": "do_you_read_me__hal/do_you_read_me__hal.onnx",
-    "dumbledore": "Dumbledore/Dumbledore.onnx",
-    # E
-    "edna": "edna/edna.onnx",
-    "em_oi": "em__oi/em__oi.onnx",
-    # G
-    "glados": "glados/glados.onnx",
-    # H
-    "hal": "hal/hal_v2.onnx",
-    "hey_hal": "hey__hal/hey__hal.onnx",
-    "hey_alba": "hey_alba/hey_alba.onnx",
-    "hey_anna": "hey_anna/hey_anna.onnx",
-    "hey_barabas": "hey_barabas/hey_barabas.onnx",
-    "hey_billy": "hey_billy/hey_billy.onnx",
-    "hey_chatterbox": "hey_chatterbox/hey_chatterbox.onnx",
-    "hey_chewbacca": "hey_chewbacca/Hey_Chewbacca.onnx",
-    "hey_cj": "hey_cj/Hey_CJ.onnx",
-    "hey_dick_head": "hey_dick_head/hey_dick_head.onnx",
-    "hey_esp": "hey_esp/hey_esp.onnx",
-    "hey_frenck": "hey_frenck/hey_frenck.onnx",
-    "hey_friday": "hey_friday/hey_Friday!.onnx",
-    "hey_gerty": "hey_GERTY/hey_GERTY.onnx",
-    "hey_guillermo": "hey_guillermo/hey_guillermo.onnx",
-    "hey_home_free": "hey_home_free/hey_home_free.onnx",
-    "hey_homer": "hey_homer/Hey_Homer.onnx",
-    "hey_honey": "hey_honey/Hey_Honey.onnx",
-    "hey_house": "hey_house/hey_house.onnx",
-    "hey_kitt": "hey_kitt/hey_kitt.onnx",
-    "hey_konstantin": "hey_konstantin/hey_konstantin.onnx",
-    "hey_kratos": "hey_kratos/Hey_Kreitos.onnx",
-    "hey_lara": "Hey Lara/lara.onnx",
-    "hey_lisa": "hey_lisa/hey_lisa.onnx",
-    "hey_luna": "Hey Luna/hey_luna.onnx",
-    "hey_marvin": "hey_Marvin/hey_Marvin.onnx",
-    "hey_mcqueen": "hey_mcqueen/Hey_McQueen.onnx",
-    "hey_megan": "hey_megan/hey_megan.onnx",
-    "hey_miriel": "hey_miriel/hey_miriel.onnx",
-    "hey_nabu": "hey_nabu/hey_nabu_v2.onnx",
-    "hey_ozzy": "hey_ozzy/hey_ozzy.onnx",
-    "hey_potato": "hey_potato/hey_potato.onnx",
-    "hey_rick": "hey_rick/hey_rick.onnx",
-    "hey_santa": "hey_santa/hey_santa.onnx",
-    "hey_skelly": "hey_skelly/Hey_Skelly.onnx",
-    "hey_snips": "hey_snips/hey_snips.onnx",
-    "hey_spock": "hey_spock/hey_spock.onnx",
-    "hey_wire_tap": "hey_wire_tap/hey_wire_tap.onnx",
-    "hey_zelda": "hey_zelda/hey_zelda.onnx",
-    "hi_xiaowen": "hi_xiaowen/hi_xiaowen_v2.onnx",
-    "hola_casita": "hola_casita/Hola_casita.onnx",
-    "home_assistant": "home_assistant/Home_assistant.onnx",
-    # J
-    "janet": "janet/Janet.onnx",
-    "jarvis": "jarvis/jarvis_v2.onnx",
-    "johnny_five": "johnny_five/johnny_five.onnx",
-    "jupiter": "jupiter/jupiter-50-50-700.onnx",
-    # K
-    "kelsey": "kelsey/kelsey.onnx",
-    # L
-    "lisa": "lisa/Lisa.onnx",
-    # M
-    "marvin": "marvin/marvin_v2.onnx",
-    "mirror_mirror_on_the_wall": "mirror_mirror_on_the_wall/mirror_mirror_on_the_wall.onnx",
-    "mr_anderson": "mr_anderson/Mr._Anderson.onnx",
-    "mr_smith": "mr_smith/mr_smith.onnx",
-    "mr_wick": "mr_wick/Mr._Wick.onnx",
-    # N
-    "nihao_mia": "nihao_mia/nihao_mia_v2.onnx",
-    "nihao_wenwen": "nihao_wenwen/nihao_wenwen.onnx",
-    # O
-    "oi_fuckwhit": "oi_fuckwhit/oi_fuckwhit_v2.onnx",
-    "ok_bender": "ok_bender/ok_bender.onnx",
-    "ok_boss": "ok_boss/ok_boss.onnx",
-    "ok_casita": "ok_casita/ok_casita.onnx",
-    "ok_computer": "ok_computer/ok_computer.onnx",
-    "ok_home": "ok_home/ok_home.onnx",
-    "ok_jarvis": "ok_jarvis/ok_jarvis.onnx",
-    "ok_nabu": "ok_nabu/ok_nabu.onnx",
-    "ok_neo": "ok_neo/ok_neo.onnx",
-    "ok_paulus": "ok_paulus/ok_paulus.onnx",
-    "ok_tau": "ok_tau/ok_tau.onnx",
-    "ok_trevor": "ok_trevor/ok_trevor.onnx",
-    "ok_wire_tap": "ok_wire_tap/ok_wire_tap.onnx",
-    # P
-    "pandora": "pandora/Pandora.onnx",
-    "polly": "polly/polly.onnx",
-    # Q
-    "queen_of_lights": "Queen_of_lights/Queen_of_lights.onnx",
-    # R
-    "r2d2": "r2d2/r2d2.onnx",
-    "ronaldo": "ronaldo/Ronaldo.onnx",
-    "rubber_duck": "rubber_duck/rubber_duck.onnx",
-    # S
-    "santana": "santana/Santana.onnx",
-    "scarlett": "scarlett/Scarlett.onnx",
-    "scooby": "scooby/Scooby.onnx",
-    "sheila": "sheila/sheila_v2.onnx",
-    "skynet": "skynet/Skynet.onnx",
-    # T
-    "tars": "TARS/TARS.onnx",
-    "terminator": "terminator/Terminator.onnx",
-    # U
-    "ultra_house": "ultra_house/ultra_house.onnx",
-    # V
-    "veronica": "veronica/veronica.onnx",
-    # W
-    "wall_e": "wall-e/wall-e.onnx",
-    "wheatley": "wheatley/wheatley.onnx",
-    "winston": "winston/Winston.onnx",
-    # Y
-    "yo_bitch": "yo_bitch/yo_bitch.onnx",
-    "yo_homie": "yo_homie/yo_homie.onnx",
-}
-
-# Popular/well-known wake words to show at top of dropdown (in order)
-FEATURED_WAKE_WORDS = [
-    "alexa",          # Built-in (Amazon style)
-    "computer",       # Star Trek classic (community)
-    "jarvis",         # Iron Man (community)
-    "hey_jarvis",     # Built-in
-    "hey_friday",     # Iron Man (community)
-    "glados",         # Portal (community)
-    "hal",            # 2001: A Space Odyssey (community)
-    "tars",           # Interstellar (community)
-    "hey_marvin",     # Hitchhiker's Guide (community)
-    "terminator",     # Classic (community)
-]
+# Wake word detection - import from wakeword module
+from wakeword import (
+    get_models_ordered as get_wake_words_ordered,
+    get_model_display_name as get_wake_word_display,
+    get_all_normalized as get_all_wake_words_normalized,
+    COMMUNITY_MODELS as COMMUNITY_WAKE_WORDS,
+    BUILTIN_MODELS as BUILTIN_WAKE_WORDS,
+    ALTERNATES as WAKE_WORD_ALTERNATES,
+)
 
 class TeeOutput:
     """Captures stdout/stderr including C output via fd redirection."""
@@ -438,47 +294,6 @@ class TeeOutput:
     def text(self):
         return ''.join(self._buf)
 
-def get_wake_words_ordered():
-    """Get all wake words with featured ones first, then rest alphabetically."""
-    all_words = set(COMMUNITY_WAKE_WORDS.keys()) | set(BUILTIN_WAKE_WORDS)
-    featured = [w for w in FEATURED_WAKE_WORDS if w in all_words]
-    rest = sorted(w for w in all_words if w not in featured)
-    return featured + rest
-
-def get_wake_word_display(name):
-    """Get display name for a wake word model (e.g. 'hey_marvin' -> 'Hey Marvin')."""
-    return name.replace("_", " ").title()
-
-# Alternate transcriptions Whisper produces for wake words (normalized, lowercase)
-# Maps alternate spellings to the canonical wake word name
-WAKE_WORD_ALTERNATES = {
-    "wally": "wall_e",      # Wall-E often transcribed as Wally
-    "wall e": "wall_e",     # With space
-    "walle": "wall_e",      # No space
-}
-
-def get_all_wake_words_normalized():
-    """Get set of all wake words in normalized form for blacklist matching."""
-    result = set()
-    for name in COMMUNITY_WAKE_WORDS:
-        # Normalize: lowercase, spaces instead of underscores
-        normalized = name.replace("_", " ").lower()
-        result.add(normalized)
-    for name in BUILTIN_WAKE_WORDS:
-        normalized = name.replace("_", " ").lower()
-        result.add(normalized)
-    # Add alternate transcriptions
-    result.update(WAKE_WORD_ALTERNATES.keys())
-    return result
-
-def download_community_wake_word(name):
-    """Download a community wake word model. Returns path to downloaded .onnx file."""
-    if name not in COMMUNITY_WAKE_WORDS:
-        raise ValueError(f"Unknown community wake word: {name}. Options: {list(COMMUNITY_WAKE_WORDS.keys())}")
-    url = f"{_COMMUNITY_WAKE_WORD_BASE}/{COMMUNITY_WAKE_WORDS[name]}"
-    os.makedirs(WAKE_WORD_CACHE_DIR, exist_ok=True)
-    return rp.download_url(url, WAKE_WORD_CACHE_DIR, skip_existing=True, show_progress=True)
-
 # =============================================================================
 # SETTINGS - use S.ENTER_DELAY to read, S.set('ENTER_DELAY', val) to write
 # =============================================================================
@@ -500,7 +315,6 @@ class Settings(dict):
 
 DEFAULTS = dict(
     ENTER_DELAY=0.1,
-    WAKE_WORD_SENSITIVITY=0.2,
     CUSTOM_WORDS="",
     AUTO_HIDE=False,
     SOUND_ENABLED=True,
@@ -511,7 +325,10 @@ DEFAULTS = dict(
     PET_TYPES=[],
     WHISPER_MODEL='base',
     THEME='macos_2005',
-    WAKE_WORD_MODEL='computer',
+    # Wake word engine selection and per-engine settings
+    WAKEWORD_ENGINE='openwakeword',  # 'openwakeword' or 'macos'
+    WAKEWORD_OPENWAKEWORD={'model': 'computer', 'sensitivity': 0.2},
+    WAKEWORD_MACOS={'phrases': 'hey computer, computer, start recording'},
     TMUX_MODE=False,
     TMUX_TARGET='%',  # Tmux pane target (% = current pane)
     TMUX_PANE_NAMES={},  # pane_id -> {phrase: str}
@@ -793,7 +610,7 @@ PERMISSION_ERROR_MSG = (
 )
 
 # Whisper hallucinations when given silence/noise - normalized (lowercase, no punctuation)
-BLACKLISTED_TRANSCRIPTIONS = {"thank you", "blank audio",'music'}
+BLACKLISTED_TRANSCRIPTIONS = {"thank you", "blank audio", "music", "you"}
 
 def _normalize_text(text):
     """Normalize text for comparison: lowercase, non-alphanumeric to spaces, collapse whitespace.
@@ -1579,8 +1396,8 @@ class HelpDialog(DraggableDialog):
             "• Access from menu bar (top right of Mac)\n"
             "• Drag & drop audio files to transcribe\n"
             "• ⌘Q to quit\n\n"
-            f"Wake word (J): Say \"{S.WAKE_WORD_MODEL}\" to start recording hands-free! "
-            f"Say \"{S.WAKE_WORD_MODEL}\" again to stop recording.\n\n"
+            f"Wake word (J): Say the wake word to start recording hands-free! "
+            f"Say it again to stop recording.\n\n"
             "Tmux mode (U): Paste directly into your active tmux pane instead of ⌘V.\n\n"
             "100% keyboard-driven - no mouse needed! (hover buttons to see shortcuts)\n\n"
             "Small mode (E or green button): Compact view with just status and timer - "
@@ -2502,6 +2319,189 @@ class TTSSettingsWidget(QWidget):
         play_chime('copy')
 
 
+class WakeWordSettingsWidget(QWidget):
+    """Wake word settings with per-engine configuration."""
+
+    # Engine changed signal (for parent to respond)
+    engine_changed = pyqtSignal(str)
+    settings_changed = pyqtSignal()  # Generic signal when any setting changes
+
+    # Engine options
+    ENGINES = [
+        ('openwakeword', 'OpenWakeWord'),
+        ('macos', 'macOS Native'),
+    ]
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._layout = QVBoxLayout(self)
+        self._layout.setContentsMargins(0, 0, 0, 0)
+        self._layout.setSpacing(4)
+        self._build_ui()
+
+    def _build_ui(self):
+        self._layout.addWidget(make_section("Wake Word"))
+
+        # Engine selector
+        engine_row = QHBoxLayout()
+        engine_row.setSpacing(8)
+        engine_label = QLabel("Engine:")
+        engine_label.setStyleSheet(get_pref_label_css())
+        set_tooltip(engine_label,
+            "Wake word detection engine:\n\n"
+            "OpenWakeWord = ML-based, select from pre-trained models\n"
+            "macOS Native = Apple's built-in recognition, custom phrases")
+        engine_row.addWidget(engine_label)
+        self._engine_combo = QComboBox()
+        self._engine_combo.setStyleSheet(get_combobox_css())
+        for value, label in self.ENGINES:
+            self._engine_combo.addItem(label, value)
+        idx = [e for e, _ in self.ENGINES].index(S.WAKEWORD_ENGINE) if S.WAKEWORD_ENGINE in [e for e, _ in self.ENGINES] else 0
+        self._engine_combo.setCurrentIndex(idx)
+        self._engine_combo.currentIndexChanged.connect(self._on_engine_changed)
+        engine_row.addWidget(self._engine_combo, 1)
+        self._layout.addLayout(engine_row)
+
+        # === OpenWakeWord settings ===
+        self._oww_container = QWidget()
+        oww_layout = QVBoxLayout(self._oww_container)
+        oww_layout.setContentsMargins(0, 4, 0, 0)
+        oww_layout.setSpacing(4)
+
+        # Model dropdown
+        model_row = QHBoxLayout()
+        model_row.setSpacing(8)
+        model_label = QLabel("Model:")
+        model_label.setStyleSheet(get_pref_label_css())
+        set_tooltip(model_label, "The phrase to say to activate voice recording")
+        model_row.addWidget(model_label)
+        self._model_combo = QComboBox()
+        self._model_combo.setStyleSheet(get_combobox_css())
+        wake_word_options = get_wake_words_ordered()
+        for ww in wake_word_options:
+            self._model_combo.addItem(get_wake_word_display(ww), ww)
+        current_model = S.WAKEWORD_OPENWAKEWORD.get('model', 'computer')
+        idx = wake_word_options.index(current_model) if current_model in wake_word_options else 0
+        self._model_combo.setCurrentIndex(idx)
+        make_combobox_searchable(self._model_combo)
+        self._model_combo.currentIndexChanged.connect(self._on_model_changed)
+        model_row.addWidget(self._model_combo, 1)
+        oww_layout.addLayout(model_row)
+
+        # Sensitivity slider
+        sens_row = QHBoxLayout()
+        sens_row.setSpacing(8)
+        sens_label = QLabel("Sensitivity:")
+        sens_label.setStyleSheet(get_pref_label_css())
+        set_tooltip(sens_label,
+            "Wake word detection threshold (0.0-1.0).\n\n"
+            "LOWER = more sensitive, triggers easily (may false trigger)\n"
+            "HIGHER = less sensitive, needs clearer speech (may miss words)\n\n"
+            "Try 0.1-0.2 for noisy environments, 0.3-0.5 for quiet rooms.")
+        sens_row.addWidget(sens_label)
+        self._sens_slider = QSlider(Qt.Orientation.Horizontal)
+        self._sens_slider.setRange(1, 100)
+        current_sens = S.WAKEWORD_OPENWAKEWORD.get('sensitivity', 0.2)
+        self._sens_slider.setValue(int(current_sens * 100))
+        self._sens_slider.setStyleSheet(get_slider_css())
+        self._sens_slider.valueChanged.connect(self._on_sensitivity_changed)
+        sens_row.addWidget(self._sens_slider, 1)
+        self._sens_value = QLabel(f"{current_sens:.2f}")
+        self._sens_value.setStyleSheet(get_pref_label_css() + " min-width: 35px;")
+        sens_row.addWidget(self._sens_value)
+        oww_layout.addLayout(sens_row)
+
+        self._layout.addWidget(self._oww_container)
+
+        # === macOS Native settings ===
+        self._macos_container = QWidget()
+        macos_layout = QVBoxLayout(self._macos_container)
+        macos_layout.setContentsMargins(0, 4, 0, 0)
+        macos_layout.setSpacing(4)
+
+        # Phrases text input
+        phrases_row = QHBoxLayout()
+        phrases_row.setSpacing(8)
+        phrases_label = QLabel("Phrases:")
+        phrases_label.setStyleSheet(get_pref_label_css())
+        set_tooltip(phrases_label,
+            "Comma-separated list of phrases to listen for.\n\n"
+            "Example: hey computer, computer, start recording\n\n"
+            "Works offline using Apple's built-in speech recognition.")
+        phrases_row.addWidget(phrases_label)
+        self._phrases_edit = QLineEdit()
+        self._phrases_edit.setStyleSheet(get_combobox_css())  # Reuse style
+        self._phrases_edit.setPlaceholderText("hey computer, computer, start")
+        current_phrases = S.WAKEWORD_MACOS.get('phrases', 'hey computer, computer')
+        self._phrases_edit.setText(current_phrases)
+        self._phrases_edit.editingFinished.connect(self._on_phrases_changed)
+        phrases_row.addWidget(self._phrases_edit, 1)
+        macos_layout.addLayout(phrases_row)
+
+        # Info label
+        info_label = QLabel("Phrases are detected offline via macOS Speech Recognition.")
+        info_label.setStyleSheet(get_pref_label_css() + f" color: {TEXT_MUTED};")
+        info_label.setWordWrap(True)
+        macos_layout.addWidget(info_label)
+
+        self._layout.addWidget(self._macos_container)
+
+        # Initialize visibility
+        self._update_for_engine()
+
+    def _get_engine(self):
+        return self._engine_combo.currentData()
+
+    def _update_for_engine(self):
+        """Show/hide controls based on selected engine."""
+        engine = self._get_engine()
+        self._oww_container.setVisible(engine == 'openwakeword')
+        self._macos_container.setVisible(engine == 'macos')
+
+    def _on_engine_changed(self, index):
+        engine = self._engine_combo.itemData(index)
+        S.set('WAKEWORD_ENGINE', engine)
+        self._update_for_engine()
+        self.engine_changed.emit(engine)
+        self.settings_changed.emit()
+
+    def _on_model_changed(self, index):
+        if index < 0:
+            return
+        model = self._model_combo.itemData(index)
+        cfg = S.WAKEWORD_OPENWAKEWORD.copy()
+        cfg['model'] = model
+        S.set('WAKEWORD_OPENWAKEWORD', cfg)
+        self.settings_changed.emit()
+
+    def _on_sensitivity_changed(self, value):
+        sens = value / 100.0
+        cfg = S.WAKEWORD_OPENWAKEWORD.copy()
+        cfg['sensitivity'] = sens
+        S.set('WAKEWORD_OPENWAKEWORD', cfg)
+        self._sens_value.setText(f"{sens:.2f}")
+        self.settings_changed.emit()
+
+    def _on_phrases_changed(self):
+        phrases = self._phrases_edit.text().strip()
+        cfg = S.WAKEWORD_MACOS.copy()
+        cfg['phrases'] = phrases
+        S.set('WAKEWORD_MACOS', cfg)
+        self.settings_changed.emit()
+
+    def get_current_display_name(self) -> str:
+        """Get display name for current wake word (for tooltip etc)."""
+        engine = self._get_engine()
+        if engine == 'openwakeword':
+            model = S.WAKEWORD_OPENWAKEWORD.get('model', 'computer')
+            return get_wake_word_display(model)
+        else:
+            phrases = S.WAKEWORD_MACOS.get('phrases', 'hey computer')
+            # Return first phrase
+            first = phrases.split(',')[0].strip() if phrases else 'hey computer'
+            return first
+
+
 class PrefsDialog(DraggableDialog):
     """Preferences dialog with theme, wake word settings, and pet selection.
 
@@ -2512,12 +2512,10 @@ class PrefsDialog(DraggableDialog):
     style_changed = pyqtSignal(str)  # Emits style name when changed
     pets_changed = pyqtSignal(list)  # Emits list of PetType when changed
     simple_mode_changed = pyqtSignal(bool)  # Emits when simple mode toggled
-    wake_word_changed = pyqtSignal(str)  # Emits wake word model name
-    sensitivity_changed = pyqtSignal(float)  # Emits sensitivity threshold
+    wake_word_changed = pyqtSignal(str)  # Emits wake word engine/settings change
     auto_enter_changed = pyqtSignal(bool)  # Emits auto enter flag
 
     def __init__(self, current_style, current_pet_types, simple_mode=False, parent=None,
-                 wake_word=None, wake_word_sensitivity=None,
                  auto_enter=None):
         super().__init__(parent)
         # Register note callback for piano visualization
@@ -2527,8 +2525,9 @@ class PrefsDialog(DraggableDialog):
         # Store ORIGINAL values for Cancel revert
         self.original_style = current_style
         self.original_pets = list(current_pet_types) if current_pet_types else []
-        self.original_wake_word = wake_word or S.WAKE_WORD_MODEL
-        self.original_sensitivity = wake_word_sensitivity if wake_word_sensitivity is not None else S.WAKE_WORD_SENSITIVITY
+        self.original_wakeword_engine = S.WAKEWORD_ENGINE
+        self.original_wakeword_oww = S.WAKEWORD_OPENWAKEWORD.copy()
+        self.original_wakeword_macos = S.WAKEWORD_MACOS.copy()
         self.original_auto_enter = auto_enter if auto_enter is not None else S.AUTO_ENTER
 
         # Current values (start same as original)
@@ -2536,7 +2535,6 @@ class PrefsDialog(DraggableDialog):
         self.selected_pets = list(self.original_pets)
         self.pet_checkboxes = {}
         self._style_buttons = {}  # Map button -> style_name
-        self.selected_wake_word = self.original_wake_word
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(15, 15, 15, 15)
@@ -2738,48 +2736,11 @@ class PrefsDialog(DraggableDialog):
         settings_box = QVBoxLayout()
         settings_box.setSpacing(10)
 
-        # Wake Word section
-        settings_box.addWidget(make_section("Wake Word"))
-
-        # Wake word model dropdown
-        ww_row = QHBoxLayout()
-        ww_row.setSpacing(8)
-        ww_label = QLabel("Model:")
-        ww_label.setStyleSheet(get_pref_label_css())
-        set_tooltip(ww_label, "The phrase to say to activate voice recording")
-        ww_row.addWidget(ww_label)
-        self.wake_word_combo = QComboBox()
-        self.wake_word_combo.setStyleSheet(get_combobox_css())
-        wake_word_options = get_wake_words_ordered()
-        for ww in wake_word_options:
-            self.wake_word_combo.addItem(get_wake_word_display(ww), ww)
-        idx = wake_word_options.index(S.WAKE_WORD_MODEL) if S.WAKE_WORD_MODEL in wake_word_options else 0
-        self.wake_word_combo.setCurrentIndex(idx)
-        make_combobox_searchable(self.wake_word_combo)  # Enable search/filter
-        self.wake_word_combo.currentIndexChanged.connect(self._on_wake_word_changed)
-        ww_row.addWidget(self.wake_word_combo, 1)
-        settings_box.addLayout(ww_row)
-
-        # Sensitivity slider (0.0 to 1.0, lower = more sensitive)
-        sens_row = QHBoxLayout()
-        sens_row.setSpacing(8)
-        sens_label = QLabel("Sensitivity:")
-        sens_label.setStyleSheet(get_pref_label_css())
-        set_tooltip(sens_label, "Wake word detection threshold (0.0-1.0).\n\n"
-                                "LOWER = more sensitive, triggers easily (may false trigger)\n"
-                                "HIGHER = less sensitive, needs clearer speech (may miss words)\n\n"
-                                "Try 0.1-0.2 for noisy environments, 0.3-0.5 for quiet rooms.")
-        sens_row.addWidget(sens_label)
-        self.sens_slider = QSlider(Qt.Orientation.Horizontal)
-        self.sens_slider.setRange(1, 100)  # 0.01 to 1.00 (no zero - would trigger constantly)
-        self.sens_slider.setValue(int(S.WAKE_WORD_SENSITIVITY * 100))
-        self.sens_slider.setStyleSheet(get_slider_css())
-        self.sens_slider.valueChanged.connect(self._on_sensitivity_changed)
-        sens_row.addWidget(self.sens_slider, 1)
-        self.sens_value = QLabel(f"{S.WAKE_WORD_SENSITIVITY:.2f}")
-        self.sens_value.setStyleSheet(get_pref_label_css() + " min-width: 35px;")
-        sens_row.addWidget(self.sens_value)
-        settings_box.addLayout(sens_row)
+        # Wake Word settings widget
+        self.wake_word_widget = WakeWordSettingsWidget()
+        self.wake_word_widget.engine_changed.connect(self._on_wake_word_engine_changed)
+        self.wake_word_widget.settings_changed.connect(self._on_wake_word_settings_changed)
+        settings_box.addWidget(self.wake_word_widget)
 
         # Paste Behavior section (separate from wake word)
         settings_box.addWidget(make_section("Paste Behavior"))
@@ -3144,14 +3105,14 @@ class PrefsDialog(DraggableDialog):
                 self.selected_pets.remove(pet_type)
         self.pets_changed.emit(list(self.selected_pets))  # Apply immediately
 
-    def _on_wake_word_changed(self, index):
-        self.selected_wake_word = self.wake_word_combo.itemData(index)
-        self.wake_word_changed.emit(self.selected_wake_word)  # Apply immediately
+    def _on_wake_word_engine_changed(self, engine):
+        """Handle wake word engine change - restart listener if active."""
+        self.wake_word_changed.emit(engine)
 
-    def _on_sensitivity_changed(self, value):
-        S.WAKE_WORD_SENSITIVITY = value / 100.0
-        self.sens_value.setText(f"{S.WAKE_WORD_SENSITIVITY:.2f}")
-        self.sensitivity_changed.emit(S.WAKE_WORD_SENSITIVITY)  # Apply immediately
+    def _on_wake_word_settings_changed(self):
+        """Handle any wake word setting change - restart listener if active."""
+        # Emit the engine change signal to trigger restart
+        self.wake_word_changed.emit(S.WAKEWORD_ENGINE)
 
     def _on_enter_changed(self, state):
         S.set('AUTO_ENTER', state == Qt.CheckState.Checked.value)
@@ -4325,10 +4286,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         self.permission_error = False  # True if accessibility permission denied
         self._prev_app = None  # For restoring focus when toggling window
         # Non-settings instance state
-        self.wake_word_stream = None  # Always-on audio stream for wake word
-        self.wake_word_model = None  # OpenWakeWord model (lazy loaded)
-        self.wake_word_buffer = collections.deque(maxlen=SAMPLE_RATE * WAKE_WORD_BUFFER_SECONDS)
-        self.wake_word_last_trigger = 0  # Timestamp of last wake word trigger (for cooldown)
+        self.wake_word_engine = None  # Wake word engine instance (from wakeword module)
 
         self.setWindowTitle(APP_NAME)
         self._apply_window_flags(show=False)
@@ -4437,7 +4395,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         self.llm_btn.setCheckable(True)
         self.llm_btn.setEnabled(True)
         self.wake_word_btn = make_btn("J", "ear", self.toggle_wake_word)
-        self.wake_word_btn.setToolTip(f"Toggle wake word (say '{S.WAKE_WORD_MODEL}')")
+        self.wake_word_btn.setToolTip(f"Toggle wake word ({self._get_wake_word_display()})")
         self.wake_word_btn.setCheckable(True)
         self.wake_word_btn.setEnabled(True)
         self.enter_btn = make_btn("N", "enter", self.toggle_auto_enter)
@@ -4576,7 +4534,9 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         S.hooks['LLM_ENABLED'] = self._on_llm_changed
         S.hooks['AUTO_ENTER'] = self._on_auto_enter_changed
         S.hooks['WAKE_WORD_ENABLED'] = self._on_wake_word_enabled_changed
-        S.hooks['WAKE_WORD_MODEL'] = self._on_wake_word_model_changed
+        S.hooks['WAKEWORD_ENGINE'] = self._on_wake_word_settings_changed
+        S.hooks['WAKEWORD_OPENWAKEWORD'] = self._on_wake_word_settings_changed
+        S.hooks['WAKEWORD_MACOS'] = self._on_wake_word_settings_changed
         S.hooks['TMUX_MODE'] = self._on_tmux_mode_changed
         S.hooks['SIMPLE_MODE'] = self._on_simple_mode_changed
         S.hooks['ALWAYS_ON_TOP'] = self._on_always_on_top_setting_changed
@@ -5059,14 +5019,14 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         self.tray.setIcon(_get_menubar_icon())  # Reset to template icon
         play_chime('cancel')  # Minor: cancel
         # Reset wake word model to clear any buffered audio that might cause false triggers
-        if self.wake_word_model is not None:
-            self.wake_word_model.reset()
+        if self.wake_word_engine is not None:
+            self.wake_word_engine.reset()
         self.hide_signal.emit()
 
     def _get_status_text(self):
         """Get status text based on current state."""
         if self.state == "idle":
-            return f"Say '{S.WAKE_WORD_MODEL}'" if S.WAKE_WORD_ENABLED else "Double-tap ⌥"
+            return f"Say '{self._get_wake_word_display()}'" if S.WAKE_WORD_ENABLED else "Double-tap ⌥"
         elif self.state == "recording":
             return "Recording"
         elif self.state == "transcribing":
@@ -5141,13 +5101,24 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         print(f"Wake word detection {'ON' if enabled else 'OFF'}")
         self._update_status()
 
-    def _on_wake_word_model_changed(self, model):
+    def _on_wake_word_settings_changed(self, _value):
+        """Handle wake word engine or settings change - restart if active."""
         if S.WAKE_WORD_ENABLED:
             self._stop_wake_word_listener()
-            self.wake_word_model = None
             self._start_wake_word_listener()
-        self.wake_word_btn.setToolTip(f"Toggle wake word (say '{model}')")
+        self.wake_word_btn.setToolTip(f"Toggle wake word ({self._get_wake_word_display()})")
         self._update_status()
+
+    def _get_wake_word_display(self) -> str:
+        """Get display name for current wake word configuration."""
+        engine = S.WAKEWORD_ENGINE
+        if engine == 'openwakeword':
+            model = S.WAKEWORD_OPENWAKEWORD.get('model', 'computer')
+            return get_wake_word_display(model)
+        else:
+            phrases = S.WAKEWORD_MACOS.get('phrases', 'hey computer')
+            first = phrases.split(',')[0].strip() if phrases else 'hey computer'
+            return first
 
     def toggle_auto_hide(self):
         S.set('AUTO_HIDE', not S.AUTO_HIDE)
@@ -5202,99 +5173,62 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
             S.set('TMUX_TARGET', dialog.selected_target)
             self._save_settings()
 
-    def _load_wake_word_model(self):
-        """Lazy load OpenWakeWord model. Returns False if unavailable (graceful degradation)."""
-        if self.wake_word_model is not None:
-            return True
-        try:
-            from openwakeword.model import Model
-            # Built-in models use name directly, community models need download
-            if S.WAKE_WORD_MODEL in BUILTIN_WAKE_WORDS:
-                model_path = S.WAKE_WORD_MODEL  # Built-in, use name directly
-            elif S.WAKE_WORD_MODEL in COMMUNITY_WAKE_WORDS:
-                model_path = download_community_wake_word(S.WAKE_WORD_MODEL)
-            else:
-                raise ValueError(f"Unknown wake word model: {S.WAKE_WORD_MODEL}")
-            self.wake_word_model = Model(
-                wakeword_models=[model_path],
-                inference_framework='onnx'
-            )
-            print(f"Wake word model loaded: {S.WAKE_WORD_MODEL}")
-            return True
-        except Exception as e:
-            print(f"Failed to load wake word model: {e}")
-            print("Wake word detection disabled (install models with: openwakeword --download-models)")
-            return False
-
     def _start_wake_word_listener(self):
-        """Start always-on audio stream for wake word detection."""
-        if self.wake_word_stream is not None:
+        """Start wake word detection using the configured engine."""
+        if self.wake_word_engine is not None:
             return  # Already running
-        if not self._load_wake_word_model():
+
+        try:
+            from wakeword import create_engine
+            engine_name = S.WAKEWORD_ENGINE
+
+            # Get engine-specific config
+            if engine_name == 'openwakeword':
+                cfg = S.WAKEWORD_OPENWAKEWORD
+                self.wake_word_engine = create_engine(
+                    engine_name,
+                    callback=self._on_wake_word_detected,
+                    model=cfg.get('model', 'computer'),
+                    sensitivity=cfg.get('sensitivity', 0.2),
+                )
+            else:  # macos
+                cfg = S.WAKEWORD_MACOS
+                self.wake_word_engine = create_engine(
+                    engine_name,
+                    callback=self._on_wake_word_detected,
+                    phrases=cfg.get('phrases', 'hey computer, computer'),
+                )
+
+            # Set up stop callback
+            self.wake_word_engine.on_stop = lambda: self.stop_signal.emit()
+
+            self.wake_word_engine.start()
+            print(f"Wake word listener started ({self._get_wake_word_display()})")
+
+        except Exception as e:
+            print(f"Failed to start wake word listener: {e}")
             S.WAKE_WORD_ENABLED = False
-            return
-
-        self.wake_word_buffer.clear()
-
-        def wake_word_callback(indata, frames, time_info, status):
-            audio = (indata[:, 0] * 32767).astype(np.int16)
-
-            # Buffer audio for pre-roll (only when not recording)
-            if self.state not in ("recording", "starting"):
-                self.wake_word_buffer.extend(audio)
-
-            # Check for wake word
-            prediction = self.wake_word_model.predict(audio)
-            for model_name, score in prediction.items():
-                if score > S.WAKE_WORD_SENSITIVITY:
-                    # Debounce
-                    now = time.time()
-                    if now - self.wake_word_last_trigger < WAKE_WORD_COOLDOWN:
-                        break
-                    self.wake_word_last_trigger = now
-
-                    if self.state == "recording":
-                        print(f"Wake word: {model_name} ({score:.2f}) -> STOP")
-                        self.stop_signal.emit()
-                    else:
-                        print(f"Wake word: {model_name} ({score:.2f}) -> START")
-                        self._on_wake_word_detected()
-                    break
-
-        self.wake_word_stream = sd.InputStream(
-            samplerate=SAMPLE_RATE,
-            channels=1,
-            dtype=np.float32,
-            callback=wake_word_callback,
-            blocksize=WAKE_WORD_FRAME_SAMPLES,
-        )
-        self.wake_word_stream.start()
-        print(f"Wake word listener started (say '{S.WAKE_WORD_MODEL}')")
+            self.wake_word_engine = None
 
     def _stop_wake_word_listener(self):
-        """Stop the wake word audio stream."""
-        if self.wake_word_stream is not None:
-            self.wake_word_stream.stop()
-            self.wake_word_stream.close()
-            self.wake_word_stream = None
+        """Stop the wake word engine."""
+        if self.wake_word_engine is not None:
+            self.wake_word_engine.stop()
+            self.wake_word_engine = None
             print("Wake word listener stopped")
 
     def _pause_wake_word_listener(self):
         """Temporarily pause wake word listener (e.g., during recording)."""
-        if self.wake_word_stream is not None:
-            self.wake_word_stream.stop()
-            self.wake_word_stream.close()
-            self.wake_word_stream = None
+        if self.wake_word_engine is not None:
+            self.wake_word_engine.pause()
 
     def _resume_wake_word_listener(self):
         """Resume wake word listener if enabled."""
-        if S.WAKE_WORD_ENABLED and self.wake_word_stream is None:
-            # Reset model state to avoid false triggers from buffered audio
-            if self.wake_word_model is not None:
-                self.wake_word_model.reset()
-            self._start_wake_word_listener()
+        if S.WAKE_WORD_ENABLED and self.wake_word_engine is not None:
+            self.wake_word_engine.reset()
+            self.wake_word_engine.resume()
 
-    def _on_wake_word_detected(self):
+    def _on_wake_word_detected(self, pre_buffer=None):
         """Called when wake word is detected - start recording with pre-buffer."""
         # Use lock to prevent race between audio callback thread and main thread
         with self._state_lock:
@@ -5302,9 +5236,9 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
                 return
             # Immediately mark state to prevent double-trigger
             self.state = "starting"
-        # Capture the pre-buffered audio (convert int16 back to float32)
-        pre_buffer = np.array(self.wake_word_buffer, dtype=np.float32) / 32767.0
         # Use signal to call start_recording on main thread with pre_buffer
+        if pre_buffer is None:
+            pre_buffer = np.array([], dtype=np.float32)
         self.wake_word_signal.emit(pre_buffer)
 
     def show_help(self):
@@ -5340,16 +5274,13 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
             orig_style = STYLE.name
 
             dialog = PrefsDialog(STYLE.name, S.PET_TYPES, S.SIMPLE_MODE, self,
-                                 wake_word=S.WAKE_WORD_MODEL,
-                                 wake_word_sensitivity=S.WAKE_WORD_SENSITIVITY,
                                  auto_enter=S.AUTO_ENTER)
 
             # Live preview connections - all use S.set() to trigger hooks
             dialog.simple_mode_changed.connect(self._set_simple_mode)
             dialog.style_changed.connect(lambda s: self._change_style(s, save=False))
             dialog.pets_changed.connect(lambda p: S.set('PET_TYPES', list(p)))
-            dialog.wake_word_changed.connect(lambda w: S.set('WAKE_WORD_MODEL', w))
-            dialog.sensitivity_changed.connect(lambda v: setattr(S, 'WAKE_WORD_SENSITIVITY', v))
+            dialog.wake_word_changed.connect(self._on_wake_word_settings_changed)
             dialog.auto_enter_changed.connect(lambda v: S.set('AUTO_ENTER', v))
 
             dialog.center_on_parent()
@@ -5388,16 +5319,17 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
             data['PET_TYPES'] = [pet_map[v] for v in data['PET_TYPES'] if v in pet_map]
 
         # Apply settings via S.set() to trigger hooks
-        for key in ['AUTO_HIDE', 'SOUND_ENABLED', 'LLM_ENABLED', 'AUTO_ENTER', 'AUTO_COPY', 'AUTO_PASTE', 'TMUX_MODE', 'PET_TYPES', 'WAKE_WORD_MODEL', 'ALWAYS_ON_TOP']:
+        for key in ['AUTO_HIDE', 'SOUND_ENABLED', 'LLM_ENABLED', 'AUTO_ENTER', 'AUTO_COPY', 'AUTO_PASTE', 'TMUX_MODE', 'PET_TYPES', 'ALWAYS_ON_TOP']:
             if key in data:
                 S.set(key, data[key])
         # Simple settings without hooks (or with trivial hooks)
-        for key in ['ENTER_DELAY', 'WAKE_WORD_SENSITIVITY', 'CUSTOM_WORDS', 'WHISPER_MODEL',
+        for key in ['ENTER_DELAY', 'CUSTOM_WORDS', 'WHISPER_MODEL',
                     'LLM_MODEL', 'LLM_PREFIX', 'CHIME_VOLUME', 'CHIME_PITCH',
                     'CHIME_PROGRAM', 'CHIME_THEME', 'SILENCE_SKIP_ENABLED', 'SILENCE_THRESHOLD',
                     'TMUX_TARGET', 'TMUX_PANE_NAMES', 'TMUX_PHRASES_AS_CONTEXT', 'TMUX_ANNOUNCE_PANE', 'RECORDINGS_DIR',
                     'SPEAK_BACK_VOICE', 'TTS_SAY', 'TTS_SUPERTONIC', 'TTS_KITTEN',
-                    'SPEAK_BACK_APPEND_INSTRUCTION', 'SPEAK_BACK_TMUX_ONLY', 'SPEAK_BACK_INSTRUCTION_TEMPLATE']:
+                    'SPEAK_BACK_APPEND_INSTRUCTION', 'SPEAK_BACK_TMUX_ONLY', 'SPEAK_BACK_INSTRUCTION_TEMPLATE',
+                    'WAKEWORD_ENGINE', 'WAKEWORD_OPENWAKEWORD', 'WAKEWORD_MACOS']:
             if key in data:
                 S[key] = data[key]
         # SIMPLE_MODE needs toggle pattern (handle both on->off and off->on)
@@ -5546,7 +5478,9 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
 
     def start_recording(self, pre_buffer=None):
         """Start recording audio. Optional pre_buffer is prepended to recording."""
-        # Note: We keep wake word listener running so user can say the wake word again to stop
+        # Pause wake word listener - it will track _is_recording state so saying
+        # the wake word again triggers on_stop instead of on_wake
+        self._pause_wake_word_listener()
 
         self.audio_chunks = []
         if pre_buffer is not None and len(pre_buffer) > 0:
@@ -5682,9 +5616,8 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         self._cleanup()
         self.pet_container.set_processing(False)  # Emmy: stop record spin
         self._set_state("idle")
-        # Reset wake word model to clear any buffered audio that might cause false triggers
-        if self.wake_word_model is not None:
-            self.wake_word_model.reset()
+        # Resume wake word listener (resets _is_recording flag)
+        self._resume_wake_word_listener()
         self.hide_signal.emit()
 
 
