@@ -2208,11 +2208,19 @@ class TmuxSelectionDialog(DraggableDialog):
         self.maximize_btn.clicked.connect(self._toggle_maximize)
         title_row.addWidget(self.maximize_btn)
 
+        # True fullscreen button (blue) - with floating main window
+        self._main_window = None
+        self._is_true_fullscreen = False
+        self.fullscreen_btn = TrafficLightButton("rgb(0, 122, 255)", "rgb(50, 150, 255)", "macos-fullscreen")
+        self.fullscreen_btn.setToolTip("Fullscreen (F)")
+        self.fullscreen_btn.clicked.connect(self._toggle_true_fullscreen)
+        title_row.addWidget(self.fullscreen_btn)
+
         title_row.addWidget(make_title("Tmux Pane Manager"), 1)
 
         # Spacer to balance buttons
         spacer = QWidget()
-        spacer.setFixedWidth(30)
+        spacer.setFixedWidth(42)  # Balance 3 buttons
         title_row.addWidget(spacer)
 
         layout.addLayout(title_row)
@@ -2652,8 +2660,17 @@ done
             self.selected_target = self._selected_pane_id
         self.accept()
 
+    def accept(self):
+        """Exit fullscreen if active before accepting."""
+        if self._is_true_fullscreen:
+            self._toggle_true_fullscreen()
+        super().accept()
+
     def reject(self):
         """Revert tmux mode on cancel."""
+        # Exit fullscreen if active
+        if self._is_true_fullscreen:
+            self._toggle_true_fullscreen()
         S.set('TMUX_MODE', self._orig_tmux_mode)
         super().reject()
 
@@ -2703,6 +2720,8 @@ done
             self._decrease_font_size()
         elif e.key() == Qt.Key.Key_M:
             self._toggle_maximize()
+        elif e.key() == Qt.Key.Key_F:
+            self._toggle_true_fullscreen()
         else:
             super().keyPressEvent(e)
 
@@ -2809,6 +2828,38 @@ done
                 if self._hover_pane_id is None:
                     self._update_preview(pane_id)
                 break
+
+    def set_main_window(self, main_window):
+        """Set reference to main window for fullscreen floating."""
+        self._main_window = main_window
+
+    def _toggle_true_fullscreen(self):
+        """Toggle true macOS fullscreen with main window floating on top."""
+        if not self._is_true_fullscreen:
+            # Enter fullscreen
+            self._is_true_fullscreen = True
+            self.fullscreen_btn.set_icon_name("macos-collapse")
+            self.fullscreen_btn.setToolTip("Exit Fullscreen (F)")
+
+            # Enable blue mode override on main window (forces always-on-top)
+            if self._main_window is not None:
+                self._main_window._blue_mode_override = True
+                self._main_window._apply_window_flags(show=True)
+
+            # Enter fullscreen
+            self.showFullScreen()
+        else:
+            # Exit fullscreen first
+            self.showNormal()
+
+            self._is_true_fullscreen = False
+            self.fullscreen_btn.set_icon_name("macos-fullscreen")
+            self.fullscreen_btn.setToolTip("Fullscreen (F)")
+
+            # Disable blue mode override on main window
+            if self._main_window is not None:
+                self._main_window._blue_mode_override = False
+                self._main_window._apply_window_flags(show=True)
 
 
 class TextEditDialog(DraggableDialog):
@@ -4035,6 +4086,15 @@ class PrefsDialog(DraggableDialog):
         self.always_on_top_checkbox.setToolTip("Keep window above other windows")
         self.always_on_top_checkbox.stateChanged.connect(self._on_always_on_top_changed)
         window_row.addWidget(self.always_on_top_checkbox)
+        # Show override notice when in blue mode (tmux fullscreen)
+        self.blue_mode_label = QLabel("(overridden: fullscreen)")
+        self.blue_mode_label.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 10px; font-style: italic;")
+        main_window = self.parent()
+        if main_window and hasattr(main_window, '_blue_mode_override') and main_window._blue_mode_override:
+            self.blue_mode_label.show()
+        else:
+            self.blue_mode_label.hide()
+        window_row.addWidget(self.blue_mode_label)
         window_row.addStretch()
         settings_box.addLayout(window_row)
 
@@ -5287,6 +5347,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         self.wake_word_engine = None  # Wake word engine instance (from wakeword module)
         self._tmux_wake_prefix = None  # Tmux phrase that triggered recording (for prefix)
         self._tmux_dialog = None  # Reference to open TmuxSelectionDialog (if any)
+        self._blue_mode_override = False  # True when tmux fullscreen forces always-on-top
 
         self.setWindowTitle(APP_NAME)
         self._apply_window_flags(show=False)
@@ -5604,17 +5665,28 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
     def _maybe_hide(self):
         if not S.AUTO_HIDE:
             return
+        # Never hide in blue mode (tmux fullscreen)
+        if self._blue_mode_override:
+            return
         if not self.is_focused:
             self.hide()
 
     def _focus_window(self):
         if self.isActiveWindow():
-            self.hide()
-            # Restore previous app
-            if self._prev_app:
-                self._prev_app.activateWithOptions_(NSApplicationActivateIgnoringOtherApps)
-                self._prev_app = None
-            play_chime('unfocus')  # G key: descending unfocus
+            # In blue mode, just switch focus without hiding
+            if self._blue_mode_override:
+                # Switch focus to tmux dialog instead of hiding
+                if self._tmux_dialog is not None:
+                    self._tmux_dialog.raise_()
+                    self._tmux_dialog.activateWindow()
+                play_chime('unfocus')
+            else:
+                self.hide()
+                # Restore previous app
+                if self._prev_app:
+                    self._prev_app.activateWithOptions_(NSApplicationActivateIgnoringOtherApps)
+                    self._prev_app = None
+                play_chime('unfocus')  # G key: descending unfocus
         else:
             # Remember current app before stealing focus
             self._prev_app = NSWorkspace.sharedWorkspace().frontmostApplication()
@@ -6112,9 +6184,10 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         print(f"Always on top {'ON' if enabled else 'OFF'}")
 
     def _apply_window_flags(self, show=True):
-        """Apply window flags based on ALWAYS_ON_TOP setting."""
+        """Apply window flags based on ALWAYS_ON_TOP setting (or blue mode override)."""
         flags = Qt.WindowType.FramelessWindowHint
-        if S.ALWAYS_ON_TOP:
+        # Blue mode override forces always-on-top regardless of setting
+        if S.ALWAYS_ON_TOP or self._blue_mode_override:
             flags |= Qt.WindowType.WindowStaysOnTopHint
         self.setWindowFlags(flags)
         if show:
@@ -6225,13 +6298,27 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         S.set('TMUX_MODE', not S.TMUX_MODE)
 
     def show_tmux_selection(self):
-        """Show dialog to select tmux target pane."""
+        """Show tmux pane manager window (non-modal)."""
+        if self._tmux_dialog is not None:
+            # Already open - just raise it
+            self._tmux_dialog.raise_()
+            self._tmux_dialog.activateWindow()
+            return
         self._tmux_dialog = TmuxSelectionDialog(S.TMUX_TARGET, self)
+        self._tmux_dialog.set_main_window(self)  # For fullscreen floating
         self._tmux_dialog.center_on_parent()
-        if self._tmux_dialog.exec():
-            S.set('TMUX_TARGET', self._tmux_dialog.selected_target)
-            self._save_settings()
-        self._tmux_dialog = None
+        self._tmux_dialog.finished.connect(self._on_tmux_dialog_closed)
+        self._tmux_dialog.show()  # Non-modal
+
+    def _on_tmux_dialog_closed(self, result):
+        """Handle tmux dialog closed - save settings and refocus main."""
+        if self._tmux_dialog is not None:
+            if result:  # Accepted
+                S.set('TMUX_TARGET', self._tmux_dialog.selected_target)
+                self._save_settings()
+            self._tmux_dialog = None
+        self.raise_()
+        self.activateWindow()
 
     def _start_wake_word_listener(self):
         """Start wake word detection using the configured engine."""
