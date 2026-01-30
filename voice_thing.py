@@ -5152,6 +5152,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
 
     def toggle_wake_word(self):
         S.set('WAKE_WORD_ENABLED', not S.WAKE_WORD_ENABLED)
+        self._save_settings()
 
     def toggle_auto_enter(self):
         S.set('AUTO_ENTER', not S.AUTO_ENTER)
