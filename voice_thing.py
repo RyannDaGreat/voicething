@@ -2252,36 +2252,65 @@ class TmuxSelectionDialog(DraggableDialog):
         btn_row = QHBoxLayout()
         btn_row.setSpacing(8)
 
-        # Enable tmux mode checkbox
-        self.enable_checkbox = QCheckBox("U  Enable tmux mode")
-        self.enable_checkbox.setChecked(S.TMUX_MODE)
-        self.enable_checkbox.setStyleSheet(get_checkbox_css())
-        set_tooltip(self.enable_checkbox,
-            "Enable or disable tmux voice routing.\n\n"
+        # Enable tmux mode toggle button
+        self.tmux_toggle_btn = QPushButton("U  Enable tmux mode")
+        self.tmux_toggle_btn.setIcon(load_icon("tmux" if S.TMUX_MODE else "tmux-off", ICON_COLOR_DARK))
+        self.tmux_toggle_btn.setIconSize(QSize(16, 16))
+        self.tmux_toggle_btn.setStyleSheet(get_btn_css())
+        self.tmux_toggle_btn.setCheckable(True)
+        self.tmux_toggle_btn.setChecked(S.TMUX_MODE)
+        self.tmux_toggle_btn.clicked.connect(self._on_tmux_toggle)
+        set_tooltip(self.tmux_toggle_btn,
+            "U  Enable or disable tmux voice routing.\n\n"
             "When enabled, transcriptions containing magic phrases\n"
             "will be sent directly to the matching tmux panes."
         )
-        btn_row.addWidget(self.enable_checkbox)
+        btn_row.addWidget(self.tmux_toggle_btn)
 
-        # Dark/light mode toggle button for terminal preview
-        self._preview_dark_mode = True  # Start in dark mode
-        self.theme_btn = QPushButton()
+        # Preview controls: theme toggle, ANSI toggle, font size +/-
+        self._preview_dark_mode = True
+        self._ansi_colors_enabled = True
+        self._preview_font_size = 10  # Default font size
+
+        # Dark/light mode toggle (checkable button like toolbar)
+        self.theme_btn = QPushButton("D")
         self.theme_btn.setIcon(load_icon("sun", ICON_COLOR_DARK))
         self.theme_btn.setIconSize(QSize(16, 16))
-        self.theme_btn.setFixedSize(28, 28)
         self.theme_btn.setStyleSheet(get_btn_css())
+        self.theme_btn.setCheckable(True)
+        self.theme_btn.setChecked(True)  # Dark mode on by default
         self.theme_btn.clicked.connect(self._toggle_preview_theme)
         set_tooltip(self.theme_btn, "D  Toggle dark/light terminal background")
         btn_row.addWidget(self.theme_btn)
 
-        # ANSI colors checkbox
-        self._ansi_colors_enabled = True
-        self.ansi_checkbox = QCheckBox("A  ANSI colors")
-        self.ansi_checkbox.setChecked(True)
-        self.ansi_checkbox.setStyleSheet(get_checkbox_css())
-        self.ansi_checkbox.stateChanged.connect(self._on_ansi_toggle)
-        set_tooltip(self.ansi_checkbox, "A  Enable/disable ANSI color rendering in preview")
-        btn_row.addWidget(self.ansi_checkbox)
+        # ANSI colors toggle (checkable button)
+        self.ansi_btn = QPushButton("A")
+        self.ansi_btn.setIcon(load_icon("rainbow"))  # Rainbow icon (no color override)
+        self.ansi_btn.setIconSize(QSize(16, 16))
+        self.ansi_btn.setStyleSheet(get_btn_css())
+        self.ansi_btn.setCheckable(True)
+        self.ansi_btn.setChecked(True)  # ANSI on by default
+        self.ansi_btn.clicked.connect(self._on_ansi_toggle)
+        set_tooltip(self.ansi_btn, "A  Toggle ANSI color rendering")
+        btn_row.addWidget(self.ansi_btn)
+
+        # Font size decrease
+        self.font_minus_btn = QPushButton("-")
+        self.font_minus_btn.setIcon(load_icon("minus", ICON_COLOR_DARK))
+        self.font_minus_btn.setIconSize(QSize(16, 16))
+        self.font_minus_btn.setStyleSheet(get_btn_css())
+        self.font_minus_btn.clicked.connect(self._decrease_font_size)
+        set_tooltip(self.font_minus_btn, "-  Decrease preview font size")
+        btn_row.addWidget(self.font_minus_btn)
+
+        # Font size increase
+        self.font_plus_btn = QPushButton("+")
+        self.font_plus_btn.setIcon(load_icon("plus", ICON_COLOR_DARK))
+        self.font_plus_btn.setIconSize(QSize(16, 16))
+        self.font_plus_btn.setStyleSheet(get_btn_css())
+        self.font_plus_btn.clicked.connect(self._increase_font_size)
+        set_tooltip(self.font_plus_btn, "+  Increase preview font size")
+        btn_row.addWidget(self.font_plus_btn)
 
         btn_row.addStretch()
         cancel_btn = QPushButton("Esc  Cancel")
@@ -2295,6 +2324,7 @@ class TmuxSelectionDialog(DraggableDialog):
         layout.addLayout(btn_row)
 
         self.setMinimumSize(700, 400)
+        self._update_preview_style()  # Initialize preview with current theme/font
         self._refresh_table()
 
     def _get_tmux_panes_flat(self):
@@ -2582,7 +2612,7 @@ done
     def _accept_selection(self):
         """Accept and save."""
         # Apply tmux mode from checkbox
-        S.set('TMUX_MODE', self.enable_checkbox.isChecked())
+        S.set('TMUX_MODE', self.tmux_toggle_btn.isChecked())
         # Clean up stale pane_ids from TMUX_PANE_NAMES
         if self._pane_data:
             live_ids = {p['pane_id'] for p in self._pane_data}
@@ -2625,13 +2655,19 @@ done
                 self._accept_selection()
         elif e.key() == Qt.Key.Key_U:
             # Toggle tmux mode checkbox
-            self.enable_checkbox.setChecked(not self.enable_checkbox.isChecked())
+            self.tmux_toggle_btn.click()
         elif e.key() == Qt.Key.Key_D:
             # Toggle dark/light mode for terminal preview
-            self._toggle_preview_theme()
+            self.theme_btn.click()
         elif e.key() == Qt.Key.Key_A:
             # Toggle ANSI colors
-            self.ansi_checkbox.setChecked(not self.ansi_checkbox.isChecked())
+            self.ansi_btn.click()
+        elif e.key() == Qt.Key.Key_Plus or e.key() == Qt.Key.Key_Equal:
+            # Increase font size (+ or = for convenience)
+            self._increase_font_size()
+        elif e.key() == Qt.Key.Key_Minus:
+            # Decrease font size
+            self._decrease_font_size()
         else:
             super().keyPressEvent(e)
 
@@ -2641,47 +2677,56 @@ done
             self.preview.clearFocus()
         super().mousePressEvent(e)
 
-    def _toggle_preview_theme(self):
-        """Toggle between dark and light terminal preview background."""
-        self._preview_dark_mode = not self._preview_dark_mode
+    def _update_preview_style(self):
+        """Update preview stylesheet based on current theme and font size."""
+        fs = self._preview_font_size
         if self._preview_dark_mode:
-            # Dark mode: dark bg, light text
+            bg, fg = '#1a1a1a', '#cccccc'
             self.theme_btn.setIcon(load_icon("sun", ICON_COLOR_DARK))
-            self.preview._unfocused_style = (
-                f"QTextEdit {{ background: #1a1a1a; color: #cccccc; "
-                f"border: 1px solid {BORDER_COLOR}; font-family: Menlo, monospace; "
-                f"font-size: 10px; padding: 4px; }}"
-                + SCROLLBAR_CSS
-            )
-            self.preview._focused_style = (
-                f"QTextEdit {{ background: #1a1a1a; color: #cccccc; "
-                f"border: 5px solid #00cccc; font-family: Menlo, monospace; "
-                f"font-size: 10px; padding: 4px; }}"
-                + SCROLLBAR_CSS
-            )
         else:
-            # Light mode: light bg, dark text
+            bg, fg = '#f5f5f5', '#1a1a1a'
             self.theme_btn.setIcon(load_icon("moon", ICON_COLOR_DARK))
-            self.preview._unfocused_style = (
-                f"QTextEdit {{ background: #f5f5f5; color: #1a1a1a; "
-                f"border: 1px solid {BORDER_COLOR}; font-family: Menlo, monospace; "
-                f"font-size: 10px; padding: 4px; }}"
-                + SCROLLBAR_CSS
-            )
-            self.preview._focused_style = (
-                f"QTextEdit {{ background: #f5f5f5; color: #1a1a1a; "
-                f"border: 5px solid #00cccc; font-family: Menlo, monospace; "
-                f"font-size: 10px; padding: 4px; }}"
-                + SCROLLBAR_CSS
-            )
+        self.preview._unfocused_style = (
+            f"QTextEdit {{ background: {bg}; color: {fg}; "
+            f"border: 1px solid {BORDER_COLOR}; font-family: Menlo, monospace; "
+            f"font-size: {fs}px; padding: 4px; }}"
+            + SCROLLBAR_CSS
+        )
+        self.preview._focused_style = (
+            f"QTextEdit {{ background: {bg}; color: {fg}; "
+            f"border: 5px solid #00cccc; font-family: Menlo, monospace; "
+            f"font-size: {fs}px; padding: 4px; }}"
+            + SCROLLBAR_CSS
+        )
         self.preview._update_style()
 
-    def _on_ansi_toggle(self, state):
+    def _toggle_preview_theme(self, checked=None):
+        """Toggle between dark and light terminal preview background."""
+        self._preview_dark_mode = self.theme_btn.isChecked()
+        self._update_preview_style()
+
+    def _on_ansi_toggle(self, checked=None):
         """Toggle ANSI color rendering and invalidate cache to force refresh."""
         global _pane_html_cache
-        self._ansi_colors_enabled = bool(state)
-        # Clear cache so polling thread re-renders with new setting
+        self._ansi_colors_enabled = self.ansi_btn.isChecked()
         _pane_html_cache.clear()
+
+    def _increase_font_size(self):
+        """Increase preview font size."""
+        if self._preview_font_size < 24:
+            self._preview_font_size += 1
+            self._update_preview_style()
+
+    def _decrease_font_size(self):
+        """Decrease preview font size."""
+        if self._preview_font_size > 6:
+            self._preview_font_size -= 1
+            self._update_preview_style()
+
+    def _on_tmux_toggle(self, checked=None):
+        """Toggle tmux mode and update button icon."""
+        is_on = self.tmux_toggle_btn.isChecked()
+        self.tmux_toggle_btn.setIcon(load_icon("tmux" if is_on else "tmux-off", ICON_COLOR_DARK))
 
 
 class TextEditDialog(DraggableDialog):
