@@ -1593,6 +1593,28 @@ except ImportError:
     _scrollback_cache = {}  # Fallback to simple dict (no expiry)
 
 
+def _get_tmux_cursor(target):
+    """Get cursor position from tmux pane.
+
+    Returns:
+        (cursor_x, cursor_y, pane_height) or None if unavailable.
+        cursor_y is relative to visible pane (0 = top of visible area).
+    """
+    try:
+        result = subprocess.run(
+            ['tmux', 'display-message', '-p', '-t', target,
+             '#{cursor_x},#{cursor_y},#{pane_height}'],
+            capture_output=True, text=True, timeout=1
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            parts = result.stdout.strip().split(',')
+            if len(parts) == 3:
+                return int(parts[0]), int(parts[1]), int(parts[2])
+    except (subprocess.TimeoutExpired, FileNotFoundError, ValueError):
+        pass
+    return None
+
+
 def _get_tmux_scrollback(target, lines=50, use_cache=True):
     """Get scrollback from tmux pane (includes ANSI escape codes).
 
@@ -1621,7 +1643,7 @@ def _get_tmux_scrollback(target, lines=50, use_cache=True):
         return None
 
 
-def _ansi_to_html(text: str) -> str:
+def _ansi_to_html(text: str, cursor_info=None, scrollback_lines=50) -> str:
     """Convert ANSI escape sequences to HTML for QTextEdit.
 
     Supports all rp.fansi features:
@@ -1632,6 +1654,11 @@ def _ansi_to_html(text: str) -> str:
     - Advanced: overline, superscript, subscript
     - Underline variants: double, curly, dotted, dashed + underline color
     - Hyperlinks: OSC 8 sequences
+
+    Args:
+        text: Text with ANSI escape codes
+        cursor_info: Optional (cursor_x, cursor_y, pane_height) from _get_tmux_cursor
+        scrollback_lines: Number of scrollback lines captured (to calculate cursor line)
     """
     import html
     import re
@@ -1892,6 +1919,45 @@ def _ansi_to_html(text: str) -> str:
         escaped_content = html.escape(content)
         html_out = html_out.replace(f'\x00LINK{idx}\x00',
             f'<a href="{html.escape(url)}" style="color:#5599ff">{escaped_content}</a>')
+
+    # Insert cursor marker if cursor_info provided
+    if cursor_info:
+        cursor_x, cursor_y, pane_height = cursor_info
+        # Calculate which line in our captured text corresponds to cursor_y
+        # cursor_y is relative to visible pane (0 = top of visible)
+        # We captured scrollback_lines of history + visible pane
+        # The cursor line in captured output = scrollback_lines - pane_height + cursor_y
+        # But if we captured less than that, adjust accordingly
+        lines = html_out.split('\n')
+        total_lines = len(lines)
+        # Cursor is at cursor_y from bottom of visible area
+        # Visible area is the last pane_height lines
+        cursor_line = total_lines - pane_height + cursor_y
+        if 0 <= cursor_line < total_lines:
+            line = lines[cursor_line]
+            # Insert cursor at cursor_x position (handling HTML tags)
+            # Simple approach: count visible chars, insert cursor span
+            cursor_span = '<span style="background:#00ff00;color:#000">▏</span>'
+            # We need to insert after cursor_x visible characters
+            # This is tricky with HTML tags - use a simple approach
+            visible_count = 0
+            insert_pos = 0
+            in_tag = False
+            for idx, ch in enumerate(line):
+                if ch == '<':
+                    in_tag = True
+                elif ch == '>':
+                    in_tag = False
+                elif not in_tag:
+                    if visible_count == cursor_x:
+                        insert_pos = idx
+                        break
+                    visible_count += 1
+            else:
+                # Cursor is at or past end of line
+                insert_pos = len(line)
+            lines[cursor_line] = line[:insert_pos] + cursor_span + line[insert_pos:]
+            html_out = '\n'.join(lines)
 
     # Wrap in pre to preserve whitespace
     return '<pre style="margin:0;white-space:pre-wrap;font-family:Menlo,monospace">' + html_out + '</pre>'
@@ -2326,9 +2392,10 @@ class TmuxSelectionDialog(DraggableDialog):
         self.preview_label.setText(f"Preview: {pane_id}")
         self.preview.set_target(pane_id)
         text = _get_tmux_scrollback(pane_id)
+        cursor_info = _get_tmux_cursor(pane_id)
         self._last_preview_text = text
         if text is not None:
-            html = _ansi_to_html(text)
+            html = _ansi_to_html(text, cursor_info=cursor_info)
             self.preview.setHtml(html)
             sb = self.preview.verticalScrollBar()
             sb.setValue(sb.maximum())
@@ -2338,16 +2405,22 @@ class TmuxSelectionDialog(DraggableDialog):
     def _poll_preview_loop(self):
         """Background thread: poll for tmux pane changes."""
         # print("[tmux-poll] Thread started")
+        last_state = None  # (text, cursor_info) tuple for change detection
+        last_html = None
         while not self._poll_stop.is_set():
             pane_id = self._hover_pane_id or self._selected_pane_id
             if pane_id:
                 text = _get_tmux_scrollback(pane_id, use_cache=False)
-                if text != self._last_preview_text:
-                    # print(f"[tmux-poll] Content changed for {pane_id}")
-                    self._last_preview_text = text
+                cursor_info = _get_tmux_cursor(pane_id)
+                current_state = (text, cursor_info)
+                if current_state != last_state:
+                    last_state = current_state
                     if text is not None:
-                        html = _ansi_to_html(text)
-                        self._preview_changed.emit(pane_id, html)
+                        html = _ansi_to_html(text, cursor_info=cursor_info)
+                        # Only emit if HTML actually changed (avoid UI hiccups)
+                        if html != last_html:
+                            last_html = html
+                            self._preview_changed.emit(pane_id, html)
             self._poll_stop.wait(0.1)  # Sleep 100ms between polls
         # print("[tmux-poll] Thread stopped")
 
