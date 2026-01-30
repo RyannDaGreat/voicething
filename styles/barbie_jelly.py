@@ -60,6 +60,14 @@ class BarbieJellyStyle(BaseStyle):
     # Slider - magenta groove on pink jelly
     slider_groove = "rgba(255,0,128,0.4)"
 
+    # Rotary knob - glossy jelly style
+    knob_style = "jelly"
+    knob_body_dark = "#c82882"
+    knob_body_light = "#ff8abe"
+    knob_notch_style = "dot"
+    knob_tickmarks = False
+    knob_glow = True
+
     # Waveform - pink pulse
     waveform_color = HOT_PINK
     waveform_glow = True

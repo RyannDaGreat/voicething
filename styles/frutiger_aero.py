@@ -82,6 +82,14 @@ class FrutigerAeroStyle(BaseStyle):
     # Slider - dark groove on light glass, blue accent
     slider_groove = "rgba(60,60,70,0.5)"
 
+    # Rotary knob - glossy Aero glass style
+    knob_style = "aero"
+    knob_body_dark = "#b0c8e0"
+    knob_body_light = "#e8f4ff"
+    knob_notch_style = "needle"
+    knob_tickmarks = True
+    knob_glow = False
+
     # Waveform - blue oscilloscope with glow on glass panel
     waveform_color = AERO_BLUE
     waveform_glow = True

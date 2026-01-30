@@ -63,6 +63,14 @@ class RustGrungeStyle(BaseStyle):
     # Slider - rust-colored groove on dark metal
     slider_groove = "rgba(140,65,35,0.6)"
 
+    # Rotary knob - industrial gauge style
+    knob_style = "industrial"
+    knob_body_dark = "#201a16"
+    knob_body_light = "#4a4038"
+    knob_notch_style = "arrow"
+    knob_tickmarks = True
+    knob_glow = False
+
     # Waveform - amber/orange on dark
     waveform_color = HAZARD_ORANGE
     waveform_glow = False  # Gritty, not glowy

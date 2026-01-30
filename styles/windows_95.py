@@ -76,6 +76,14 @@ class Windows95Style(BaseStyle):
     slider_handle = "rgb(0,255,0)"
     slider_fill = "rgb(0,200,0)"
 
+    # Rotary knob - classic Win95 beveled style
+    knob_style = "win95"
+    knob_body_dark = "#808080"
+    knob_body_light = "#c0c0c0"
+    knob_notch_style = "line"
+    knob_tickmarks = True
+    knob_glow = False
+
     # Waveform - green on black (classic Winamp/oscilloscope look)
     waveform_color = LCD_GREEN
     waveform_glow = True
