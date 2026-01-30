@@ -2430,7 +2430,7 @@ class WakeWordSettingsWidget(QWidget):
             "Works offline using Apple's built-in speech recognition.")
         phrases_row.addWidget(phrases_label)
         self._phrases_edit = QLineEdit()
-        self._phrases_edit.setStyleSheet(get_combobox_css())  # Reuse style
+        self._phrases_edit.setStyleSheet(get_lineedit_css())
         self._phrases_edit.setPlaceholderText("hey computer, computer, start")
         current_phrases = S.WAKEWORD_MACOS.get('phrases', 'hey computer, computer')
         self._phrases_edit.setText(current_phrases)
