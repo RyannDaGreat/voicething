@@ -8,7 +8,7 @@
   "WAKE_WORD_ENABLED": true,
   "SIMPLE_MODE": false,
   "PET_TYPES": [],
-  "WHISPER_MODEL": "large-v3",
+  "WHISPER_MODEL": "medium",
   "THEME": "cyberpunk_metal",
   "WAKEWORD_ENGINE": "macos",
   "WAKEWORD_OPENWAKEWORD": {
@@ -17,7 +17,8 @@
   },
   "WAKEWORD_MACOS": {
     "phrases": "jarvis",
-    "use_tmux_phrases": true
+    "use_tmux_phrases": true,
+    "cancel_phrases": "cancel, never mind"
   },
   "TMUX_MODE": true,
   "TMUX_TARGET": "%229",
@@ -70,10 +71,10 @@
   "RESTORE_WINDOW_GEOMETRY": true,
   "WINDOW_GEOMETRY": {
     "main": {
-      "x": 15,
-      "y": 371,
-      "width": 441,
-      "height": 699
+      "x": 13,
+      "y": 372,
+      "width": 445,
+      "height": 701
     },
     "tmux_selection": {
       "x": 0,
@@ -86,10 +87,16 @@
       ]
     },
     "preferences": {
-      "x": 572,
-      "y": 112,
+      "x": 411,
+      "y": 72,
       "width": 905,
-      "height": 1005
+      "height": 973
+    },
+    "help": {
+      "x": 619,
+      "y": 138,
+      "width": 490,
+      "height": 873
     }
   }
 }
