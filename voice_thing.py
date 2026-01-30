@@ -711,12 +711,20 @@ def get_menu_css():
 
 def get_combobox_css():
     """Get ComboBox CSS - theme-compatible colors."""
-    # Use PANEL_BG_FLAT_CSS for background, TEXT_PRIMARY for text
+    # Use input_bg if defined, else PANEL_BG_FLAT_CSS
+    input_bg = getattr(STYLE, 'input_bg', None)
+    input_text = getattr(STYLE, 'input_text', None)
+    if input_bg:
+        bg_css = f"background: {input_bg};"
+        text_color = input_text or TEXT_PRIMARY
+    else:
+        bg_css = PANEL_BG_FLAT_CSS
+        text_color = TEXT_PRIMARY
     return (
-        f"QComboBox {{ {PANEL_BG_FLAT_CSS} color: {TEXT_PRIMARY}; border: 1px solid {BORDER_COLOR}; padding: 4px 8px; }}"
-        f"QComboBox QAbstractItemView {{ {PANEL_BG_FLAT_CSS} color: {TEXT_PRIMARY}; selection-background-color: {ACCENT}; selection-color: white; }}"
+        f"QComboBox {{ {bg_css} color: {text_color}; border: 1px solid {BORDER_COLOR}; padding: 4px 8px; }}"
+        f"QComboBox QAbstractItemView {{ {bg_css} color: {text_color}; selection-background-color: {ACCENT}; selection-color: white; }}"
         f"QComboBox QAbstractItemView::item:hover {{ background: {ACCENT}; color: white; }}"
-        f"QComboBox QLineEdit {{ {PANEL_BG_FLAT_CSS} color: {TEXT_PRIMARY}; padding: 0px; margin: 0px; border: none; }}"
+        f"QComboBox QLineEdit {{ {bg_css} color: {text_color}; padding: 0px; margin: 0px; border: none; }}"
         f"QComboBox::drop-down {{ border: none; }}"
     )
 
@@ -919,8 +927,17 @@ def get_textedit_css():
 
 def get_lineedit_css():
     """Get line edit CSS for preference dialogs (dark theme compatible)."""
+    # Use input_bg if defined, else PANEL_BG_FLAT_CSS
+    input_bg = getattr(STYLE, 'input_bg', None)
+    input_text = getattr(STYLE, 'input_text', None)
+    if input_bg:
+        bg_css = f"background: {input_bg};"
+        text_color = input_text or TEXT_PRIMARY
+    else:
+        bg_css = PANEL_BG_FLAT_CSS
+        text_color = TEXT_PRIMARY
     return (
-        f"QLineEdit {{ {PANEL_BG_FLAT_CSS} color: {TEXT_PRIMARY}; "
+        f"QLineEdit {{ {bg_css} color: {text_color}; "
         f"border: 1px solid {BORDER_COLOR}; padding: 4px 8px; border-radius: 3px; }}"
     )
 
@@ -3743,20 +3760,19 @@ class PrefsDialog(DraggableDialog):
 
         # Rotary knobs row: Volume, Pitch, Reverb, Chorus
         knobs_row = QHBoxLayout()
-        knobs_row.setSpacing(4)
+        knobs_row.setSpacing(2)
         knobs_row.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        # Volume knob
+        # Volume knob (0 = mute)
         self.vol_knob = RotaryKnob("Vol", min_val=0.0, max_val=1.0, value=S.CHIME_VOLUME,
-                                    fmt="{:.0%}", size=44)
-        self.vol_knob.setEnabled(S.SOUND_ENABLED)
+                                    fmt="{:.0%}", size=36)
         self.vol_knob.valueChanged.connect(self._on_volume_knob_changed)
-        set_tooltip(self.vol_knob, "Chime volume (drag up/down or scroll)")
+        set_tooltip(self.vol_knob, "Chime volume (0 = mute)")
         knobs_row.addWidget(self.vol_knob)
 
         # Pitch knob
         self.pitch_knob = RotaryKnob("Pitch", min_val=-24, max_val=24, value=S.CHIME_PITCH,
-                                      fmt="{:+.0f}", size=44)
+                                      fmt="{:+.0f}", size=36)
         self.pitch_knob.valueChanged.connect(self._on_pitch_knob_changed)
         set_tooltip(self.pitch_knob, "Pitch shift in semitones (-24 to +24)")
         knobs_row.addWidget(self.pitch_knob)
@@ -3767,7 +3783,7 @@ class PrefsDialog(DraggableDialog):
         # Reverb knob
         self.reverb_knob = RotaryKnob("Reverb", min_val=0.0, max_val=1.0,
                                        value=audio_settings.get('reverb', 0.4),
-                                       fmt="{:.0%}", size=44)
+                                       fmt="{:.0%}", size=36)
         self.reverb_knob.valueChanged.connect(self._on_reverb_changed)
         set_tooltip(self.reverb_knob, "Reverb amount (per chime theme)")
         knobs_row.addWidget(self.reverb_knob)
@@ -3775,17 +3791,10 @@ class PrefsDialog(DraggableDialog):
         # Chorus knob
         self.chorus_knob = RotaryKnob("Chorus", min_val=0.0, max_val=1.0,
                                        value=audio_settings.get('chorus', 0.3),
-                                       fmt="{:.0%}", size=44)
+                                       fmt="{:.0%}", size=36)
         self.chorus_knob.valueChanged.connect(self._on_chorus_changed)
         set_tooltip(self.chorus_knob, "Chorus/shimmer amount (per chime theme)")
         knobs_row.addWidget(self.chorus_knob)
-
-        # Mute checkbox at end of row
-        self.mute_checkbox = QCheckBox("Mute")
-        self.mute_checkbox.setChecked(not S.SOUND_ENABLED)
-        self.mute_checkbox.setStyleSheet(get_checkbox_css())
-        self.mute_checkbox.stateChanged.connect(self._on_mute_changed)
-        knobs_row.addWidget(self.mute_checkbox)
 
         theme_box.addLayout(knobs_row)
 
@@ -4394,12 +4403,10 @@ class PrefsDialog(DraggableDialog):
         S.SILENCE_THRESHOLD = value
         self.thresh_value.setText(f"{value} dB")
 
-    def _on_mute_changed(self, state):
-        S.set('SOUND_ENABLED', state != Qt.CheckState.Checked.value)
-        self.vol_knob.setEnabled(S.SOUND_ENABLED)
-
     def _on_volume_knob_changed(self, value):
         S.CHIME_VOLUME = value
+        # Volume 0 effectively mutes
+        S.set('SOUND_ENABLED', value > 0)
 
     def _on_pitch_knob_changed(self, value):
         S.CHIME_PITCH = int(round(value))
@@ -5018,7 +5025,7 @@ class RotaryKnob(QWidget):
     valueChanged = pyqtSignal(float)
 
     def __init__(self, label, min_val=0.0, max_val=1.0, value=0.5, fmt="{:.0%}",
-                 size=44, color=None, parent=None):
+                 size=36, color=None, parent=None):
         """
         Args:
             label: Text label shown below knob
@@ -5026,7 +5033,7 @@ class RotaryKnob(QWidget):
             max_val: Maximum value
             value: Initial value
             fmt: Format string for value display (e.g. "{:.0%}", "{:+d}", "{:.1f}")
-            size: Knob diameter in pixels
+            size: Knob diameter in pixels (default 36)
             color: Accent color (defaults to theme accent)
         """
         super().__init__(parent)
@@ -5040,7 +5047,7 @@ class RotaryKnob(QWidget):
         self._dragging = False
         self._drag_start_y = 0
         self._drag_start_val = 0
-        self.setFixedSize(size + 10, size + 24)  # Room for label below
+        self.setFixedSize(size + 8, size + 16)  # Tighter spacing to label
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setMouseTracking(True)
 
@@ -5078,25 +5085,33 @@ class RotaryKnob(QWidget):
         show_ticks = getattr(STYLE, 'knob_tickmarks', False)
         has_glow = getattr(STYLE, 'knob_glow', False)
 
+        # Get track/value arc color - use theme-specific knob_track_color or accent
+        track_color_css = getattr(STYLE, 'knob_track_color', None)
+        if track_color_css:
+            value_color = QColor(track_color_css)  # Bright color for value arc
+            track_color = QColor(track_color_css)
+            track_color.setAlpha(50)  # Dimmer for background track
+        else:
+            value_color = accent  # Fall back to theme accent
+            track_color = QColor(60, 60, 60, 100)
+
         # Draw tick marks if enabled
         if show_ticks:
-            self._draw_tickmarks(p, cx, cy, r, accent if has_glow else QColor(80, 80, 80))
+            self._draw_tickmarks(p, cx, cy, r, value_color if has_glow else track_color.lighter(180))
 
-        # Draw track arc
-        track_alpha = 100 if has_glow else 150
-        track_color = QColor(accent.red(), accent.green(), accent.blue(), 50) if has_glow else QColor(60, 60, 60, track_alpha)
+        # Draw track arc (the background arc - dimmer)
         p.setPen(QPen(track_color, 3, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
         track_rect = QRect(cx - r, cy - r, r * 2, r * 2)
         p.drawArc(track_rect, 225 * 16, -270 * 16)
 
-        # Value arc with optional glow
+        # Value arc with optional glow (bright color showing current value)
         if has_glow and ratio > 0.01:
-            glow_color = QColor(accent.red(), accent.green(), accent.blue(), 60)
-            p.setPen(QPen(glow_color, 7, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+            glow_color = QColor(value_color.red(), value_color.green(), value_color.blue(), 60)
+            p.setPen(QPen(glow_color, 6, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
             span = int(-270 * ratio * 16)
             p.drawArc(track_rect, 225 * 16, span)
 
-        p.setPen(QPen(accent, 3, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        p.setPen(QPen(value_color, 3, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
         span = int(-270 * ratio * 16)
         p.drawArc(track_rect, 225 * 16, span)
 
@@ -5104,14 +5119,15 @@ class RotaryKnob(QWidget):
         body_r = r - 5
         self._draw_knob_body(p, cx, cy, body_r, body_dark, body_light, knob_style)
 
-        # Indicator notch - style-specific
+        # Indicator notch - style-specific (use value_color for visibility)
         angle = math.radians(225 - 270 * ratio)
-        self._draw_notch(p, cx, cy, body_r, angle, accent, notch_style)
+        self._draw_notch(p, cx, cy, body_r, angle, value_color, notch_style)
 
-        # Label below
-        p.setPen(QColor(TEXT_SECONDARY))
-        p.setFont(QFont(STYLE.font, 9))
-        p.drawText(QRect(0, self._size + 4, w, 18), Qt.AlignmentFlag.AlignCenter, self._label)
+        # Label below (closer to knob)
+        label_color = getattr(STYLE, 'knob_label_color', None)
+        p.setPen(QColor(label_color) if label_color else QColor(TEXT_SECONDARY))
+        p.setFont(QFont(STYLE.font, 8))
+        p.drawText(QRect(0, self._size + 1, w, 14), Qt.AlignmentFlag.AlignCenter, self._label)
 
     def _draw_tickmarks(self, p, cx, cy, r, color):
         """Draw tick marks around the knob arc."""
@@ -5180,7 +5196,7 @@ class RotaryKnob(QWidget):
             p.setPen(Qt.PenStyle.NoPen)
             p.drawEllipse(cx - r + 3, cy - r + 2, int(r * 1.2), int(r * 0.7))
         elif style == 'vintage':
-            # Vintage wood/brass dial
+            # Vintage wood dial
             body_grad = QRadialGradient(cx, cy, r)
             body_grad.setColorAt(0, light.lighter(110))
             body_grad.setColorAt(0.6, light)
@@ -5193,6 +5209,28 @@ class RotaryKnob(QWidget):
             p.setBrush(Qt.BrushStyle.NoBrush)
             p.setPen(QPen(dark.darker(110), 1))
             p.drawEllipse(cx - r + 3, cy - r + 3, (r - 3) * 2, (r - 3) * 2)
+        elif style == 'brass':
+            # Polished brass dial - horizontal brushed metal highlight
+            grad = QLinearGradient(cx - r, cy, cx + r, cy)
+            grad.setColorAt(0, dark)
+            grad.setColorAt(0.15, light)
+            grad.setColorAt(0.35, light.lighter(140))
+            grad.setColorAt(0.5, QColor(255, 240, 200))  # Brass highlight
+            grad.setColorAt(0.65, light.lighter(140))
+            grad.setColorAt(0.85, light)
+            grad.setColorAt(1, dark)
+            p.setBrush(QBrush(grad))
+            p.setPen(QPen(dark.darker(130), 1))
+            p.drawEllipse(cx - r, cy - r, r * 2, r * 2)
+            # Inner bevel
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.setPen(QPen(dark.darker(110), 1))
+            p.drawEllipse(cx - r + 2, cy - r + 2, (r - 2) * 2, (r - 2) * 2)
+        elif style == 'flat':
+            # Minimal flat style - solid color with subtle border
+            p.setBrush(QBrush(dark))
+            p.setPen(QPen(light, 1))
+            p.drawEllipse(cx - r, cy - r, r * 2, r * 2)
         else:
             # Modern/default - clean gradient
             body_grad = QRadialGradient(cx, cy - r * 0.3, r * 1.4)

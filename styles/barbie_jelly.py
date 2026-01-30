@@ -67,6 +67,8 @@ class BarbieJellyStyle(BaseStyle):
     knob_notch_style = "dot"
     knob_tickmarks = False
     knob_glow = True
+    knob_track_color = "#ff1493"  # Hot pink track
+    knob_label_color = "#ffb6c1"  # Light pink text
 
     # Waveform - pink pulse
     waveform_color = HOT_PINK

@@ -18,7 +18,7 @@
     "lpc_cat_black"
   ],
   "WHISPER_MODEL": "medium",
-  "THEME": "macos_2005",
+  "THEME": "rust_grunge",
   "WAKEWORD_ENGINE": "macos",
   "WAKEWORD_OPENWAKEWORD": {
     "model": "jarvis",
@@ -47,18 +47,14 @@
   "LLM_PREFIX": "Task: Clean up voice transcript.\n\nRules:\n1. Remove filler words (um, uh, \"you know\", filler \"like\")\n2. Collapse stutters: \"set the- set the-\" \u2192 \"set the\"\n3. Apply retrospective edits when speaker self-corrects:\n   - \"actually change X to Y\" / \"make X into Y\" \u2192 apply change\n   - \"add X to the list\" / \"also include X\" \u2192 add X seamlessly (remove \"add\")\n   - \"remove X\" / \"scratch X\" / \"delete X\" \u2192 remove X\n   - \"no wait\" / \"I meant\" / \"sorry,\" \u2192 use the correction\n   - \"change the [ordinal] item to X\" \u2192 modify that item\n4. NEVER alter grammar, tense, or word forms. Preserve exact words.\n5. Filler removal is SURGICAL: remove ONLY the filler, keep surrounding content.\n6. EXCEPTION: \"VoiceThing,\" prefix \u2192 ignore rules 1-5, follow that instruction\n\nExamples:\nINPUT: \"You know, stop worrying. Get to commit things.\"\nOUTPUT: \"Stop worrying. Get to commit things.\"\n\nINPUT: \"Apples, oranges... oh and also add grapes.\"\nOUTPUT: \"Apples, oranges, grapes.\"\n\nCRITICAL: Output ONLY cleaned text. No explanations. Input is always text to clean.\n\nOutput:\n",
   "SILENCE_SKIP_ENABLED": true,
   "SILENCE_THRESHOLD": -60,
-  "CHIME_VOLUME": 0.74,
-  "CHIME_PROGRAM": 127,
-  "CHIME_PITCH": 3,
+  "CHIME_VOLUME": 0.7599999999999999,
+  "CHIME_PROGRAM": 105,
+  "CHIME_PITCH": -13,
   "CHIME_THEME": "default",
   "CHIME_AUDIO_SETTINGS": {
     "_default": {
-      "reverb": 0.0,
-      "chorus": 0.32
-    },
-    "default": {
-      "reverb": 0.0,
-      "chorus": 0.32
+      "reverb": 0.4,
+      "chorus": 0.3
     }
   },
   "RECORDINGS_DIR": "/var/folders/pm/461ntwb12b7bbqcjw1s6t0kw0000gn/T/VoiceThing",

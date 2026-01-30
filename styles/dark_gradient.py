@@ -51,13 +51,15 @@ class DarkGradientStyle(BaseStyle):
     # Slider - semi-transparent cyan groove on dark gradient
     slider_groove = "rgba(100,200,255,0.25)"
 
-    # Rotary knob - glass pill style
+    # Rotary knob - glass pill style with cyan
     knob_style = "glass"
-    knob_body_dark = "#1a1c24"
-    knob_body_light = "#3a3e4a"
+    knob_body_dark = "#202430"
+    knob_body_light = "#404860"
     knob_notch_style = "line"
     knob_tickmarks = False
     knob_glow = True
+    knob_track_color = "#64c8ff"  # Cyan track
+    knob_label_color = "#b0c8e0"  # Light blue-gray text
 
     # Waveform - cyan with glow and dark panel with grid
     waveform_color = CYAN

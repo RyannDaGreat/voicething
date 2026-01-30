@@ -124,6 +124,9 @@ class BaseStyle:
     knob_tickmarks = False  # Show tick marks around arc
     knob_glow = False  # Glow on value arc
 
+    # Input field background (for QLineEdit, QComboBox, etc.)
+    input_bg = None  # None = use panel_bg_flat_css, or "rgb(...)" for explicit
+
     def title_style(self, size=18):
         return f"color: {self.text_primary}; font-size: {size}px; font-family: {self.font};"
 

@@ -50,12 +50,14 @@ class DarkMinimalStyle(BaseStyle):
     slider_groove = "rgba(255,255,255,0.2)"
 
     # Rotary knob - minimal flat style
-    knob_style = "modern"
-    knob_body_dark = "#1e1e28"
+    knob_style = "flat"
+    knob_body_dark = "#2a2a34"
     knob_body_light = "#3a3a48"
     knob_notch_style = "line"
     knob_tickmarks = False
     knob_glow = False
+    knob_track_color = "#808090"  # Light gray track
+    knob_label_color = "#b0b0c0"  # Light gray text
 
     # Dark solid background color
     bg_color = DARK_BG

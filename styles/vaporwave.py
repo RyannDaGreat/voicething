@@ -53,13 +53,15 @@ class VaporwaveStyle(BaseStyle):
     # Slider - cyan groove on dark purple (contrasts with pink accent)
     slider_groove = "rgba(1,205,254,0.4)"  # Cyan with transparency
 
-    # Rotary knob - neon vaporwave style
+    # Rotary knob - neon vaporwave style with cyan track
     knob_style = "neon"
-    knob_body_dark = "#200540"
-    knob_body_light = "#401068"
+    knob_body_dark = "#301050"
+    knob_body_light = "#502078"
     knob_notch_style = "dot"
     knob_tickmarks = False
     knob_glow = True
+    knob_track_color = "#01cdfe"  # Cyan track (vaporwave cyan)
+    knob_label_color = "#ff71ce"  # Hot pink text
 
     # Waveform - pink on dark purple
     waveform_color = VAPOR_PINK
