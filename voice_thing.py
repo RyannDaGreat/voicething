@@ -2444,13 +2444,7 @@ class WakeWordSettingsWidget(QWidget):
         self._tmux_phrases_checkbox = QCheckBox("+Tmux phrases")
         self._tmux_phrases_checkbox.setStyleSheet(get_checkbox_css())
         self._tmux_phrases_checkbox.setChecked(S.WAKEWORD_MACOS.get('use_tmux_phrases', False))
-        set_tooltip(self._tmux_phrases_checkbox,
-            "Add tmux pane phrases as wake words (start only, not stop).\n\n"
-            "When a tmux phrase is spoken, recording starts and the phrase\n"
-            "is prepended to the transcription so it routes to the right pane.\n\n"
-            "Example: Say 'chicken' to start, transcription becomes 'chicken ...'\n\n"
-            "Note: Regular wake words can still stop recording - only tmux\n"
-            "phrases are restricted to starting.")
+        self._update_tmux_phrases_tooltip()
         self._tmux_phrases_checkbox.stateChanged.connect(self._on_tmux_phrases_changed)
         tmux_row.addWidget(self._tmux_phrases_checkbox)
         tmux_row.addStretch()
@@ -2512,6 +2506,25 @@ class WakeWordSettingsWidget(QWidget):
         cfg['use_tmux_phrases'] = (state == Qt.CheckState.Checked.value)
         S.set('WAKEWORD_MACOS', cfg)
         self.settings_changed.emit()
+
+    def _update_tmux_phrases_tooltip(self):
+        """Update tooltip with example from actual tmux pane phrases."""
+        # Get first available tmux phrase for example
+        example_phrase = None
+        for info in S.TMUX_PANE_NAMES.values():
+            phrase = info.get('phrase', '')
+            if phrase:
+                example_phrase = phrase
+                break
+        example_phrase = example_phrase or "phrase"
+
+        set_tooltip(self._tmux_phrases_checkbox,
+            "Add tmux pane phrases as wake words (start only, not stop).\n\n"
+            "When a tmux phrase is spoken, recording starts and the phrase\n"
+            "is prepended to the transcription so it routes to the right pane.\n\n"
+            f"Example: Say '{example_phrase}' to start, transcription becomes '{example_phrase} ...'\n\n"
+            "Note: Regular wake words can still stop recording - only tmux\n"
+            "phrases are restricted to starting.")
 
     def get_current_display_name(self) -> str:
         """Get display name for current wake word (for tooltip etc)."""
