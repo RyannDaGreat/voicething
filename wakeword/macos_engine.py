@@ -139,6 +139,9 @@ class MacOSWakeWordEngine(WakeWordEngine):
         if self._running:
             return
 
+        # Always start fresh - not in recording state
+        self._is_recording = False
+
         try:
             from AppKit import NSSpeechRecognizer
 
