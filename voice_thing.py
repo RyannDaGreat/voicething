@@ -1335,6 +1335,9 @@ class DraggableResizableMixin:
 class DraggableDialog(DraggableResizableMixin, QDialog):
     """Base class for frameless, draggable, resizable dialogs."""
 
+    # Override in subclasses for geometry persistence
+    window_name = None
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self._init_draggable()
@@ -1343,11 +1346,44 @@ class DraggableDialog(DraggableResizableMixin, QDialog):
         self.setStyleSheet("QToolTip { background: #333; color: white; border: 1px solid #555; border-radius: 4px; }")
 
     def center_on_parent(self):
+        """Center on parent, or restore saved geometry if enabled."""
         self.adjustSize()
+        # Try to restore saved geometry
+        if self.window_name and S.RESTORE_WINDOW_GEOMETRY:
+            geom = S.WINDOW_GEOMETRY.get(self.window_name)
+            if geom:
+                self.move(geom['x'], geom['y'])
+                if 'width' in geom and 'height' in geom:
+                    self.resize(geom['width'], geom['height'])
+                return
+        # Fall back to centering on parent
         if self.parent():
             p = self.parent()
             self.move(p.x() + (p.width() - self.width()) // 2,
                       p.y() + (p.height() - self.height()) // 2)
+
+    def _save_geometry(self):
+        """Save window geometry to settings."""
+        if self.window_name:
+            S.WINDOW_GEOMETRY[self.window_name] = {
+                'x': self.x(), 'y': self.y(),
+                'width': self.width(), 'height': self.height()
+            }
+
+    def closeEvent(self, event):
+        """Save geometry on close."""
+        self._save_geometry()
+        super().closeEvent(event)
+
+    def accept(self):
+        """Save geometry on accept."""
+        self._save_geometry()
+        super().accept()
+
+    def reject(self):
+        """Save geometry on reject."""
+        self._save_geometry()
+        super().reject()
 
     def keyPressEvent(self, e):
         if e.key() == Qt.Key.Key_Q and e.modifiers() == Qt.KeyboardModifier.ControlModifier:
@@ -1405,6 +1441,7 @@ class OptionsDialog(DraggableDialog):
 
 class HelpDialog(DraggableDialog):
     """Help dialog with about info and keymap."""
+    window_name = "help"
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -1855,6 +1892,7 @@ def _ansi_to_html(text: str) -> str:
 
 class TmuxSelectionDialog(DraggableDialog):
     """Dialog to select tmux pane target with flat table and voice routing."""
+    window_name = "tmux_selection"
 
     # Column indices
     COL_ADDRESS = 0
@@ -2225,6 +2263,7 @@ class TextEditDialog(DraggableDialog):
 
 class TTSInstructionDialog(DraggableDialog):
     """Dialog to edit the TTS instruction template."""
+    window_name = "tts_instruction"
 
     DEFAULT_TEMPLATE = "Please speak back with ({command} &)"
 
@@ -2851,6 +2890,7 @@ class PrefsDialog(DraggableDialog):
     Settings apply IMMEDIATELY as you change them (live preview).
     OK = save to JSON, Cancel = revert to original values.
     """
+    window_name = "preferences"
 
     style_changed = pyqtSignal(str)  # Emits style name when changed
     pets_changed = pyqtSignal(list)  # Emits list of PetType when changed
@@ -3384,6 +3424,19 @@ class PrefsDialog(DraggableDialog):
         window_row.addStretch()
         settings_box.addLayout(window_row)
 
+        restore_geom_row = QHBoxLayout()
+        restore_geom_row.setSpacing(8)
+        self.restore_geom_checkbox = QCheckBox("Restore Window Positions")
+        self.restore_geom_checkbox.setChecked(S.RESTORE_WINDOW_GEOMETRY)
+        self.restore_geom_checkbox.setStyleSheet(get_checkbox_css())
+        self.restore_geom_checkbox.setToolTip(
+            "Remember and restore window positions and sizes on startup.\n"
+            "Applies to main window and dialogs (Preferences, Tmux, Help, etc.)")
+        self.restore_geom_checkbox.stateChanged.connect(self._on_restore_geom_changed)
+        restore_geom_row.addWidget(self.restore_geom_checkbox)
+        restore_geom_row.addStretch()
+        settings_box.addLayout(restore_geom_row)
+
         settings_box.addStretch()
         content.addLayout(settings_box)
         layout.addLayout(content)
@@ -3466,6 +3519,9 @@ class PrefsDialog(DraggableDialog):
 
     def _on_always_on_top_changed(self, state):
         S.set('ALWAYS_ON_TOP', state == Qt.CheckState.Checked.value)
+
+    def _on_restore_geom_changed(self, state):
+        S.set('RESTORE_WINDOW_GEOMETRY', state == Qt.CheckState.Checked.value)
 
     def _on_auto_copy_pref_changed(self, state):
         S.set('AUTO_COPY', state == Qt.CheckState.Checked.value)
@@ -3656,6 +3712,7 @@ class PrefsDialog(DraggableDialog):
 
 class PermissionDialog(DraggableDialog):
     """Dialog explaining accessibility permission requirements."""
+    window_name = "permission"
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -5717,7 +5774,8 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
                     'TMUX_TARGET', 'TMUX_PANE_NAMES', 'TMUX_PHRASES_AS_CONTEXT', 'TMUX_ANNOUNCE_PANE', 'RECORDINGS_DIR',
                     'SPEAK_BACK_VOICE', 'TTS_SAY', 'TTS_SUPERTONIC', 'TTS_KITTEN',
                     'SPEAK_BACK_APPEND_INSTRUCTION', 'SPEAK_BACK_TMUX_ONLY', 'SPEAK_BACK_INSTRUCTION_TEMPLATE',
-                    'WAKEWORD_ENGINE', 'WAKEWORD_OPENWAKEWORD', 'WAKEWORD_MACOS']:
+                    'WAKEWORD_ENGINE', 'WAKEWORD_OPENWAKEWORD', 'WAKEWORD_MACOS',
+                    'RESTORE_WINDOW_GEOMETRY', 'WINDOW_GEOMETRY']:
             if key in data:
                 S[key] = data[key]
         # SIMPLE_MODE needs toggle pattern (handle both on->off and off->on)
@@ -5732,6 +5790,11 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
 
     def _save_settings(self):
         """Save settings to JSON file."""
+        # Save main window geometry
+        S.WINDOW_GEOMETRY['main'] = {
+            'x': self.x(), 'y': self.y(),
+            'width': self.width(), 'height': self.height()
+        }
         data = dict(S)
         data['PET_TYPES'] = [pt.value for pt in S.PET_TYPES]  # Convert enums to strings
         data['THEME'] = STYLE.name  # Theme is in STYLE, not S
@@ -6107,9 +6170,15 @@ def main():
 
     threading.Thread(target=check_permission, daemon=True).start()
 
-    # Show window on boot
-    screen = QApplication.primaryScreen().geometry()
-    window.move((screen.width() - window.width()) // 2, screen.height() // 4)
+    # Show window on boot - restore saved geometry if enabled
+    if S.RESTORE_WINDOW_GEOMETRY and 'main' in S.WINDOW_GEOMETRY:
+        geom = S.WINDOW_GEOMETRY['main']
+        window.move(geom['x'], geom['y'])
+        if 'width' in geom and 'height' in geom:
+            window.resize(geom['width'], geom['height'])
+    else:
+        screen = QApplication.primaryScreen().geometry()
+        window.move((screen.width() - window.width()) // 2, screen.height() // 4)
     window.show()
     window.first_show = False
 
