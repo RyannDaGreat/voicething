@@ -936,6 +936,17 @@ def get_tmux_phrases_checkbox_label(checked: bool) -> str:
     return base
 
 
+def listening_for_tmux_panes_as_wakewords() -> bool:
+    """Check if tmux pane phrases are being used as wake words.
+
+    Currently only macOS native engine supports this, but this helper
+    allows future engines to add support without changing call sites.
+    """
+    if S.WAKEWORD_ENGINE == 'macos':
+        return S.WAKEWORD_MACOS.get('use_tmux_phrases', False)
+    return False
+
+
 _HELP_CURSOR = None
 
 def _get_help_cursor():
@@ -4828,8 +4839,31 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
             self._speak_announcement(announcement)
 
     def _speak_announcement(self, text):
-        """Speak an announcement using TTS (non-blocking)."""
-        do_tts(text, block=False)
+        """Speak an announcement using TTS (non-blocking).
+
+        When tmux pane phrases are used as wake words, we must pause the wake
+        word detector while speaking. Otherwise saying "sent to paper" would
+        re-trigger recording because the detector hears "paper" from the TTS.
+        """
+        # Pause wake word detection if tmux phrases are wake words
+        # (the spoken pane name would otherwise re-trigger recording)
+        needs_pause = (
+            S.WAKE_WORD_ENABLED and
+            listening_for_tmux_panes_as_wakewords() and
+            self.wake_word_engine is not None
+        )
+
+        if needs_pause:
+            self._stop_wake_word_listener()
+
+        def speak_and_resume():
+            do_tts(text, block=True)
+            if needs_pause:
+                # Resume wake word on main thread after TTS finishes
+                # Extra 500ms to ensure audio fully stops before listening again
+                QTimer.singleShot(500, self._start_wake_word_listener)
+
+        threading.Thread(target=speak_and_resume, daemon=True).start()
 
     def _find_matching_tmux_panes(self, text):
         """Find panes whose magic phrase matches the transcription text."""

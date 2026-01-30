@@ -171,15 +171,23 @@ class MacOSWakeWordEngine(WakeWordEngine):
 
     def stop(self) -> None:
         """Stop listening."""
+        global _delegate_engine
+
         if self._recognizer is not None:
             self._recognizer.stopListening()
             self._recognizer = None
             self._delegate = None
 
+        # Clear global reference to prevent stale callbacks from firing
+        # after stop() but before a new engine is created
+        if _delegate_engine is self:
+            _delegate_engine = None
+
         self._should_stop.set()
         # Don't join thread - it may be blocked in event loop
 
         self._running = False
+        self._is_recording = False  # Reset in case we're stopped mid-recording
         print("[wakeword] macOS stopped")
 
     def pause(self) -> None:
