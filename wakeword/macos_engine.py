@@ -47,6 +47,8 @@ def _get_delegate_class():
                     if _delegate_engine.on_stop:
                         _delegate_engine.on_stop()
                 else:
+                    # Store the detected phrase (for tmux routing prefix)
+                    _delegate_engine.last_detected_phrase = phrase if is_tmux_phrase else None
                     # macOS doesn't have a pre-buffer, pass empty array
                     _delegate_engine.on_wake(np.array([], dtype=np.float32))
 
@@ -112,6 +114,7 @@ class MacOSWakeWordEngine(WakeWordEngine):
         self._thread = None
         self._is_recording = False
         self._should_stop = threading.Event()
+        self.last_detected_phrase = None  # Stores tmux phrase that triggered wake (for prefix)
 
     def _create_delegate(self):
         """Create the Objective-C delegate instance."""

@@ -1593,6 +1593,40 @@ except ImportError:
     _scrollback_cache = {}  # Fallback to simple dict (no expiry)
 
 
+def _get_tmux_pane_state(target, lines=50):
+    """Get scrollback and cursor position from tmux pane in a single call.
+
+    Returns:
+        (text, cursor_info) where cursor_info is (cursor_x, cursor_y, pane_height) or None.
+    """
+    try:
+        # Single shell command to get both cursor info and pane content
+        # Format: CURSOR_INFO\n---SEPARATOR---\nPANE_CONTENT
+        result = subprocess.run(
+            ['tmux', 'display-message', '-p', '-t', target,
+             '#{cursor_x},#{cursor_y},#{pane_height}'],
+            capture_output=True, text=True, timeout=1
+        )
+        cursor_info = None
+        if result.returncode == 0 and result.stdout.strip():
+            parts = result.stdout.strip().split(',')
+            if len(parts) == 3:
+                try:
+                    cursor_info = (int(parts[0]), int(parts[1]), int(parts[2]))
+                except ValueError:
+                    pass
+
+        # Get pane content
+        result = subprocess.run(
+            ['tmux', 'capture-pane', '-t', target, '-p', '-e', '-S', f'-{lines}'],
+            capture_output=True, text=True, timeout=2
+        )
+        text = result.stdout if result.returncode == 0 else None
+        return text, cursor_info
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return None, None
+
+
 def _get_tmux_cursor(target):
     """Get cursor position from tmux pane.
 
@@ -2122,14 +2156,14 @@ class TmuxSelectionDialog(DraggableDialog):
     """Dialog to select tmux pane target with flat table and voice routing."""
     window_name = "tmux_selection"
 
-    # Signal for thread-safe preview updates
-    _preview_changed = pyqtSignal(str, str)  # (pane_id, html_content)
-
     # Column indices
     COL_ADDRESS = 0
     COL_PANE_ID = 1
     COL_PROCESS = 2
     COL_PHRASE = 3  # Single magic phrase column
+
+    # Signal for thread-safe preview updates
+    _preview_changed = pyqtSignal(str)  # html_content
 
     def __init__(self, current_target='%', parent=None):
         super().__init__(parent)
@@ -2138,10 +2172,9 @@ class TmuxSelectionDialog(DraggableDialog):
         self._selected_pane_id = None
         self._pane_data = []  # List of {address, pane_id, process, target}
         self._orig_tmux_mode = S.TMUX_MODE  # Store original for cancel
+        self._last_preview_html = None  # For avoiding redundant UI updates
         self._poll_stop = threading.Event()
         self._poll_thread = None
-        self._last_preview_text = None  # For change detection
-        self._last_preview_html = None  # For avoiding redundant UI updates
         self._preview_changed.connect(self._on_preview_changed)
 
         layout = QVBoxLayout(self)
@@ -2403,54 +2436,103 @@ class TmuxSelectionDialog(DraggableDialog):
         else:
             self.preview.setPlainText(f"(cannot preview {pane_id})")
 
-    def _poll_preview_loop(self):
-        """Background thread: poll for tmux pane changes."""
-        # print("[tmux-poll] Thread started")
-        last_state = (None, None, None)  # (pane_id, text, cursor_info)
+    def _poll_thread_func(self):
+        """Background thread: run persistent bash loop that outputs pane content."""
+        SEPARATOR = "---TMUX_FRAME_END---"
+        last_html = None
+
         while not self._poll_stop.is_set():
             pane_id = self._hover_pane_id or self._selected_pane_id
-            if pane_id:
-                text = _get_tmux_scrollback(pane_id, use_cache=False)
-                if text is not None:
-                    cursor_info = _get_tmux_cursor(pane_id)
-                    state = (pane_id, text, cursor_info)
-                    # Only generate HTML and emit if state changed
-                    if state != last_state:
-                        last_state = state
-                        html = _ansi_to_html(text, cursor_info=cursor_info)
-                        self._preview_changed.emit(pane_id, html)
-            self._poll_stop.wait(0.1)  # Sleep 100ms between polls
-        # print("[tmux-poll] Thread stopped")
+            if not pane_id:
+                self._poll_stop.wait(0.1)
+                continue
 
-    def _on_preview_changed(self, pane_id, html):
-        """Slot: update preview from background thread (runs on main thread)."""
-        current_pane = self._hover_pane_id or self._selected_pane_id
-        if pane_id != current_pane:
-            return  # Pane changed since signal was emitted
-        # Skip if HTML hasn't changed
+            # Start a bash process that loops and outputs pane content
+            cmd = f'''
+while true; do
+    echo "$(tmux display-message -p -t {pane_id} '#{{cursor_x}},#{{cursor_y}},#{{pane_height}}')"
+    tmux capture-pane -t {pane_id} -p -e -S -50
+    echo "{SEPARATOR}"
+    sleep 0.1
+done
+'''
+            try:
+                proc = subprocess.Popen(
+                    ['bash', '-c', cmd],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.DEVNULL,
+                    text=True,
+                    bufsize=1,  # Line buffered
+                )
+
+                buffer = []
+                current_pane = pane_id
+
+                while not self._poll_stop.is_set():
+                    # Check if pane changed
+                    new_pane = self._hover_pane_id or self._selected_pane_id
+                    if new_pane != current_pane:
+                        proc.terminate()
+                        break
+
+                    line = proc.stdout.readline()
+                    if not line:
+                        break
+
+                    line = line.rstrip('\n')
+                    if line == SEPARATOR:
+                        # Process accumulated frame
+                        if buffer:
+                            cursor_line = buffer[0]
+                            text = '\n'.join(buffer[1:])
+                            cursor_info = None
+                            try:
+                                parts = cursor_line.split(',')
+                                if len(parts) == 3:
+                                    cursor_info = (int(parts[0]), int(parts[1]), int(parts[2]))
+                            except ValueError:
+                                pass
+
+                            html = _ansi_to_html(text, cursor_info=cursor_info)
+                            if html != last_html:
+                                last_html = html
+                                self._preview_changed.emit(html)
+                        buffer = []
+                    else:
+                        buffer.append(line)
+
+                proc.terminate()
+                try:
+                    proc.wait(timeout=0.5)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+
+            except Exception:
+                self._poll_stop.wait(0.5)
+
+    def _on_preview_changed(self, html):
+        """Slot: update preview from background thread."""
         if html == self._last_preview_html:
             return
         self._last_preview_html = html
-        # Preserve scroll position during update
         sb = self.preview.verticalScrollBar()
         scroll_pos = sb.value()
         self.preview.setHtml(html)
         sb.setValue(scroll_pos)
 
     def _start_polling(self):
-        """Start the background preview polling thread."""
+        """Start the background polling thread."""
         if self._poll_thread is not None and self._poll_thread.is_alive():
             return
         self._poll_stop.clear()
-        self._poll_thread = threading.Thread(target=self._poll_preview_loop, daemon=True)
+        self._poll_thread = threading.Thread(target=self._poll_thread_func, daemon=True)
         self._poll_thread.start()
-        # print("[tmux-poll] Starting poll thread")
 
     def _stop_polling(self):
-        """Stop the background preview polling thread."""
+        """Stop the background polling thread."""
         self._poll_stop.set()
         if self._poll_thread is not None:
-            self._poll_thread.join(timeout=0.5)
+            self._poll_thread.join(timeout=1.0)
             self._poll_thread = None
 
     def showEvent(self, event):
@@ -2508,6 +2590,9 @@ class TmuxSelectionDialog(DraggableDialog):
         elif e.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
             if self.table.state() != QTableWidget.State.EditingState:
                 self._accept_selection()
+        elif e.key() == Qt.Key.Key_U:
+            # Toggle tmux mode checkbox
+            self.enable_checkbox.setChecked(not self.enable_checkbox.isChecked())
         else:
             super().keyPressEvent(e)
 
@@ -4986,6 +5071,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         self._prev_app = None  # For restoring focus when toggling window
         # Non-settings instance state
         self.wake_word_engine = None  # Wake word engine instance (from wakeword module)
+        self._tmux_wake_prefix = None  # Tmux phrase that triggered recording (for prefix)
 
         self.setWindowTitle(APP_NAME)
         self._apply_window_flags(show=False)
@@ -5569,7 +5655,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         elif no_mods and key == Qt.Key.Key_Z: self.retranscribe_latest()
         elif no_mods and key == Qt.Key.Key_O: self._switch_tab(0)
         elif no_mods and key == Qt.Key.Key_T: self._switch_tab(1)
-        elif no_mods and key == Qt.Key.Key_M: self.show_model_dialog()
+        elif no_mods and key == Qt.Key.Key_M and self.state != "recording": self.show_model_dialog()
         elif no_mods and key == Qt.Key.Key_P: self.show_prefs()
         elif key == Qt.Key.Key_Question: self.show_help()
         elif mods == Qt.KeyboardModifier.ControlModifier and key == Qt.Key.Key_L: dump_chime_log()  # Ctrl+L: dump chime log
@@ -5996,6 +6082,13 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
                 return
             # Immediately mark state to prevent double-trigger
             self.state = "starting"
+        # Capture tmux phrase prefix from macOS engine (if any)
+        self._tmux_wake_prefix = None
+        if self.wake_word_engine is not None:
+            self._tmux_wake_prefix = getattr(self.wake_word_engine, 'last_detected_phrase', None)
+            # Clear it after reading
+            if hasattr(self.wake_word_engine, 'last_detected_phrase'):
+                self.wake_word_engine.last_detected_phrase = None
         # Use signal to call start_recording on main thread with pre_buffer
         if pre_buffer is None:
             pre_buffer = np.array([], dtype=np.float32)
@@ -6323,6 +6416,10 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         else:
             # Strip wake words from beginning/end
             raw_text = strip_wake_words(text)
+            # Prefix tmux phrase if recording was triggered by tmux wake word
+            if self._tmux_wake_prefix and raw_text:
+                raw_text = f"{self._tmux_wake_prefix} {raw_text}"
+            self._tmux_wake_prefix = None  # Clear after use
 
         print(f"Result: {raw_text!r}")
         if not raw_text:
