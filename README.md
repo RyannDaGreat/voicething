@@ -10,12 +10,25 @@ A fast, keyboard-driven voice transcription app for macOS, powered by Whisper wi
 - **Instant transcription** using Whisper with Apple Silicon Metal GPU acceleration
 - **Auto-paste** - transcription is automatically copied and pasted via ⌘V
 - **100% keyboard-driven** - no mouse needed
-- **Wake word detection** - say "Hey Jarvis" (or other wake words) to start recording hands-free
+- **Wake word detection** - two engines available:
+  - **OpenWakeWord** - fast ML-based detection with pre-trained models
+  - **macOS Native** - custom phrases, cancel phrases, and tmux pane routing
+- **Cancel phrases** (macOS Native) - say "cancel" or "never mind" to abort recording
 - **Tmux mode** - paste transcriptions directly into your active tmux pane
-- **LLM post-processing** (Anti-Ramble mode) - clean up filler words and self-corrections with a local Ollama model
+- **Tmux Pane Manager** - visual pane selection with live terminal preview
+  - Voice routing with magic phrases (say "chicken" to send to a specific pane)
+  - Blue mode fullscreen with floating main window
+  - Keyboard input forwarded to tmux panes
+  - Cmd+V paste and tmux clipboard paste
+- **LLM post-processing** (Anti-Ramble mode) - clean up filler words and self-corrections
 - **De-ramble after the fact** - click the pen button on any transcription to apply LLM processing
+- **Text-to-speech** - speak back transcriptions via multiple backends (macOS say, Supertonic, Kitten)
+- **Multiple themes** - Cyberpunk Metal, macOS 2005, Arrow, Foliage, Winamp, and more
+- **Animated pets** - optional companion animations (Emmy the spider)
+- **Notification chimes** - customizable instrument sounds with piano visualization
 - **Menu bar access** - always available from macOS menu bar
 - **Drag & drop** audio files to transcribe
+- **Retranscribe** - re-transcribe latest recording with a different model
 
 ## Screenshots
 
@@ -57,17 +70,21 @@ On first run, you'll need to grant Accessibility permissions to your terminal ap
 | `X` | Cancel recording |
 | `Esc` | Minimize window |
 | `E` | Toggle small mode |
+| `G` | Toggle maximize |
+| `B` | Toggle blue mode (tmux fullscreen) |
+| `W` | Toggle simple mode |
 | `C` | Copy last transcription |
+| `Z` | Retranscribe latest with current model |
 | `L` | Load audio file |
 | `F` | Open recordings folder |
 | `S` | Toggle sound effects |
-| `V` | Toggle auto-minimize |
+| `H` | Toggle auto-minimize |
 | `R` | Toggle LLM post-processing |
 | `J` | Toggle wake word detection |
-| `K` | Change wake word model |
-| `U` | Toggle tmux paste mode |
 | `N` | Toggle auto-enter |
+| `U` | Open tmux pane manager |
 | `M` | Change Whisper model |
+| `P` | Open preferences |
 | `?` | Show help |
 | `O` | Output tab |
 | `T` | Transcriptions tab |
@@ -75,6 +92,7 @@ On first run, you'll need to grant Accessibility permissions to your terminal ap
 **Global shortcuts:**
 - `⌥⌥` (double-tap Option) - Start/stop recording from anywhere
 - `⌘ + ⌥⌥` - Toggle window focus
+- Hold `⌥⌥` for 1.5s while recording - Cancel recording
 
 ## Whisper Models
 
@@ -86,6 +104,23 @@ On first run, you'll need to grant Accessibility permissions to your terminal ap
 | `M` | medium | Good accuracy, slower (~5GB VRAM) |
 | `L` | large-v3 | Best accuracy, slowest (~10GB VRAM) |
 
+## Wake Word Detection
+
+Two wake word engines are available:
+
+### OpenWakeWord (Fast)
+- ML-based detection with pre-trained models
+- Lower CPU usage and faster response
+- Limited to available model phrases (Hey Jarvis, Alexa, Computer, etc.)
+
+### macOS Native (Flexible)
+- Custom phrases - use any words you want
+- Cancel phrases - say "cancel" or "never mind" to abort recording
+- Tmux pane routing - assign phrases to specific panes
+- Slower response time, shows microphone indicator
+
+When you say the wake word, recording starts automatically. Say the wake word again (or press Space) to stop recording and transcribe.
+
 ## LLM Post-Processing (Anti-Ramble Mode)
 
 Press `R` to enable LLM post-processing. This uses a local Ollama model to:
@@ -96,28 +131,43 @@ Press `R` to enable LLM post-processing. This uses a local Ollama model to:
 
 Say "VoiceThing, ..." in your recording to give formatting instructions directly to the LLM.
 
-## Wake Word Detection
-
-Press `J` to enable wake word detection. This lets you start recording hands-free by saying a wake word like "Hey Jarvis".
-
-- **Always listening** (when enabled) - the app listens for the wake word in the background
-- **Pre-buffer capture** - captures 2 seconds of audio *before* you say the wake word, so you don't lose any words
-- **Configurable sensitivity** - adjust in Preferences to reduce false triggers
-- **Multiple wake words** - press `K` or use Preferences to choose from options like "Hey Jarvis", "Alexa", "OK Google", "Computer", etc.
-- **Battery efficient** - the audio stream is completely stopped when wake word is disabled
-
-When you say the wake word, recording starts automatically. Say the wake word again (or press Space) to stop recording and transcribe.
-
 ## Tmux Mode
 
-Press `U` to enable tmux mode. Instead of pasting via ⌘V, transcriptions are sent directly to your active tmux pane using `tmux send-keys`.
+Press `U` to open the Tmux Pane Manager:
+
+- **Visual pane selection** - see all your tmux panes in a table
+- **Live terminal preview** - see pane contents in real-time with ANSI colors
+- **Magic phrases** - assign voice phrases to route transcriptions to specific panes
+- **Keyboard passthrough** - type directly into the selected pane from the preview
+- **Blue mode** - fullscreen tmux manager with main window floating on top
+- **Dark/light mode** - toggle terminal preview theme
+- **Zoom controls** - adjust preview font size
 
 This is useful for:
 - **Terminal workflows** - dictate commands or text directly into terminal sessions
 - **Remote sessions** - works even when the terminal isn't the frontmost app
-- **Auto-enter** - combine with `N` (auto-enter) to automatically execute commands after transcription
+- **Multi-pane routing** - say "chicken, do something" to send to a pane named "chicken"
+- **Auto-enter** - combine with `N` (auto-enter) to automatically execute commands
 
 Requires tmux to be installed and running.
+
+## Themes
+
+Multiple visual themes available in Preferences:
+- Cyberpunk Metal (default)
+- macOS 2005
+- Arrow
+- Foliage
+- Winamp
+- And more...
+
+## Notification Chimes
+
+Customizable audio feedback with:
+- Volume and pitch controls
+- Multiple instrument presets (bells, organ, flute, strings, etc.)
+- Piano keyboard visualization
+- Per-action chime themes
 
 ## Author
 
