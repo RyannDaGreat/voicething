@@ -6,7 +6,7 @@
   "LLM_ENABLED": false,
   "AUTO_ENTER": true,
   "WAKE_WORD_ENABLED": true,
-  "SIMPLE_MODE": true,
+  "SIMPLE_MODE": false,
   "PET_TYPES": [
     "emmy"
   ],

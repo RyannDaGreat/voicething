@@ -2543,23 +2543,13 @@ class WakeWordSettingsWidget(QWidget):
         self.settings_changed.emit()
 
     def _update_tmux_phrases_tooltip(self):
-        """Update tooltip with example from actual tmux pane phrases."""
-        # Get first available tmux phrase for example
-        example_phrase = None
-        for info in S.TMUX_PANE_NAMES.values():
-            phrase = info.get('phrase', '')
-            if phrase:
-                example_phrase = phrase
-                break
-        example_phrase = example_phrase or "phrase"
-
+        """Update tooltip for +Tmux Phrases checkbox."""
         set_tooltip(self._tmux_phrases_checkbox,
-            "Add tmux pane phrases as wake words (start only, not stop).\n\n"
-            "When a tmux phrase is spoken, recording starts and the phrase\n"
-            "is prepended to the transcription so it routes to the right pane.\n\n"
-            f"Example: Say '{example_phrase}' to start, transcription becomes '{example_phrase} ...'\n\n"
-            "Note: Regular wake words can still stop recording - only tmux\n"
-            "phrases are restricted to starting.")
+            "Add tmux pane phrases as wake words.\n\n"
+            "Tmux phrases can only START recording, not stop it.\n"
+            "Regular wake words can still stop recording.\n\n"
+            "The first phrase in your transcription determines\n"
+            "which pane receives the text.")
 
     def get_current_display_name(self) -> str:
         """Get display name for current wake word (for tooltip etc)."""
@@ -4755,12 +4745,12 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         if not S.AUTO_COPY:
             return
 
-        # Voice routing: if tmux mode enabled, check for phrase matches
+        # Voice routing: if tmux mode enabled, check for first phrase match
         tmux_routed = False
         if S.TMUX_MODE:
-            matches = self._find_matching_tmux_panes(text)
-            if matches:
-                # Magic phrase matched - route to tmux panes (skip ⌘V)
+            pane_id, phrase = self._find_first_matching_tmux_pane(text)
+            if pane_id:
+                # Magic phrase matched - route to that tmux pane (skip ⌘V)
                 # Append TTS instruction for tmux if enabled
                 tmux_text = text
                 if S.SPEAK_BACK_APPEND_INSTRUCTION:
@@ -4771,7 +4761,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
                 self._copy_to_clipboard(tmux_text)
                 time.sleep(0.1)
                 play_chime('tmux_send')
-                self._do_tmux_paste_to_targets(matches, tmux_text)
+                self._do_tmux_paste_to_target(pane_id, tmux_text)
                 tmux_routed = True
 
         # ⌘V paste: only if enabled AND tmux didn't route
@@ -4815,29 +4805,6 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         except FileNotFoundError:
             print("tmux not found - is tmux installed and running?")
 
-    def _do_tmux_paste_to_targets(self, targets, text):
-        """Send text to multiple tmux targets simultaneously, then Enter simultaneously."""
-        # Send text to all targets at once
-        for target in targets:
-            try:
-                subprocess.Popen(['tmux', 'send-keys', '-t', target, '-l', text])
-            except FileNotFoundError:
-                print("tmux not found")
-                return
-        # Wait for text to be sent, then send Enter to all
-        if S.AUTO_ENTER:
-            time.sleep(S.ENTER_DELAY)
-            play_chime('enter')
-            for target in targets:
-                subprocess.Popen(['tmux', 'send-keys', '-t', target, 'Enter'])
-        # Log what was sent
-        names = [S.TMUX_PANE_NAMES.get(t, {}).get('phrase', t) for t in targets]
-        print(f"Sent to {len(targets)} panes ({', '.join(names)}): {text[:50]}{'...' if len(text) > 50 else ''}")
-        # Announce pane names via TTS if enabled
-        if S.TMUX_ANNOUNCE_PANE and names:
-            announcement = f"sent to {' '.join(names)}"
-            self._speak_announcement(announcement)
-
     def _speak_announcement(self, text):
         """Speak an announcement using TTS (non-blocking).
 
@@ -4865,15 +4832,25 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
 
         threading.Thread(target=speak_and_resume, daemon=True).start()
 
-    def _find_matching_tmux_panes(self, text):
-        """Find panes whose magic phrase matches the transcription text."""
+    def _find_first_matching_tmux_pane(self, text):
+        """Find first pane whose magic phrase appears earliest in the text.
+
+        Returns (pane_id, phrase) or (None, None) if no match.
+        Only returns ONE match - the phrase that appears first in the text.
+        """
         text_lower = text.lower()
-        matches = []
+        first_match = None
+        first_pos = len(text_lower)  # Start with position beyond end
+
         for pane_id, info in S.TMUX_PANE_NAMES.items():
             phrase = info.get('phrase', '')
-            if phrase and phrase.lower() in text_lower:
-                matches.append(pane_id)
-        return matches
+            if phrase:
+                pos = text_lower.find(phrase.lower())
+                if pos != -1 and pos < first_pos:
+                    first_pos = pos
+                    first_match = (pane_id, phrase)
+
+        return first_match if first_match else (None, None)
 
     def _update_display(self):
         if self.audio_chunks:
@@ -5108,13 +5085,12 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
             if S.WAKE_WORD_ENABLED:
                 words = self._get_all_wake_words()
                 if len(words) == 1:
-                    return f"Say '{words[0]}'"
+                    return f"Say {words[0]}"
                 elif len(words) == 2:
-                    return f"Say '{words[0]}' or '{words[1]}'"
+                    return f"Say {words[0]} or {words[1]}"
                 else:
-                    # "Say 'A', 'B', or 'C'"
-                    quoted = [f"'{w}'" for w in words]
-                    return f"Say {', '.join(quoted[:-1])}, or {quoted[-1]}"
+                    # "Say A, B, or C"
+                    return f"Say {', '.join(words[:-1])}, or {words[-1]}"
             return "Double-tap ⌥"
         elif self.state == "recording":
             return "Recording"
@@ -5670,16 +5646,6 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         else:
             # Strip wake words from beginning/end
             raw_text = strip_wake_words(text)
-
-        # Prepend tmux trigger phrase if macOS engine recorded one
-        if self.wake_word_engine is not None:
-            trigger = getattr(self.wake_word_engine, 'last_trigger_phrase', None)
-            if trigger and raw_text:
-                raw_text = f"{trigger} {raw_text}"
-                print(f"[wakeword] Prepended tmux phrase: '{trigger}'")
-            # Clear it for next recording
-            if hasattr(self.wake_word_engine, 'last_trigger_phrase'):
-                self.wake_word_engine.last_trigger_phrase = None
 
         print(f"Result: {raw_text!r}")
         if not raw_text:
