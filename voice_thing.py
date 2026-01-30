@@ -5079,20 +5079,26 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
             self.wake_word_engine.reset()
         self.hide_signal.emit()
 
+    def _format_word_list(self, words: list) -> str:
+        """Format list of words as 'A', 'A or B', or 'A, B, or C'."""
+        if len(words) == 1:
+            return words[0]
+        elif len(words) == 2:
+            return f"{words[0]} or {words[1]}"
+        else:
+            return f"{', '.join(words[:-1])}, or {words[-1]}"
+
     def _get_status_text(self):
         """Get status text based on current state."""
         if self.state == "idle":
             if S.WAKE_WORD_ENABLED:
                 words = self._get_all_wake_words()
-                if len(words) == 1:
-                    return f"Say {words[0]}"
-                elif len(words) == 2:
-                    return f"Say {words[0]} or {words[1]}"
-                else:
-                    # "Say A, B, or C"
-                    return f"Say {', '.join(words[:-1])}, or {words[-1]}"
+                return f"Say {self._format_word_list(words)}"
             return "Double-tap ⌥"
         elif self.state == "recording":
+            if S.WAKE_WORD_ENABLED:
+                words = self._get_stop_wake_words()
+                return f"Recording - say {self._format_word_list(words)} to stop"
             return "Recording"
         elif self.state == "transcribing":
             return "Transcribing..."
@@ -5186,7 +5192,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
             return first
 
     def _get_all_wake_words(self) -> list:
-        """Get all active wake words/phrases as a list."""
+        """Get all active wake words/phrases as a list (for starting recording)."""
         engine = S.WAKEWORD_ENGINE
         if engine == 'openwakeword':
             model = S.WAKEWORD_OPENWAKEWORD.get('model', 'computer')
@@ -5198,6 +5204,18 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
             # Add tmux phrases if enabled
             if listening_for_tmux_panes_as_wakewords():
                 phrases.extend(get_tmux_phrases_list())
+            return phrases if phrases else ['hey computer']
+
+    def _get_stop_wake_words(self) -> list:
+        """Get wake words that can STOP recording (excludes tmux-only phrases)."""
+        engine = S.WAKEWORD_ENGINE
+        if engine == 'openwakeword':
+            model = S.WAKEWORD_OPENWAKEWORD.get('model', 'computer')
+            return [get_wake_word_display(model)]
+        else:
+            # macOS: only regular phrases can stop (not tmux phrases)
+            phrases_str = S.WAKEWORD_MACOS.get('phrases', 'hey computer')
+            phrases = [p.strip() for p in phrases_str.split(',') if p.strip()]
             return phrases if phrases else ['hey computer']
 
     def toggle_auto_hide(self):
@@ -5581,7 +5599,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
             self.move((screen.width() - self.width()) // 2, screen.height() // 4)
             self.first_show = False
         self.timer_label.set_text("0:00.0")
-        self._set_state("recording", "Recording")
+        self._set_state("recording")  # Let _get_status_text handle the message
         self.pet_container.set_listening(True)
         play_chime('start_rec')  # D key
 
