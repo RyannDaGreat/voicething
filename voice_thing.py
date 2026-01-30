@@ -2385,14 +2385,18 @@ class TmuxSelectionDialog(DraggableDialog):
         set_tooltip(self.font_minus_btn, "O  Zoom out (decrease font size)")
         btn_row.addWidget(self.font_minus_btn)
 
+        # Tmux paste button - pastes from tmux clipboard to selected pane
+        self.tmux_paste_btn = QPushButton("Tmux Paste")
+        self.tmux_paste_btn.setStyleSheet(get_btn_css())
+        self.tmux_paste_btn.clicked.connect(self._paste_from_tmux_clipboard)
+        set_tooltip(self.tmux_paste_btn, "Paste tmux clipboard contents to selected pane")
+        btn_row.addWidget(self.tmux_paste_btn)
+
         btn_row.addStretch()
-        cancel_btn = QPushButton("Esc  Cancel")
-        cancel_btn.setStyleSheet(get_btn_css())
-        cancel_btn.clicked.connect(self.reject)
-        btn_row.addWidget(cancel_btn)
-        ok_btn = QPushButton("Enter  Save")
+        # No cancel button - all changes auto-save
+        ok_btn = QPushButton("Esc  Close")
         ok_btn.setStyleSheet(get_btn_css())
-        ok_btn.clicked.connect(self._accept_selection)
+        ok_btn.clicked.connect(self.accept)  # Just close, everything already saved
         btn_row.addWidget(ok_btn)
         layout.addLayout(btn_row)
 
@@ -2787,7 +2791,7 @@ done
         """Update preview stylesheet based on current theme and font size."""
         fs = self._preview_font_size
         if self._preview_dark_mode:
-            bg, fg = '#1a1a1a', '#cccccc'
+            bg, fg = '#0d0d0d', '#cccccc'  # Very dark background
             self.theme_btn.setIcon(load_icon("sun", ICON_COLOR_DARK))
         else:
             bg, fg = '#f5f5f5', '#1a1a1a'
@@ -2835,6 +2839,20 @@ done
         """Toggle tmux mode and update button icon."""
         is_on = self.tmux_toggle_btn.isChecked()
         self.tmux_toggle_btn.setIcon(load_icon("tmux" if is_on else "tmux-off", ICON_COLOR_DARK))
+
+    def _paste_from_tmux_clipboard(self):
+        """Paste tmux clipboard contents to the selected pane."""
+        if not self._selected_pane_id:
+            return
+        try:
+            # Get tmux clipboard contents
+            result = subprocess.run(['tmux', 'show-buffer'], capture_output=True, text=True)
+            if result.returncode == 0 and result.stdout:
+                # Send as literal text to the pane
+                subprocess.run(['tmux', 'send-keys', '-t', self._selected_pane_id, '-l', result.stdout],
+                              capture_output=True, text=True)
+        except FileNotFoundError:
+            pass
 
     def _toggle_maximize(self):
         """Toggle between maximized and normal window size."""
@@ -5436,6 +5454,17 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         self.small_btn.setToolTip("Toggle small mode (E)")
         self.small_btn.clicked.connect(self.toggle_small_mode)
         status_row.addWidget(self.small_btn)
+        # Green maximize button
+        self._pre_maximize_geometry = None
+        self.maximize_btn = TrafficLightButton("rgb(52, 199, 89)", "rgb(80, 220, 110)", "macos-fullscreen")
+        self.maximize_btn.setToolTip("Maximize (G)")
+        self.maximize_btn.clicked.connect(self._toggle_maximize)
+        status_row.addWidget(self.maximize_btn)
+        # Blue fullscreen button (opens tmux pane manager in fullscreen)
+        self.fullscreen_btn = TrafficLightButton("rgb(0, 122, 255)", "rgb(50, 150, 255)", "macos-fullscreen")
+        self.fullscreen_btn.setToolTip("Tmux Fullscreen (B)")
+        self.fullscreen_btn.clicked.connect(self._toggle_blue_mode)
+        status_row.addWidget(self.fullscreen_btn)
         # Warning button for permission errors (hidden by default)
         self.warning_btn = QPushButton()
         self.warning_btn.setFixedSize(20, 20)
@@ -5452,7 +5481,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         status_row.addWidget(self.status_label, 1)
         # Spacer to balance the window control buttons
         self.status_spacer = QWidget()
-        self.status_spacer.setFixedWidth(28)
+        self.status_spacer.setFixedWidth(56)  # Balance 4 traffic light buttons (4*12 + 3*8 spacing ≈ 72, but reduced for visual balance)
         status_row.addWidget(self.status_spacer)
         layout.addLayout(status_row)
 
@@ -5666,7 +5695,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         # Pet container - floats absolutely, not in any layout
         self.pet_container = PetContainer(self)
         self.pet_container.set_pets(S.PET_TYPES)
-        self.pet_container.move(60, 10)  # After traffic lights
+        self.pet_container.move(100, 10)  # After 4 traffic light buttons
         self.pet_container.raise_()
 
         self._load_settings()
@@ -6005,6 +6034,8 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         elif no_mods and key == Qt.Key.Key_N: self.toggle_auto_enter()
         elif no_mods and key == Qt.Key.Key_U: self.show_tmux_selection()
         elif no_mods and key == Qt.Key.Key_E: self.toggle_small_mode()
+        elif no_mods and key == Qt.Key.Key_G: self._toggle_maximize()
+        elif no_mods and key == Qt.Key.Key_B: self._toggle_blue_mode()
         elif no_mods and key == Qt.Key.Key_W: self.toggle_simple_mode()
         elif no_mods and key == Qt.Key.Key_Z: self.retranscribe_latest()
         elif no_mods and key == Qt.Key.Key_O: self._switch_tab(0)
@@ -6334,6 +6365,41 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         """Toggle simple mode - hides advanced buttons and shows only transcriptions."""
         S.set('SIMPLE_MODE', not S.SIMPLE_MODE)
         self._save_settings()
+
+    def _toggle_maximize(self):
+        """Toggle between maximized and normal window size."""
+        from PyQt6.QtWidgets import QApplication
+        screen = QApplication.primaryScreen().availableGeometry()
+
+        if self._pre_maximize_geometry is None:
+            # Save current geometry and maximize
+            self._pre_maximize_geometry = self.geometry()
+            self.setGeometry(screen)
+            self.maximize_btn.set_icon_name("macos-collapse")
+            self.maximize_btn.setToolTip("Restore (G)")
+        else:
+            # Restore previous geometry
+            self.setGeometry(self._pre_maximize_geometry)
+            self._pre_maximize_geometry = None
+            self.maximize_btn.set_icon_name("macos-fullscreen")
+            self.maximize_btn.setToolTip("Maximize (G)")
+
+    def _toggle_blue_mode(self):
+        """Toggle blue mode: open tmux pane manager in fullscreen, or exit if already in blue mode."""
+        if self._blue_mode_override:
+            # Already in blue mode - exit it via tmux dialog
+            if hasattr(self, '_tmux_dialog') and self._tmux_dialog:
+                self._tmux_dialog._toggle_true_fullscreen()
+        else:
+            # Open tmux pane manager and enter fullscreen
+            self.show_tmux_selection()
+            # Small delay to let dialog open, then trigger fullscreen
+            QTimer.singleShot(100, self._enter_blue_mode_if_dialog_open)
+
+    def _enter_blue_mode_if_dialog_open(self):
+        """Enter blue mode if tmux dialog is open."""
+        if hasattr(self, '_tmux_dialog') and self._tmux_dialog and not self._tmux_dialog._is_true_fullscreen:
+            self._tmux_dialog._toggle_true_fullscreen()
 
     def toggle_sound(self):
         S.set('SOUND_ENABLED', not S.SOUND_ENABLED)
