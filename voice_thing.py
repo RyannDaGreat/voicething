@@ -2126,6 +2126,17 @@ class TmuxPreviewWidget(QTextEdit):
         except FileNotFoundError:
             pass  # print(f"[tmux-preview] tmux not found")
 
+    def _send_text_to_tmux(self, text):
+        """Send literal text to tmux pane (for paste operations)."""
+        if not self._target_pane or not text:
+            return
+        try:
+            # Use send-keys -l for literal text (no key interpretation)
+            subprocess.run(['tmux', 'send-keys', '-t', self._target_pane, '-l', text],
+                          capture_output=True, text=True)
+        except FileNotFoundError:
+            pass
+
     def keyPressEvent(self, event):
         """Forward keyboard input to tmux pane."""
         key = event.key()
@@ -2133,6 +2144,13 @@ class TmuxPreviewWidget(QTextEdit):
         mods = event.modifiers()
         # print(f"[tmux-preview] keyPress: key={key}, text={repr(text)}, target={self._target_pane}, focused={self.hasFocus()}")
 
+        # Handle Cmd+V paste (macOS uses ControlModifier for Cmd)
+        if key == Qt.Key.Key_V and (mods & Qt.KeyboardModifier.ControlModifier):
+            clipboard = QApplication.clipboard()
+            clipboard_text = clipboard.text()
+            if clipboard_text:
+                self._send_text_to_tmux(clipboard_text)
+            return
 
         if not self._target_pane:
             super().keyPressEvent(event)
@@ -2252,11 +2270,11 @@ class TmuxSelectionDialog(DraggableDialog):
         self.table.setStyleSheet(
             f"QTableWidget {{ {PANEL_BG_FLAT_CSS} color: {TEXT_PRIMARY}; "
             f"border: 1px solid {BORDER_COLOR}; font-family: Menlo, monospace; font-size: 11px; }}"
-            f"QTableWidget::item {{ padding: 1px 4px; }}"
-            f"QTableWidget::item:hover {{ background: rgba(180,210,240,0.5); }}"
-            f"QTableWidget::item:selected {{ background: rgba(180,210,240,0.7); color: black; }}"
-            f"QHeaderView::section {{ background: #e0e0e0; color: black; padding: 2px 4px; "
-            f"border: 1px solid #ccc; font-weight: bold; }}"
+            f"QTableWidget::item {{ padding: 1px 4px; color: {TEXT_PRIMARY}; }}"
+            f"QTableWidget::item:hover {{ background: {ACCENT}40; }}"  # 40 = 25% opacity
+            f"QTableWidget::item:selected {{ background: {ACCENT}80; color: {TEXT_PRIMARY}; }}"  # 80 = 50% opacity
+            f"QHeaderView::section {{ background: {BORDER_COLOR}; color: {TEXT_PRIMARY}; padding: 2px 4px; "
+            f"border: 1px solid {BORDER_COLOR}; font-weight: bold; }}"
             + SCROLLBAR_CSS
         )
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
