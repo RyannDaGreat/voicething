@@ -1554,14 +1554,15 @@ except ImportError:
 
 
 def _get_tmux_scrollback(target, lines=50):
-    """Get scrollback from tmux pane with caching."""
+    """Get scrollback from tmux pane with caching (includes ANSI escape codes)."""
     # Check cache first
     if target in _scrollback_cache:
         return _scrollback_cache[target]
 
     try:
+        # -e flag preserves ANSI escape sequences for colors
         result = subprocess.run(
-            ['tmux', 'capture-pane', '-t', target, '-p', '-S', f'-{lines}'],
+            ['tmux', 'capture-pane', '-t', target, '-p', '-e', '-S', f'-{lines}'],
             capture_output=True, text=True, timeout=2
         )
         if result.returncode == 0:
@@ -1571,6 +1572,144 @@ def _get_tmux_scrollback(target, lines=50):
         return None
     except (subprocess.TimeoutExpired, FileNotFoundError):
         return None
+
+
+def _ansi_to_html(text: str) -> str:
+    """Convert ANSI escape sequences to HTML for QTextEdit.
+
+    Supports:
+    - SGR codes: colors (30-37, 90-97 fg; 40-47, 100-107 bg), bold, italic, underline
+    - 256-color: 38;5;N and 48;5;N
+    - True color: 38;2;R;G;B and 48;2;R;G;B
+    """
+    import html
+    import re
+
+    # Standard ANSI colors (0-7) - dark variants
+    COLORS = ['#000000', '#cc0000', '#00cc00', '#cccc00', '#0000cc', '#cc00cc', '#00cccc', '#cccccc']
+    # Bright variants (8-15)
+    BRIGHT_COLORS = ['#555555', '#ff5555', '#55ff55', '#ffff55', '#5555ff', '#ff55ff', '#55ffff', '#ffffff']
+
+    def color_256(n):
+        """Convert 256-color index to hex."""
+        if n < 8:
+            return COLORS[n]
+        elif n < 16:
+            return BRIGHT_COLORS[n - 8]
+        elif n < 232:
+            # 6x6x6 color cube
+            n -= 16
+            r = (n // 36) * 51
+            g = ((n // 6) % 6) * 51
+            b = (n % 6) * 51
+            return f'#{r:02x}{g:02x}{b:02x}'
+        else:
+            # Grayscale
+            v = (n - 232) * 10 + 8
+            return f'#{v:02x}{v:02x}{v:02x}'
+
+    # Parse ANSI sequences
+    result = []
+    styles = {'bold': False, 'italic': False, 'underline': False, 'fg': None, 'bg': None}
+
+    # Split on ANSI escape sequences
+    parts = re.split(r'\x1b\[([0-9;]*)m', text)
+
+    for i, part in enumerate(parts):
+        if i % 2 == 0:
+            # Text content
+            if part:
+                # Build style string
+                style_parts = []
+                if styles['bold']:
+                    style_parts.append('font-weight:bold')
+                if styles['italic']:
+                    style_parts.append('font-style:italic')
+                if styles['underline']:
+                    style_parts.append('text-decoration:underline')
+                if styles['fg']:
+                    style_parts.append(f"color:{styles['fg']}")
+                if styles['bg']:
+                    style_parts.append(f"background-color:{styles['bg']}")
+
+                escaped = html.escape(part)
+                if style_parts:
+                    result.append(f'<span style="{";".join(style_parts)}">{escaped}</span>')
+                else:
+                    result.append(escaped)
+        else:
+            # ANSI codes
+            if not part or part == '0':
+                # Reset
+                styles = {'bold': False, 'italic': False, 'underline': False, 'fg': None, 'bg': None}
+            else:
+                codes = part.split(';')
+                j = 0
+                while j < len(codes):
+                    try:
+                        code = int(codes[j])
+                    except ValueError:
+                        j += 1
+                        continue
+
+                    if code == 0:
+                        styles = {'bold': False, 'italic': False, 'underline': False, 'fg': None, 'bg': None}
+                    elif code == 1:
+                        styles['bold'] = True
+                    elif code == 3:
+                        styles['italic'] = True
+                    elif code == 4:
+                        styles['underline'] = True
+                    elif code == 22:
+                        styles['bold'] = False
+                    elif code == 23:
+                        styles['italic'] = False
+                    elif code == 24:
+                        styles['underline'] = False
+                    elif 30 <= code <= 37:
+                        styles['fg'] = COLORS[code - 30]
+                    elif 40 <= code <= 47:
+                        styles['bg'] = COLORS[code - 40]
+                    elif 90 <= code <= 97:
+                        styles['fg'] = BRIGHT_COLORS[code - 90]
+                    elif 100 <= code <= 107:
+                        styles['bg'] = BRIGHT_COLORS[code - 100]
+                    elif code == 38 and j + 2 < len(codes):
+                        # Extended foreground
+                        try:
+                            mode = int(codes[j + 1])
+                            if mode == 5 and j + 2 < len(codes):
+                                # 256 color
+                                styles['fg'] = color_256(int(codes[j + 2]))
+                                j += 2
+                            elif mode == 2 and j + 4 < len(codes):
+                                # True color
+                                r, g, b = int(codes[j + 2]), int(codes[j + 3]), int(codes[j + 4])
+                                styles['fg'] = f'#{r:02x}{g:02x}{b:02x}'
+                                j += 4
+                        except (ValueError, IndexError):
+                            pass
+                    elif code == 48 and j + 2 < len(codes):
+                        # Extended background
+                        try:
+                            mode = int(codes[j + 1])
+                            if mode == 5 and j + 2 < len(codes):
+                                styles['bg'] = color_256(int(codes[j + 2]))
+                                j += 2
+                            elif mode == 2 and j + 4 < len(codes):
+                                r, g, b = int(codes[j + 2]), int(codes[j + 3]), int(codes[j + 4])
+                                styles['bg'] = f'#{r:02x}{g:02x}{b:02x}'
+                                j += 4
+                        except (ValueError, IndexError):
+                            pass
+                    elif code == 39:
+                        styles['fg'] = None  # Default fg
+                    elif code == 49:
+                        styles['bg'] = None  # Default bg
+                    j += 1
+
+    # Wrap in pre to preserve whitespace
+    return '<pre style="margin:0;white-space:pre-wrap">' + ''.join(result) + '</pre>'
 
 
 class TmuxSelectionDialog(DraggableDialog):
@@ -1838,11 +1977,12 @@ class TmuxSelectionDialog(DraggableDialog):
         return super().eventFilter(obj, event)
 
     def _update_preview(self, pane_id):
-        """Update preview panel with scrollback from pane."""
+        """Update preview panel with scrollback from pane (with ANSI colors)."""
         self.preview_label.setText(f"Preview: {pane_id}")
         text = _get_tmux_scrollback(pane_id)
         if text is not None:
-            self.preview.setPlainText(text)
+            html = _ansi_to_html(text)
+            self.preview.setHtml(html)
             sb = self.preview.verticalScrollBar()
             sb.setValue(sb.maximum())
         else:
