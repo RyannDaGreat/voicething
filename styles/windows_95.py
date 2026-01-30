@@ -84,6 +84,10 @@ class Windows95Style(BaseStyle):
     knob_tickmarks = True
     knob_glow = False
 
+    # Input fields - white background (authentic Win95)
+    input_bg = "rgb(255,255,255)"
+    input_text = "rgb(0,0,0)"
+
     # Waveform - green on black (classic Winamp/oscilloscope look)
     waveform_color = LCD_GREEN
     waveform_glow = True

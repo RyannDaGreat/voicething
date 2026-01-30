@@ -65,11 +65,13 @@ class RustGrungeStyle(BaseStyle):
 
     # Rotary knob - industrial gauge style
     knob_style = "industrial"
-    knob_body_dark = "#201a16"
-    knob_body_light = "#4a4038"
+    knob_body_dark = "#302820"
+    knob_body_light = "#5a4a38"
     knob_notch_style = "arrow"
     knob_tickmarks = True
     knob_glow = False
+    knob_track_color = "#ff8c28"  # Hazard orange track
+    knob_label_color = "#dcd0c0"  # Light tan text
 
     # Waveform - amber/orange on dark
     waveform_color = HAZARD_ORANGE

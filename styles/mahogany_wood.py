@@ -63,13 +63,15 @@ class MahoganyWoodStyle(BaseStyle):
     slider_handle = "rgb(210,150,70)"
     slider_fill = "rgb(180,120,55)"
 
-    # Rotary knob - classic wood grain dial style
-    knob_style = "vintage"
-    knob_body_dark = "#3e2218"
-    knob_body_light = "#6a3d28"
+    # Rotary knob - polished brass dial style
+    knob_style = "brass"
+    knob_body_dark = "#8b6914"
+    knob_body_light = "#d4a534"
     knob_notch_style = "needle"
     knob_tickmarks = True
     knob_glow = False
+    knob_track_color = "#d4a534"  # Gold/amber track
+    knob_label_color = "#fff8eb"  # Cream text
 
     # Waveform - warm amber glow
     waveform_color = QColor(210, 150, 70)

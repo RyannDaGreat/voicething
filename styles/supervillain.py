@@ -60,11 +60,13 @@ class SupervillainStyle(BaseStyle):
 
     # Rotary knob - EVIL dark style with red glow
     knob_style = "evil"
-    knob_body_dark = "#080508"
-    knob_body_light = "#201820"
+    knob_body_dark = "#280808"
+    knob_body_light = "#401818"
     knob_notch_style = "arrow"
     knob_tickmarks = True
     knob_glow = True
+    knob_track_color = "#ff2828"  # Blood red track
+    knob_label_color = "#ff6060"  # Red text
 
     # Waveform - blood red pulse
     waveform_color = BLOOD_RED
