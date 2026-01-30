@@ -1661,7 +1661,7 @@ def _get_tmux_scrollback(target, lines=50):
         return None
 
 
-def _ansi_to_html(text: str, cursor_info=None, scrollback_lines=50) -> str:
+def _ansi_to_html(text: str, cursor_info=None, scrollback_lines=50, ansi_colors=True) -> str:
     """Convert ANSI escape sequences to HTML for QTextEdit.
 
     Supports all rp.fansi features:
@@ -1677,6 +1677,7 @@ def _ansi_to_html(text: str, cursor_info=None, scrollback_lines=50) -> str:
         text: Text with ANSI escape codes
         cursor_info: Optional (cursor_x, cursor_y, pane_height) from _get_tmux_cursor
         scrollback_lines: Number of scrollback lines captured (to calculate cursor line)
+        ansi_colors: If False, strip ANSI codes but don't apply colors/styles
     """
     import html as html_module
     import re
@@ -1720,6 +1721,20 @@ def _ansi_to_html(text: str, cursor_info=None, scrollback_lines=50) -> str:
                 # Cursor at end of line
                 lines[cursor_line] = line + CURSOR_PLACEHOLDER + ' ' + '\x00CURSOREND\x00'
             text = '\n'.join(lines)
+
+    # Fast path: strip ANSI codes without applying styles
+    if not ansi_colors:
+        # Strip all ANSI escape sequences
+        stripped = re.sub(r'\x1b\[[0-9;:]*m', '', text)
+        # Also strip OSC sequences (hyperlinks etc)
+        stripped = re.sub(r'\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)', '', stripped)
+        html_out = html_module.escape(stripped)
+        # Cursor styling still applies
+        if CURSOR_PLACEHOLDER in html_out:
+            cursor_style = 'background:#00ff00;color:#000'
+            html_out = html_out.replace(html_module.escape(CURSOR_PLACEHOLDER), f'<span style="{cursor_style}">')
+            html_out = html_out.replace(html_module.escape('\x00CURSOREND\x00'), '</span>')
+        return '<pre style="margin:0;white-space:pre-wrap;font-family:Menlo,monospace">' + html_out + '</pre>'
 
     # Standard ANSI colors (0-7) - dark variants
     COLORS = ['#000000', '#cc0000', '#00cc00', '#cccc00', '#0000cc', '#cc00cc', '#00cccc', '#cccccc']
@@ -2259,6 +2274,15 @@ class TmuxSelectionDialog(DraggableDialog):
         set_tooltip(self.theme_btn, "D  Toggle dark/light terminal background")
         btn_row.addWidget(self.theme_btn)
 
+        # ANSI colors checkbox
+        self._ansi_colors_enabled = True
+        self.ansi_checkbox = QCheckBox("A  ANSI colors")
+        self.ansi_checkbox.setChecked(True)
+        self.ansi_checkbox.setStyleSheet(get_checkbox_css())
+        self.ansi_checkbox.stateChanged.connect(self._on_ansi_toggle)
+        set_tooltip(self.ansi_checkbox, "A  Enable/disable ANSI color rendering in preview")
+        btn_row.addWidget(self.ansi_checkbox)
+
         btn_row.addStretch()
         cancel_btn = QPushButton("Esc  Cancel")
         cancel_btn.setStyleSheet(get_btn_css())
@@ -2500,7 +2524,7 @@ done
                             except ValueError:
                                 pass
 
-                            html = _ansi_to_html(text, cursor_info=cursor_info)
+                            html = _ansi_to_html(text, cursor_info=cursor_info, ansi_colors=self._ansi_colors_enabled)
                             # Write to cache for instant display on pane switch
                             _pane_html_cache[current_pane] = html
                             if html != last_html:
@@ -2605,6 +2629,9 @@ done
         elif e.key() == Qt.Key.Key_D:
             # Toggle dark/light mode for terminal preview
             self._toggle_preview_theme()
+        elif e.key() == Qt.Key.Key_A:
+            # Toggle ANSI colors
+            self.ansi_checkbox.setChecked(not self.ansi_checkbox.isChecked())
         else:
             super().keyPressEvent(e)
 
@@ -2648,6 +2675,13 @@ done
                 + SCROLLBAR_CSS
             )
         self.preview._update_style()
+
+    def _on_ansi_toggle(self, state):
+        """Toggle ANSI color rendering and invalidate cache to force refresh."""
+        global _pane_html_cache
+        self._ansi_colors_enabled = bool(state)
+        # Clear cache so polling thread re-renders with new setting
+        _pane_html_cache.clear()
 
 
 class TextEditDialog(DraggableDialog):
