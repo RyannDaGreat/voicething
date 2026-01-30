@@ -2141,6 +2141,7 @@ class TmuxSelectionDialog(DraggableDialog):
         self._poll_stop = threading.Event()
         self._poll_thread = None
         self._last_preview_text = None  # For change detection
+        self._last_preview_html = None  # For avoiding redundant UI updates
         self._preview_changed.connect(self._on_preview_changed)
 
         layout = QVBoxLayout(self)
@@ -2405,22 +2406,19 @@ class TmuxSelectionDialog(DraggableDialog):
     def _poll_preview_loop(self):
         """Background thread: poll for tmux pane changes."""
         # print("[tmux-poll] Thread started")
-        last_state = None  # (text, cursor_info) tuple for change detection
-        last_html = None
+        last_state = (None, None, None)  # (pane_id, text, cursor_info)
         while not self._poll_stop.is_set():
             pane_id = self._hover_pane_id or self._selected_pane_id
             if pane_id:
                 text = _get_tmux_scrollback(pane_id, use_cache=False)
-                cursor_info = _get_tmux_cursor(pane_id)
-                current_state = (text, cursor_info)
-                if current_state != last_state:
-                    last_state = current_state
-                    if text is not None:
+                if text is not None:
+                    cursor_info = _get_tmux_cursor(pane_id)
+                    state = (pane_id, text, cursor_info)
+                    # Only generate HTML and emit if state changed
+                    if state != last_state:
+                        last_state = state
                         html = _ansi_to_html(text, cursor_info=cursor_info)
-                        # Only emit if HTML actually changed (avoid UI hiccups)
-                        if html != last_html:
-                            last_html = html
-                            self._preview_changed.emit(pane_id, html)
+                        self._preview_changed.emit(pane_id, html)
             self._poll_stop.wait(0.1)  # Sleep 100ms between polls
         # print("[tmux-poll] Thread stopped")
 
@@ -2429,6 +2427,10 @@ class TmuxSelectionDialog(DraggableDialog):
         current_pane = self._hover_pane_id or self._selected_pane_id
         if pane_id != current_pane:
             return  # Pane changed since signal was emitted
+        # Skip if HTML hasn't changed
+        if html == self._last_preview_html:
+            return
+        self._last_preview_html = html
         # Preserve scroll position during update
         sb = self.preview.verticalScrollBar()
         scroll_pos = sb.value()
