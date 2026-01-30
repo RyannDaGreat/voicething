@@ -1093,16 +1093,18 @@ def load_chime_log_from_file():
 
 
 def get_audio_settings(theme_name=None):
-    """Get audio settings (reverb, chorus) for a chime theme.
+    """Get audio settings for a chime theme.
 
-    Returns dict with 'reverb' and 'chorus' keys (0.0 to 1.0).
+    Returns dict with reverb, chorus keys (0.0 to 1.0).
     Falls back to '_default' if theme has no settings.
     """
     theme = theme_name or S.CHIME_THEME
     settings = S.CHIME_AUDIO_SETTINGS.get(theme)
     if settings is None:
-        settings = S.CHIME_AUDIO_SETTINGS.get('_default', {'reverb': 0.4, 'chorus': 0.3})
-    return settings
+        settings = S.CHIME_AUDIO_SETTINGS.get('_default', {
+            'reverb': 0.4, 'chorus': 0.3
+        })
+    return settings.copy()  # Return copy to avoid mutation
 
 
 def set_audio_settings(theme_name, reverb=None, chorus=None):
@@ -4421,7 +4423,7 @@ class PrefsDialog(DraggableDialog):
     def _on_chime_theme_changed(self, index):
         theme = self.chime_theme_combo.currentData()
         S.CHIME_THEME = theme
-        # Update reverb/chorus knobs to match new theme's settings
+        # Update all audio knobs to match new theme's settings
         audio_settings = get_audio_settings(theme)
         self.reverb_knob.setValue(audio_settings.get('reverb', 0.4), emit=False)
         self.chorus_knob.setValue(audio_settings.get('chorus', 0.3), emit=False)

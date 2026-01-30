@@ -18,7 +18,7 @@
     "lpc_cat_black"
   ],
   "WHISPER_MODEL": "medium",
-  "THEME": "rust_grunge",
+  "THEME": "mahogany_wood",
   "WAKEWORD_ENGINE": "macos",
   "WAKEWORD_OPENWAKEWORD": {
     "model": "jarvis",
@@ -48,13 +48,29 @@
   "SILENCE_SKIP_ENABLED": true,
   "SILENCE_THRESHOLD": -60,
   "CHIME_VOLUME": 0.7599999999999999,
-  "CHIME_PROGRAM": 105,
-  "CHIME_PITCH": -13,
+  "CHIME_PROGRAM": 48,
+  "CHIME_PITCH": 24,
   "CHIME_THEME": "default",
   "CHIME_AUDIO_SETTINGS": {
     "_default": {
       "reverb": 0.4,
       "chorus": 0.3
+    },
+    "default": {
+      "reverb": 1.0,
+      "chorus": 1.0,
+      "filter": 0.0,
+      "pan": 1.0
+    },
+    "bright": {
+      "reverb": 0.0,
+      "chorus": 0.3
+    },
+    "melancholy": {
+      "reverb": 1.0,
+      "chorus": 0.96,
+      "filter": 0.0,
+      "pan": 1.0
     }
   },
   "RECORDINGS_DIR": "/var/folders/pm/461ntwb12b7bbqcjw1s6t0kw0000gn/T/VoiceThing",
@@ -96,7 +112,7 @@
       ]
     },
     "preferences": {
-      "x": 1105,
+      "x": 1103,
       "y": 73,
       "width": 600,
       "height": 1084
