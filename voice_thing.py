@@ -2438,6 +2438,24 @@ class WakeWordSettingsWidget(QWidget):
         phrases_row.addWidget(self._phrases_edit, 1)
         macos_layout.addLayout(phrases_row)
 
+        # +Tmux phrases checkbox
+        tmux_row = QHBoxLayout()
+        tmux_row.setSpacing(8)
+        self._tmux_phrases_checkbox = QCheckBox("+Tmux phrases")
+        self._tmux_phrases_checkbox.setStyleSheet(get_checkbox_css())
+        self._tmux_phrases_checkbox.setChecked(S.WAKEWORD_MACOS.get('use_tmux_phrases', False))
+        set_tooltip(self._tmux_phrases_checkbox,
+            "Add tmux pane phrases as wake words (start only, not stop).\n\n"
+            "When a tmux phrase is spoken, recording starts and the phrase\n"
+            "is prepended to the transcription so it routes to the right pane.\n\n"
+            "Example: Say 'chicken' to start, transcription becomes 'chicken ...'\n\n"
+            "Note: Regular wake words can still stop recording - only tmux\n"
+            "phrases are restricted to starting.")
+        self._tmux_phrases_checkbox.stateChanged.connect(self._on_tmux_phrases_changed)
+        tmux_row.addWidget(self._tmux_phrases_checkbox)
+        tmux_row.addStretch()
+        macos_layout.addLayout(tmux_row)
+
         # Info label
         info_label = QLabel("Phrases are detected offline via macOS Speech Recognition.")
         info_label.setStyleSheet(get_pref_label_css() + f" color: {TEXT_MUTED};")
@@ -2486,6 +2504,12 @@ class WakeWordSettingsWidget(QWidget):
         phrases = self._phrases_edit.text().strip()
         cfg = S.WAKEWORD_MACOS.copy()
         cfg['phrases'] = phrases
+        S.set('WAKEWORD_MACOS', cfg)
+        self.settings_changed.emit()
+
+    def _on_tmux_phrases_changed(self, state):
+        cfg = S.WAKEWORD_MACOS.copy()
+        cfg['use_tmux_phrases'] = (state == Qt.CheckState.Checked.value)
         S.set('WAKEWORD_MACOS', cfg)
         self.settings_changed.emit()
 
@@ -5194,10 +5218,18 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
                 )
             else:  # macos
                 cfg = S.WAKEWORD_MACOS
+                # Collect tmux phrases if checkbox is enabled
+                tmux_phrases = []
+                if cfg.get('use_tmux_phrases') and S.TMUX_PANE_NAMES:
+                    for info in S.TMUX_PANE_NAMES.values():
+                        phrase = info.get('phrase', '')
+                        if phrase:
+                            tmux_phrases.append(phrase)
                 self.wake_word_engine = create_engine(
                     engine_name,
                     callback=self._on_wake_word_detected,
                     phrases=cfg.get('phrases', 'hey computer, computer'),
+                    tmux_phrases=tmux_phrases,
                 )
 
             # Set up stop callback
@@ -5558,6 +5590,17 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         else:
             # Strip wake words from beginning/end
             raw_text = strip_wake_words(text)
+
+        # Prepend tmux trigger phrase if macOS engine recorded one
+        if self.wake_word_engine is not None:
+            trigger = getattr(self.wake_word_engine, 'last_trigger_phrase', None)
+            if trigger and raw_text:
+                raw_text = f"{trigger} {raw_text}"
+                print(f"[wakeword] Prepended tmux phrase: '{trigger}'")
+            # Clear it for next recording
+            if hasattr(self.wake_word_engine, 'last_trigger_phrase'):
+                self.wake_word_engine.last_trigger_phrase = None
+
         print(f"Result: {raw_text!r}")
         if not raw_text:
             play_chime('null_text')  # No text detected
