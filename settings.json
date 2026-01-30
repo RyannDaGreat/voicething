@@ -5,11 +5,11 @@
   "SOUND_ENABLED": true,
   "LLM_ENABLED": false,
   "AUTO_ENTER": true,
-  "WAKE_WORD_ENABLED": false,
+  "WAKE_WORD_ENABLED": true,
   "SIMPLE_MODE": false,
   "PET_TYPES": [],
   "WHISPER_MODEL": "large-v3",
-  "THEME": "macos_2005",
+  "THEME": "cyberpunk_metal",
   "WAKEWORD_ENGINE": "macos",
   "WAKEWORD_OPENWAKEWORD": {
     "model": "jarvis",
@@ -48,7 +48,7 @@
   "CHIME_PITCH": 3,
   "CHIME_THEME": "default",
   "RECORDINGS_DIR": "/var/folders/pm/461ntwb12b7bbqcjw1s6t0kw0000gn/T/VoiceThing",
-  "ALWAYS_ON_TOP": false,
+  "ALWAYS_ON_TOP": true,
   "SPEAK_BACK_VOICE": "supertonic",
   "TTS_SAY": {
     "voice": "Boing",
@@ -56,7 +56,7 @@
   },
   "TTS_SUPERTONIC": {
     "voice": "F4",
-    "speed": 1.4,
+    "speed": 1.3,
     "volume": 1.0,
     "steps": 10
   },
@@ -70,26 +70,26 @@
   "RESTORE_WINDOW_GEOMETRY": true,
   "WINDOW_GEOMETRY": {
     "main": {
-      "x": 625,
-      "y": 348,
-      "width": 478,
-      "height": 460
+      "x": 15,
+      "y": 371,
+      "width": 441,
+      "height": 699
     },
     "tmux_selection": {
-      "x": 28,
-      "y": 24,
-      "width": 1694,
-      "height": 1067,
+      "x": 0,
+      "y": 38,
+      "width": 1728,
+      "height": 1079,
       "splitter": [
-        577,
-        1080
+        440,
+        1251
       ]
     },
     "preferences": {
-      "x": 411,
-      "y": 105,
+      "x": 572,
+      "y": 112,
       "width": 905,
-      "height": 946
+      "height": 1005
     }
   }
 }
