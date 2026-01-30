@@ -328,7 +328,7 @@ DEFAULTS = dict(
     # Wake word engine selection and per-engine settings
     WAKEWORD_ENGINE='openwakeword',  # 'openwakeword' or 'macos'
     WAKEWORD_OPENWAKEWORD={'model': 'computer', 'sensitivity': 0.2},
-    WAKEWORD_MACOS={'phrases': 'hey computer, computer, start recording'},
+    WAKEWORD_MACOS={'phrases': 'hey computer, computer, start recording', 'cancel_phrases': 'cancel, never mind'},
     TMUX_MODE=False,
     TMUX_TARGET='%',  # Tmux pane target (% = current pane)
     TMUX_PANE_NAMES={},  # pane_id -> {phrase: str}
@@ -3468,6 +3468,25 @@ class WakeWordSettingsWidget(QWidget):
         tmux_row.addStretch()
         macos_layout.addLayout(tmux_row)
 
+        # Cancel phrases row
+        cancel_row = QHBoxLayout()
+        cancel_row.setSpacing(8)
+        cancel_label = QLabel("Cancel:")
+        cancel_label.setStyleSheet(get_pref_label_css())
+        set_tooltip(cancel_label,
+            "Comma-separated list of phrases that cancel recording.\n\n"
+            "Example: cancel, never mind, stop\n\n"
+            "Saying these while recording will cancel without transcribing.")
+        cancel_row.addWidget(cancel_label)
+        self._cancel_edit = QLineEdit()
+        self._cancel_edit.setStyleSheet(get_lineedit_css())
+        self._cancel_edit.setPlaceholderText("cancel, never mind")
+        current_cancel = S.WAKEWORD_MACOS.get('cancel_phrases', 'cancel, never mind')
+        self._cancel_edit.setText(current_cancel)
+        self._cancel_edit.editingFinished.connect(self._on_cancel_phrases_changed)
+        cancel_row.addWidget(self._cancel_edit, 1)
+        macos_layout.addLayout(cancel_row)
+
         # Info label
         info_label = QLabel("Phrases are detected offline via macOS Speech Recognition.")
         info_label.setStyleSheet(get_pref_label_css() + f" color: {TEXT_MUTED};")
@@ -3525,6 +3544,13 @@ class WakeWordSettingsWidget(QWidget):
         cfg['use_tmux_phrases'] = checked
         S.set('WAKEWORD_MACOS', cfg)
         self._tmux_phrases_checkbox.setText(get_tmux_phrases_checkbox_label(checked))
+        self.settings_changed.emit()
+
+    def _on_cancel_phrases_changed(self):
+        phrases = self._cancel_edit.text().strip()
+        cfg = S.WAKEWORD_MACOS.copy()
+        cfg['cancel_phrases'] = phrases
+        S.set('WAKEWORD_MACOS', cfg)
         self.settings_changed.emit()
 
     def _update_tmux_phrases_tooltip(self):
@@ -6352,10 +6378,12 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
                     callback=self._on_wake_word_detected,
                     phrases=cfg.get('phrases', 'hey computer, computer'),
                     tmux_phrases=tmux_phrases,
+                    cancel_phrases=cfg.get('cancel_phrases', ''),
                 )
 
-            # Set up stop callback
+            # Set up stop and cancel callbacks
             self.wake_word_engine.on_stop = lambda: self.stop_signal.emit()
+            self.wake_word_engine.on_cancel = lambda: self.cancel_signal.emit()
 
             self.wake_word_engine.start()
             print(f"Wake word listener started ({self._get_wake_word_display()})")
