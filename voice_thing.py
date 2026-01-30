@@ -1694,8 +1694,48 @@ def _ansi_to_html(text: str, cursor_info=None, scrollback_lines=50) -> str:
         cursor_info: Optional (cursor_x, cursor_y, pane_height) from _get_tmux_cursor
         scrollback_lines: Number of scrollback lines captured (to calculate cursor line)
     """
-    import html
+    import html as html_module
     import re
+
+    # Insert cursor placeholder in RAW text before any HTML conversion
+    # This way we count raw characters, not HTML entities
+    CURSOR_PLACEHOLDER = '\x00CURSOR\x00'
+    if cursor_info:
+        cursor_x, cursor_y, pane_height = cursor_info
+        lines = text.split('\n')
+        total_lines = len(lines)
+        cursor_line = total_lines - pane_height + cursor_y
+        if 0 <= cursor_line < total_lines:
+            line = lines[cursor_line]
+            # Count visible characters (skip ANSI escape sequences)
+            visible_count = 0
+            i = 0
+            insert_pos = len(line)  # Default: end of line
+            while i < len(line):
+                if line[i] == '\x1b':
+                    # Skip ANSI escape sequence
+                    end = line.find('m', i)
+                    if end != -1:
+                        i = end + 1
+                    else:
+                        i += 1
+                else:
+                    if visible_count == cursor_x:
+                        insert_pos = i
+                        break
+                    visible_count += 1
+                    i += 1
+            # Insert placeholder - wrap the character at cursor or add block at end
+            if insert_pos < len(line):
+                # Find end of character (skip any following ANSI sequences)
+                char_end = insert_pos + 1
+                lines[cursor_line] = (line[:insert_pos] + CURSOR_PLACEHOLDER +
+                                      line[insert_pos:char_end] + '\x00CURSOREND\x00' +
+                                      line[char_end:])
+            else:
+                # Cursor at end of line
+                lines[cursor_line] = line + CURSOR_PLACEHOLDER + ' ' + '\x00CURSOREND\x00'
+            text = '\n'.join(lines)
 
     # Standard ANSI colors (0-7) - dark variants
     COLORS = ['#000000', '#cc0000', '#00cc00', '#cccc00', '#0000cc', '#cc00cc', '#00cccc', '#cccccc']
@@ -1806,7 +1846,7 @@ def _ansi_to_html(text: str, cursor_info=None, scrollback_lines=50) -> str:
                 if bg:
                     style_parts.append(f"background-color:{bg}")
 
-                escaped = html.escape(part)
+                escaped = html_module.escape(part)
                 if style_parts:
                     result.append(f'<span style="{";".join(style_parts)}">{escaped}</span>')
                 else:
@@ -1950,14 +1990,15 @@ def _ansi_to_html(text: str, cursor_info=None, scrollback_lines=50) -> str:
 
     # Restore hyperlinks
     for idx, (url, content) in enumerate(links):
-        escaped_content = html.escape(content)
+        escaped_content = html_module.escape(content)
         html_out = html_out.replace(f'\x00LINK{idx}\x00',
-            f'<a href="{html.escape(url)}" style="color:#5599ff">{escaped_content}</a>')
+            f'<a href="{html_module.escape(url)}" style="color:#5599ff">{escaped_content}</a>')
 
-    # TODO: Cursor rendering disabled - was causing HTML rendering issues
-    # The cursor positioning in HTML with nested spans and entities is complex
-    # if cursor_info:
-    #     ... cursor rendering code ...
+    # Replace cursor placeholders with styled span
+    if CURSOR_PLACEHOLDER in html_out:
+        cursor_style = 'background:#00ff00;color:#000'
+        html_out = html_out.replace(CURSOR_PLACEHOLDER, f'<span style="{cursor_style}">')
+        html_out = html_out.replace('\x00CURSOREND\x00', '</span>')
 
     # Wrap in pre to preserve whitespace
     return '<pre style="margin:0;white-space:pre-wrap;font-family:Menlo,monospace">' + html_out + '</pre>'
