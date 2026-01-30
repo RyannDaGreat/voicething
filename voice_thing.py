@@ -2700,18 +2700,26 @@ done
         self.accept()
 
     def accept(self):
-        """Exit fullscreen if active before accepting."""
+        """Exit fullscreen if active, clean up stale panes, and save settings."""
         if self._is_true_fullscreen:
             self._toggle_true_fullscreen()
+        # Clean up stale pane_ids from TMUX_PANE_NAMES
+        if self._pane_data:
+            live_ids = {p['pane_id'] for p in self._pane_data}
+            stale = [pid for pid in S.TMUX_PANE_NAMES if pid not in live_ids]
+            for pid in stale:
+                del S.TMUX_PANE_NAMES[pid]
+        # Set selected as target
+        if self._selected_pane_id:
+            self.selected_target = self._selected_pane_id
+        # Save settings via main window
+        if self._main_window and hasattr(self._main_window, '_save_settings'):
+            self._main_window._save_settings()
         super().accept()
 
     def reject(self):
-        """Revert tmux mode on cancel."""
-        # Exit fullscreen if active
-        if self._is_true_fullscreen:
-            self._toggle_true_fullscreen()
-        S.set('TMUX_MODE', self._orig_tmux_mode)
-        super().reject()
+        """Just close - same as accept since everything auto-saves."""
+        self.accept()  # Use same logic as accept
 
     def center_on_parent(self):
         """Restore saved geometry including splitter position."""
@@ -2743,10 +2751,10 @@ done
             return
 
         if e.key() == Qt.Key.Key_Escape:
-            self.reject()
+            self.accept()  # Just close - everything auto-saves
         elif e.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
             if self.table.state() != QTableWidget.State.EditingState:
-                self._accept_selection()
+                self.accept()  # Just close - everything auto-saves
         elif e.key() == Qt.Key.Key_U:
             self.tmux_toggle_btn.click()
         elif e.key() == Qt.Key.Key_D:
@@ -2836,9 +2844,10 @@ done
             self._update_preview_style()
 
     def _on_tmux_toggle(self, checked=None):
-        """Toggle tmux mode and update button icon."""
+        """Toggle tmux mode, update button icon, and auto-save."""
         is_on = self.tmux_toggle_btn.isChecked()
         self.tmux_toggle_btn.setIcon(load_icon("tmux" if is_on else "tmux-off", ICON_COLOR_DARK))
+        S.set('TMUX_MODE', is_on)  # Auto-save immediately
 
     def _paste_from_tmux_clipboard(self):
         """Paste tmux clipboard contents to the selected pane."""
