@@ -5,13 +5,13 @@
   "SOUND_ENABLED": true,
   "LLM_ENABLED": false,
   "AUTO_ENTER": true,
-  "WAKE_WORD_ENABLED": true,
+  "WAKE_WORD_ENABLED": false,
   "SIMPLE_MODE": false,
   "PET_TYPES": [
     "emmy"
   ],
   "WHISPER_MODEL": "large-v3",
-  "THEME": "cyberpunk_metal",
+  "THEME": "macos_2005",
   "WAKEWORD_ENGINE": "macos",
   "WAKEWORD_OPENWAKEWORD": {
     "model": "jarvis",
