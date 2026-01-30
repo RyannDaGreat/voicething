@@ -1156,7 +1156,9 @@ ACTIONS = [
     ("record", "Space", "record", "Start/finish recording", "Start/Stop Recording"),
     ("cancel", "X", "cancel", "Cancel recording", None),
     ("minimize", "Esc", None, "Minimize window", None),
-    ("small_mode", "E", None, "Toggle small mode", None),
+    ("small_mode", "E", None, "Toggle small mode (yellow)", None),
+    ("maximize", "G", None, "Toggle maximize (green)", None),
+    ("blue_mode", "B", None, "Toggle blue mode (tmux fullscreen)", None),
     ("simple_mode", "W", "plus", "Toggle simple mode (hide advanced)", None),
     ("retranscribe", "Z", "retranscribe", "Retranscribe latest with current model", None),
     ("copy", "C", "copy", "Copy last transcription", "Copy Last Transcription"),
@@ -1166,8 +1168,8 @@ ACTIONS = [
     ("auto_hide", "H", "eye", "Toggle auto-minimize", None),
     ("llm", "R", "robot", "Toggle LLM post-processing", None),
     ("wake_word", "J", "ear", "Toggle wake word detection", None),
-    ("wake_word_model", "K", "ear", "Change wake word", None),
     ("auto_enter", "N", "enter", "Toggle auto-enter after paste", None),
+    ("tmux", "U", "tmux", "Open tmux pane manager", None),
     ("model", "M", "mic", "Change Whisper model", None),
     ("prefs", "P", "settings", "Preferences", None),
     ("help", "?", "book", "Show help", "Help"),
@@ -2364,7 +2366,7 @@ class TmuxSelectionDialog(DraggableDialog):
         self.ansi_btn.setCheckable(True)
         self.ansi_btn.setChecked(self._ansi_colors_enabled)
         self.ansi_btn.clicked.connect(self._on_ansi_toggle)
-        set_tooltip(self.ansi_btn, "A  Toggle ANSI color rendering")
+        set_tooltip(self.ansi_btn, "A  Toggle ANSI color rendering\n\nOFF = faster rendering\nON = slower but prettier")
         btn_row.addWidget(self.ansi_btn)
 
         # Font size increase (zoom in)
@@ -2789,9 +2791,10 @@ done
         return super().eventFilter(obj, event)
 
     def mousePressEvent(self, e):
-        """Clear focus from preview when clicking elsewhere in dialog."""
-        # Clear preview focus so shortcuts work again
-        if self.focusWidget() is self.preview:
+        """Clear focus from preview or table when clicking elsewhere in dialog."""
+        # Clear focus from preview or table so shortcuts work again
+        focused = self.focusWidget()
+        if focused is self.preview or focused is self.table:
             self.setFocus()
         super().mousePressEvent(e)
 
@@ -2831,14 +2834,14 @@ done
 
     def _increase_font_size(self):
         """Increase preview font size."""
-        if self._preview_font_size < 24:
+        if self._preview_font_size < 28:  # Extended range (default 10, max 28)
             self._preview_font_size += 1
             S.set('TMUX_PREVIEW_FONT_SIZE', self._preview_font_size)
             self._update_preview_style()
 
     def _decrease_font_size(self):
         """Decrease preview font size."""
-        if self._preview_font_size > 6:
+        if self._preview_font_size > 2:  # Extended range (default 10, min 2)
             self._preview_font_size -= 1
             S.set('TMUX_PREVIEW_FONT_SIZE', self._preview_font_size)
             self._update_preview_style()
@@ -3428,8 +3431,16 @@ class WakeWordSettingsWidget(QWidget):
         engine_label.setStyleSheet(get_pref_label_css())
         set_tooltip(engine_label,
             "Wake word detection engine:\n\n"
-            "OpenWakeWord = ML-based, select from pre-trained models\n"
-            "macOS Native = Apple's built-in recognition, custom phrases")
+            "OpenWakeWord:\n"
+            "  + Faster response time\n"
+            "  + Lower CPU usage\n"
+            "  - Limited to pre-trained model phrases\n\n"
+            "macOS Native:\n"
+            "  + Custom phrases (any words you want)\n"
+            "  + Cancel phrases to abort recording\n"
+            "  + Tmux pane routing phrases\n"
+            "  - Slower response time\n"
+            "  - Shows microphone indicator in menu bar")
         engine_row.addWidget(engine_label)
         self._engine_combo = QComboBox()
         self._engine_combo.setStyleSheet(get_combobox_css())
@@ -3550,7 +3561,7 @@ class WakeWordSettingsWidget(QWidget):
         macos_layout.addLayout(cancel_row)
 
         # Info label
-        info_label = QLabel("Phrases are detected offline via macOS Speech Recognition.")
+        info_label = QLabel("Offline via macOS Speech Recognition. Slower than OpenWakeWord but supports custom phrases, cancel phrases, and tmux routing.")
         info_label.setStyleSheet(get_pref_label_css() + f" color: {TEXT_MUTED};")
         info_label.setWordWrap(True)
         macos_layout.addWidget(info_label)
