@@ -2425,35 +2425,22 @@ class TmuxSelectionDialog(DraggableDialog):
     def _update_preview(self, pane_id):
         """Update preview panel with scrollback from pane (with ANSI colors).
 
-        First tries to display cached HTML instantly, then falls back to fetching fresh.
-        The polling thread will update the cache continuously once running.
+        Never blocks - displays cached HTML if available, otherwise shows loading.
+        The polling thread will update the display once it fetches the content.
         """
         global _pane_html_cache
         self.preview_label.setText(f"Preview: {pane_id}")
         self.preview.set_target(pane_id)
 
-        # Try cached HTML first for instant display
+        # Display cached HTML instantly, or loading placeholder
         cached_html = _pane_html_cache.get(pane_id)
         if cached_html:
             self._last_preview_html = cached_html
             self.preview.setHtml(cached_html)
             sb = self.preview.verticalScrollBar()
             sb.setValue(sb.maximum())
-            return
-
-        # No cache - fetch fresh (blocking, but only on first view)
-        text = _get_tmux_scrollback(pane_id)
-        cursor_info = _get_tmux_cursor(pane_id)
-        self._last_preview_text = text
-        if text is not None:
-            html = _ansi_to_html(text, cursor_info=cursor_info)
-            _pane_html_cache[pane_id] = html  # Seed the cache
-            self._last_preview_html = html
-            self.preview.setHtml(html)
-            sb = self.preview.verticalScrollBar()
-            sb.setValue(sb.maximum())
         else:
-            self.preview.setPlainText(f"(cannot preview {pane_id})")
+            self.preview.setPlainText(f"(loading {pane_id}...)")
 
     def _poll_thread_func(self):
         """Background thread: run persistent bash loop that outputs pane content."""
