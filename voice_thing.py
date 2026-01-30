@@ -1351,6 +1351,24 @@ class DraggableDialog(DraggableResizableMixin, QDialog):
     def center_on_parent(self):
         """Center on parent, or restore saved geometry if enabled."""
         self.adjustSize()
+
+        parent = self.parent()
+        # If parent is in blue mode (fullscreen), make dialog appear on fullscreen space
+        if parent and getattr(parent, '_blue_mode_override', False):
+            # Get reference to the tmux dialog which owns the fullscreen
+            tmux_dialog = getattr(parent, '_tmux_dialog', None)
+            if tmux_dialog and tmux_dialog.isVisible():
+                # Position on the same screen as tmux dialog (fullscreen)
+                screen = tmux_dialog.screen()
+                if screen:
+                    sg = screen.availableGeometry()
+                    # Set window flags to stay on top and be visible over fullscreen
+                    flags = self.windowFlags() | Qt.WindowType.WindowStaysOnTopHint
+                    self.setWindowFlags(flags)
+                    self.move(sg.x() + (sg.width() - self.width()) // 2,
+                              sg.y() + (sg.height() - self.height()) // 2)
+                    return
+
         # Try to restore saved geometry
         if self.window_name and S.RESTORE_WINDOW_GEOMETRY:
             geom = S.WINDOW_GEOMETRY.get(self.window_name)
@@ -1360,10 +1378,9 @@ class DraggableDialog(DraggableResizableMixin, QDialog):
                     self.resize(geom['width'], geom['height'])
                 return
         # Fall back to centering on parent
-        if self.parent():
-            p = self.parent()
-            self.move(p.x() + (p.width() - self.width()) // 2,
-                      p.y() + (p.height() - self.height()) // 2)
+        if parent:
+            self.move(parent.x() + (parent.width() - self.width()) // 2,
+                      parent.y() + (parent.height() - self.height()) // 2)
 
     def _save_geometry(self):
         """Save window geometry to settings."""
@@ -6464,36 +6481,62 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
             self._change_model(dialog.selected_model)
 
     def show_prefs(self):
-        """Show preferences dialog. Settings apply live, Cancel reverts."""
-        while True:
-            import copy
-            orig = copy.deepcopy(dict(S))  # Snapshot for Cancel
-            orig_style = STYLE.name
+        """Show preferences dialog (non-modal). Settings apply live, Cancel reverts."""
+        # Close existing prefs dialog if open
+        if hasattr(self, '_prefs_dialog') and self._prefs_dialog is not None:
+            self._prefs_dialog.close()
+            self._prefs_dialog = None
 
-            dialog = PrefsDialog(STYLE.name, S.PET_TYPES, S.SIMPLE_MODE, self,
-                                 auto_enter=S.AUTO_ENTER)
+        self._open_prefs_dialog()
 
-            # Live preview connections - all use S.set() to trigger hooks
-            dialog.simple_mode_changed.connect(self._set_simple_mode)
-            dialog.style_changed.connect(lambda s: self._change_style(s, save=False))
-            dialog.pets_changed.connect(lambda p: S.set('PET_TYPES', list(p)))
-            dialog.wake_word_changed.connect(self._on_wake_word_settings_changed)
-            dialog.auto_enter_changed.connect(lambda v: S.set('AUTO_ENTER', v))
+    def _open_prefs_dialog(self):
+        """Internal: create and show the preferences dialog."""
+        import copy
+        self._prefs_orig = copy.deepcopy(dict(S))  # Snapshot for Cancel
+        self._prefs_orig_style = STYLE.name
 
-            dialog.center_on_parent()
+        # In blue mode, parent to tmux dialog so prefs appears on fullscreen space
+        parent = self
+        if self._blue_mode_override and hasattr(self, '_tmux_dialog') and self._tmux_dialog:
+            parent = self._tmux_dialog
 
-            if dialog.exec():
-                self._save_settings()
-                break
-            elif getattr(dialog, 'reverted_to_defaults', False):
-                self._change_style(DEFAULTS['THEME'], save=False)
-                continue  # Re-open dialog with defaults
-            else:
-                # Cancel - restore snapshot (hooks handle UI updates)
-                if STYLE.name != orig_style:
-                    self._change_style(orig_style, save=False)
-                S.restore(orig)
-                break
+        dialog = PrefsDialog(STYLE.name, S.PET_TYPES, S.SIMPLE_MODE, parent,
+                             auto_enter=S.AUTO_ENTER)
+        self._prefs_dialog = dialog
+
+        # Live preview connections - all use S.set() to trigger hooks
+        dialog.simple_mode_changed.connect(self._set_simple_mode)
+        dialog.style_changed.connect(lambda s: self._change_style(s, save=False))
+        dialog.pets_changed.connect(lambda p: S.set('PET_TYPES', list(p)))
+        dialog.wake_word_changed.connect(self._on_wake_word_settings_changed)
+        dialog.auto_enter_changed.connect(lambda v: S.set('AUTO_ENTER', v))
+
+        # Handle accept/reject (non-modal)
+        dialog.accepted.connect(self._on_prefs_accepted)
+        dialog.rejected.connect(self._on_prefs_rejected)
+
+        dialog.center_on_parent()
+        dialog.show()  # Non-modal
+
+    def _on_prefs_accepted(self):
+        """Handle preferences OK (save settings)."""
+        self._save_settings()
+        self._prefs_dialog = None
+
+    def _on_prefs_rejected(self):
+        """Handle preferences Cancel or Revert to Defaults."""
+        dialog = self._prefs_dialog
+        if getattr(dialog, 'reverted_to_defaults', False):
+            self._change_style(DEFAULTS['THEME'], save=False)
+            self._prefs_dialog = None
+            # Re-open with defaults
+            QTimer.singleShot(0, self._open_prefs_dialog)
+        else:
+            # Cancel - restore snapshot
+            if STYLE.name != self._prefs_orig_style:
+                self._change_style(self._prefs_orig_style, save=False)
+            S.restore(self._prefs_orig)
+            self._prefs_dialog = None
 
     def _set_simple_mode(self, enabled):
         """Set simple mode on/off (called from prefs dialog)."""
