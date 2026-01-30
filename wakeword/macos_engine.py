@@ -181,6 +181,7 @@ class MacOSWakeWordEngine(WakeWordEngine):
             all_phrases = self._phrases + self._tmux_phrases + self._cancel_phrases
             self._recognizer.setCommands_(all_phrases)
             self._recognizer.setBlocksOtherRecognizers_(True)
+            self._recognizer.setListensInForegroundOnly_(False)  # Listen even when app not focused
             self._recognizer.startListening()
 
             # Run event loop in background thread
