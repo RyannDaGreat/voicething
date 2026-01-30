@@ -11,7 +11,7 @@
     "emmy"
   ],
   "WHISPER_MODEL": "large-v3",
-  "THEME": "cyberpunk_metal",
+  "THEME": "macos_2005",
   "WAKEWORD_ENGINE": "macos",
   "WAKEWORD_OPENWAKEWORD": {
     "model": "jarvis",
@@ -67,5 +67,18 @@
   "SPEAK_BACK_TMUX_ONLY": true,
   "SPEAK_BACK_INSTRUCTION_TEMPLATE": "Please speak back with {command}",
   "RESTORE_WINDOW_GEOMETRY": true,
-  "WINDOW_GEOMETRY": {}
+  "WINDOW_GEOMETRY": {
+    "main": {
+      "x": 625,
+      "y": 348,
+      "width": 478,
+      "height": 460
+    },
+    "tmux_selection": {
+      "x": 188,
+      "y": 195,
+      "width": 1017,
+      "height": 739
+    }
+  }
 }
