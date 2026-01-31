@@ -84,6 +84,17 @@ class DarkGradientStyle(BaseStyle):
     transcription_row_btn_hover = CYAN_20
     transcription_row_btn_pressed = CYAN_35
 
+    # Chime editor - dark with cyan accents
+    chime_grid_bg = QColor(30, 32, 38)  # Dark gray
+    chime_grid_line = QColor(55, 60, 70)  # Border
+    chime_cell_inactive = QColor(42, 45, 52)  # Slightly lighter
+    chime_cell_active = QColor(100, 200, 255)  # Cyan
+    chime_cell_highlight = QColor(100, 200, 255, 70)  # Cyan glow
+    chime_piano_white = QColor(200, 205, 215)  # Light gray
+    chime_piano_black = QColor(35, 38, 45)  # Dark
+    chime_piano_label_white = QColor(50, 55, 65)  # Dark text
+    chime_piano_label_black = QColor(150, 160, 175)  # Light text
+
     def button_css(self):
         # Glass pill button with gradient - uniform border color
         return (

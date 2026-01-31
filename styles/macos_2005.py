@@ -95,6 +95,17 @@ class MacOS2005Style(BaseStyle):
         "stop:0 rgba(80,160,210,0.35), stop:1 rgba(100,200,255,0.4))"
     )
 
+    # Chime editor - macOS aqua style
+    chime_grid_bg = QColor(245, 247, 250)  # Light gray
+    chime_grid_line = QColor(200, 205, 215)  # Silver border
+    chime_cell_inactive = QColor(230, 235, 240)  # Light silver
+    chime_cell_active = QColor(100, 200, 255)  # Aqua blue
+    chime_cell_highlight = QColor(100, 200, 255, 80)  # Aqua glow
+    chime_piano_white = QColor(255, 255, 255)  # Pure white
+    chime_piano_black = QColor(50, 55, 65)  # Dark charcoal
+    chime_piano_label_white = QColor(60, 65, 75)  # Dark text on white
+    chime_piano_label_black = QColor(200, 210, 220)  # Light text on black
+
     def button_css(self):
         # Aqua gel button - smooth gradients with glassy highlights (no harsh white bar)
         return (

@@ -64,6 +64,17 @@ class DarkMinimalStyle(BaseStyle):
     bg_alpha_focused = 255
     bg_alpha_unfocused = 220
 
+    # Chime editor - minimal dark
+    chime_grid_bg = QColor(25, 25, 28)  # Near black
+    chime_grid_line = QColor(50, 50, 55)  # Subtle border
+    chime_cell_inactive = QColor(38, 38, 42)  # Dark
+    chime_cell_active = QColor(100, 200, 255)  # Cyan
+    chime_cell_highlight = QColor(100, 200, 255, 60)  # Subtle glow
+    chime_piano_white = QColor(190, 190, 195)  # Light gray
+    chime_piano_black = QColor(30, 30, 35)  # Dark
+    chime_piano_label_white = QColor(45, 45, 50)  # Dark text
+    chime_piano_label_black = QColor(140, 145, 155)  # Light text
+
     def button_css(self):
         return (
             f"QPushButton {{ color: {WHITE_60}; background: {WHITE_10}; "

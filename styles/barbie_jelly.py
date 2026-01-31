@@ -90,6 +90,17 @@ class BarbieJellyStyle(BaseStyle):
     transcription_row_btn_hover = "rgba(255, 105, 180, 0.25)"
     transcription_row_btn_pressed = "rgba(255, 105, 180, 0.4)"
 
+    # Chime editor - Barbie pink jelly
+    chime_grid_bg = QColor(255, 220, 235)  # Light pink
+    chime_grid_line = QColor(255, 180, 200)  # Pink border
+    chime_cell_inactive = QColor(255, 235, 245)  # Very light pink
+    chime_cell_active = QColor(255, 105, 180)  # Hot pink
+    chime_cell_highlight = QColor(255, 105, 180, 100)  # Pink glow
+    chime_piano_white = QColor(255, 255, 255)  # White
+    chime_piano_black = QColor(180, 80, 130)  # Dark pink
+    chime_piano_label_white = QColor(200, 100, 150)  # Pink text
+    chime_piano_label_black = QColor(255, 230, 240)  # Light pink text
+
     def button_css(self):
         # Shiny jelly 3D buttons with glossy highlights
         return (

@@ -127,6 +127,17 @@ class BaseStyle:
     # Input field background (for QLineEdit, QComboBox, etc.)
     input_bg = None  # None = use panel_bg_flat_css, or "rgb(...)" for explicit
 
+    # Chime editor colors
+    chime_grid_bg = QColor(30, 30, 35)
+    chime_grid_line = QColor(50, 50, 55)
+    chime_cell_inactive = QColor(45, 45, 50)
+    chime_cell_active = None  # None = use accent
+    chime_cell_highlight = None  # None = use accent with alpha
+    chime_piano_white = QColor(240, 240, 240)
+    chime_piano_black = QColor(40, 40, 45)
+    chime_piano_label_white = QColor(60, 60, 60)
+    chime_piano_label_black = QColor(180, 180, 180)
+
     def title_style(self, size=18):
         return f"color: {self.text_primary}; font-size: {size}px; font-family: {self.font};"
 
