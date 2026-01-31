@@ -4721,7 +4721,7 @@ class ChimeEditorDialog(DraggableDialog):
         controls.addWidget(self.pencil_btn)
 
         self.brush_btn = QPushButton()
-        self.brush_btn.setIcon(load_icon("pen", ICON_COLOR_DARK))
+        self.brush_btn.setIcon(load_icon("brush", ICON_COLOR_DARK))
         self.brush_btn.setIconSize(QSize(14, 14))
         self.brush_btn.setFixedSize(24, 24)
         self.brush_btn.setCheckable(True)
@@ -5465,23 +5465,32 @@ class ChimeGridWidget(QWidget):
             self._hover_cell = cell
             self.update()
 
-        # Handle drag in brush mode
-        if self._dragging and self._edit_mode == 'brush' and cell:
+        if self._dragging and cell:
             beat, semitone = cell
-            if self._drag_action == 'add':
-                if semitone not in self._pattern[beat]:
-                    self._pattern[beat].append(semitone)
-                    self._pattern[beat].sort()
+
+            # In pencil mode, play note preview while dragging (but don't modify pattern)
+            if self._edit_mode == 'pencil':
+                # Track last previewed semitone to avoid re-playing same note
+                if not hasattr(self, '_last_preview_semitone') or self._last_preview_semitone != semitone:
+                    self._last_preview_semitone = semitone
                     self.noteClicked.emit(semitone)
-                    self._update_last_used_beat()
-                    self.update()
-                    self.patternChanged.emit(self.get_pattern())
-            elif self._drag_action == 'remove':
-                if semitone in self._pattern[beat]:
-                    self._pattern[beat].remove(semitone)
-                    self._update_last_used_beat()
-                    self.update()
-                    self.patternChanged.emit(self.get_pattern())
+
+            # Handle drag in brush mode - paint notes on/off
+            elif self._edit_mode == 'brush':
+                if self._drag_action == 'add':
+                    if semitone not in self._pattern[beat]:
+                        self._pattern[beat].append(semitone)
+                        self._pattern[beat].sort()
+                        self.noteClicked.emit(semitone)
+                        self._update_last_used_beat()
+                        self.update()
+                        self.patternChanged.emit(self.get_pattern())
+                elif self._drag_action == 'remove':
+                    if semitone in self._pattern[beat]:
+                        self._pattern[beat].remove(semitone)
+                        self._update_last_used_beat()
+                        self.update()
+                        self.patternChanged.emit(self.get_pattern())
 
     def mouseReleaseEvent(self, e):
         """Handle release - in pencil mode, place note at release position."""
@@ -5503,6 +5512,7 @@ class ChimeGridWidget(QWidget):
             self._dragging = False
             self._drag_start_cell = None
             self._drag_action = None
+            self._last_preview_semitone = None
 
     def leaveEvent(self, e):
         """Clear hover when mouse leaves."""
@@ -5513,6 +5523,7 @@ class ChimeGridWidget(QWidget):
         self._dragging = False
         self._drag_start_cell = None
         self._drag_action = None
+        self._last_preview_semitone = None
 
     def paintEvent(self, e):
         """Draw the grid and active cells with theme colors."""
