@@ -88,6 +88,17 @@ class SupervillainStyle(BaseStyle):
     transcription_row_btn_hover = "rgba(255, 40, 40, 0.25)"
     transcription_row_btn_pressed = "rgba(255, 40, 40, 0.4)"
 
+    # Chime editor - evil purple/green
+    chime_grid_bg = QColor(15, 12, 20)  # Near black purple
+    chime_grid_line = QColor(50, 40, 60)  # Dark purple
+    chime_cell_inactive = QColor(30, 25, 40)  # Dark purple
+    chime_cell_active = QColor(100, 255, 100)  # Toxic green
+    chime_cell_highlight = QColor(100, 255, 100, 80)  # Green glow
+    chime_piano_white = QColor(180, 170, 200)  # Pale purple
+    chime_piano_black = QColor(25, 20, 35)  # Very dark purple
+    chime_piano_label_white = QColor(60, 50, 80)  # Purple text
+    chime_piano_label_black = QColor(100, 255, 100)  # Green text
+
     def button_css(self):
         # EVIL buttons with red glow on hover
         return (

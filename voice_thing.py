@@ -1024,6 +1024,7 @@ from synth import synth_sequence, play_native, set_reverb
 _chime_log = []
 _CHIME_DEBUG = True  # Set to False to disable logging
 CHIME_LOG_FILE = os.path.join(DEFAULT_RECORDINGS_DIR, "chime_log.jsonl")  # Uses default, not configurable
+_chime_log_callbacks = []  # Callbacks to notify when chime is logged (for real-time UI updates)
 
 def _log_chime_to_file(entry):
     """Append chime entry to persistent log file (JSONL format)."""
@@ -1055,6 +1056,12 @@ def chime(*chords, t=0.15, gap=0.0, name=None, **kwargs):
         }
         _chime_log.append(entry)
         _log_chime_to_file(entry)
+        # Notify callbacks (for real-time UI updates)
+        for cb in _chime_log_callbacks:
+            try:
+                cb(entry)
+            except Exception:
+                pass  # Don't let callback errors break chime playback
     # shift param adds to the base -12 octave shift
     play_native(chords, duration=t, gap=gap, volume=S.CHIME_VOLUME,
                 shift=-12 + S.CHIME_PITCH, program=S.CHIME_PROGRAM)
@@ -4589,122 +4596,254 @@ class ChimeEditorDialog(DraggableDialog):
     """Floating dialog for editing chime patterns on a grid."""
     window_name = "chime_editor"
 
+    # Signals for thread-safe UI updates during playback
+    _highlightBeat = pyqtSignal(int, list)  # beat_idx, chord
+    _clearHighlight = pyqtSignal()
+
     # Grid dimensions
-    MAX_BEATS = 8  # X-axis: number of beats
-    SEMITONE_RANGE = 36  # Y-axis: -12 to +24 semitones from A4
-    SEMITONE_MIN = -12
-    SEMITONE_MAX = 24
-    CELL_SIZE = 18  # Pixel size of each grid cell
+    DEFAULT_BEATS = 16  # X-axis: number of beats
+    # Full MIDI range: 128 notes (MIDI 0-127). A4 = MIDI 69, so semitones from -69 to +58
+    SEMITONE_RANGE = 128  # Full MIDI range
+    SEMITONE_MIN = -69  # MIDI note 0 (C-1)
+    CELL_SIZE = 12  # Smaller cells to fit full range
+
+    # Note names for display (A4 = 0)
+    NOTE_NAMES = ['A', 'A#', 'B', 'C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#']
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._current_chime = 'demo'
         self._pattern = []  # List of lists: [[semitones for beat 0], [beat 1], ...]
         self._duration = 0.1  # Seconds per beat
-        self._recent_chimes = []  # Ordered by most recent play
+        self._num_beats = self.DEFAULT_BEATS
+
+        # Register callback for real-time chime log updates
+        self._chime_callback = self._on_chime_played
+        _chime_log_callbacks.append(self._chime_callback)
+
+        # Connect playback animation signals (thread-safe)
+        self._highlightBeat.connect(self._highlight_beat)
+        self._clearHighlight.connect(self._clear_playback_highlight)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(15, 15, 15, 15)
-        layout.setSpacing(8)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(6)
 
-        # Title row
+        # Title row with close button
         title_row = QHBoxLayout()
         title_row.setSpacing(6)
-
-        # Close button (red)
         close_btn = TrafficLightButton("rgb(255, 95, 87)", "rgb(255, 120, 110)", "macos-close")
         close_btn.clicked.connect(self.close)
         title_row.addWidget(close_btn)
-
         title_row.addWidget(make_title("Chime Editor"), 1)
-
-        # Spacer
-        spacer = QWidget()
-        spacer.setFixedWidth(14)
-        title_row.addWidget(spacer)
+        title_row.addWidget(QWidget())  # Spacer
         layout.addLayout(title_row)
 
-        # Main content: grid on left, chime list on right
-        self.splitter = QSplitter(Qt.Orientation.Horizontal)
-
-        # Left side: grid editor
-        grid_container = QWidget()
-        grid_layout = QVBoxLayout(grid_container)
-        grid_layout.setContentsMargins(0, 0, 0, 0)
-        grid_layout.setSpacing(4)
-
-        # Current chime label
-        self.chime_label = QLabel("demo")
-        self.chime_label.setStyleSheet(f"color: {TEXT_PRIMARY}; font-size: 14px; font-weight: bold;")
-        grid_layout.addWidget(self.chime_label)
-
-        # Grid widget
-        self.grid = ChimeGridWidget(self.MAX_BEATS, self.SEMITONE_RANGE, self.CELL_SIZE)
-        self.grid.patternChanged.connect(self._on_pattern_changed)
-        grid_layout.addWidget(self.grid)
-
-        # Controls row: play button, duration knob
+        # Controls row (above grid)
         controls = QHBoxLayout()
         controls.setSpacing(8)
 
-        # Play button
-        self.play_btn = QPushButton("Play")
+        # Play button (spacebar hint)
+        self.play_btn = QPushButton("␣ Play")
         self.play_btn.setIcon(load_icon("play", ICON_COLOR_DARK))
         self.play_btn.setStyleSheet(get_btn_css())
         self.play_btn.clicked.connect(self._play_current)
+        set_tooltip(self.play_btn, "Play current pattern (Spacebar)")
         controls.addWidget(self.play_btn)
 
-        # Duration knob
-        self.duration_knob = RotaryKnob("Beat ms", min_val=20, max_val=500,
+        # Duration knob - shows ms value below
+        self.duration_knob = RotaryKnob("ms", min_val=20, max_val=500,
                                         value=int(self._duration * 1000),
-                                        fmt="{:.0f}", size=36)
+                                        fmt="{:.0f}", size=32)
         self.duration_knob.valueChanged.connect(self._on_duration_changed)
+        set_tooltip(self.duration_knob, "Duration per beat in milliseconds")
         controls.addWidget(self.duration_knob)
 
+        controls.addSpacing(10)
+
+        # Beat count slider
+        beats_label = QLabel("Beats:")
+        beats_label.setStyleSheet("color: #ffffff; font-size: 11px;")
+        controls.addWidget(beats_label)
+
+        self.beats_slider = QSlider(Qt.Orientation.Horizontal)
+        self.beats_slider.setRange(4, 32)
+        self.beats_slider.setValue(self._num_beats)
+        self.beats_slider.setFixedWidth(80)
+        self.beats_slider.valueChanged.connect(self._on_beats_changed)
+        controls.addWidget(self.beats_slider)
+
+        self.beats_num_label = QLabel(str(self._num_beats))
+        self.beats_num_label.setStyleSheet("color: #ffffff; font-size: 11px;")
+        self.beats_num_label.setFixedWidth(20)
+        controls.addWidget(self.beats_num_label)
+
+        controls.addStretch()
+
         # Save button
-        self.save_btn = QPushButton("Save")
+        self.save_btn = QPushButton("Save Custom")
         self.save_btn.setIcon(load_icon("save", ICON_COLOR_DARK))
         self.save_btn.setStyleSheet(get_btn_css())
         self.save_btn.clicked.connect(self._save_custom)
+        set_tooltip(self.save_btn, "Save as custom pattern for this chime event")
         controls.addWidget(self.save_btn)
 
-        controls.addStretch()
-        grid_layout.addLayout(controls)
+        # Revert button
+        self.revert_btn = QPushButton("Revert")
+        self.revert_btn.setIcon(load_icon("refresh", ICON_COLOR_DARK))
+        self.revert_btn.setStyleSheet(get_btn_css())
+        self.revert_btn.clicked.connect(self._revert_to_original)
+        set_tooltip(self.revert_btn, "Revert to original theme pattern (discard custom)")
+        controls.addWidget(self.revert_btn)
 
-        self.splitter.addWidget(grid_container)
+        layout.addLayout(controls)
 
-        # Right side: chime list
-        list_container = QWidget()
-        list_layout = QVBoxLayout(list_container)
-        list_layout.setContentsMargins(0, 0, 0, 0)
-        list_layout.setSpacing(4)
+        # Main content area: scroll area on left, chime list on right
+        main_content = QHBoxLayout()
+        main_content.setSpacing(6)
 
-        list_label = QLabel("Chimes (recent first)")
-        list_label.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 11px;")
-        list_layout.addWidget(list_label)
+        # Scroll area for piano + grid
+        self.scroll = QScrollArea()
+        self.scroll.setWidgetResizable(True)
+        self.scroll.setStyleSheet(
+            f"QScrollArea {{ background: rgb(30,30,35); border: 1px solid rgb(60,60,70); }}"
+            + SCROLLBAR_CSS
+        )
 
+        # Container for piano + grid
+        scroll_content = QWidget()
+        scroll_layout = QHBoxLayout(scroll_content)
+        scroll_layout.setContentsMargins(0, 0, 0, 0)
+        scroll_layout.setSpacing(0)
+
+        # Vertical piano on left
+        self.piano = ChimePianoWidget(self.SEMITONE_RANGE, self.CELL_SIZE, self.SEMITONE_MIN)
+        self.piano.noteClicked.connect(self._play_note)
+        scroll_layout.addWidget(self.piano)
+
+        # Grid widget
+        self.grid = ChimeGridWidget(self._num_beats, self.SEMITONE_RANGE, self.CELL_SIZE, self.SEMITONE_MIN)
+        self.grid.patternChanged.connect(self._on_pattern_changed)
+        self.grid.noteClicked.connect(self._play_note)
+        scroll_layout.addWidget(self.grid)
+
+        scroll_layout.addStretch()
+        self.scroll.setWidget(scroll_content)
+        main_content.addWidget(self.scroll, 1)
+
+        # Chime list on right side - use theme colors
         self.chime_list = QListWidget()
+        self.chime_list.setFixedWidth(130)
+        # Use theme-appropriate colors
+        list_bg = STYLE.chime_grid_bg
+        list_border = STYLE.chime_grid_line
         self.chime_list.setStyleSheet(
-            f"QListWidget {{ {PANEL_BG_FLAT_CSS} color: {TEXT_PRIMARY}; "
-            f"border: 1px solid {BORDER_COLOR}; font-size: 11px; }}"
-            f"QListWidget::item {{ padding: 4px; }}"
-            f"QListWidget::item:selected {{ background: rgba({STYLE.accent.red()},{STYLE.accent.green()},{STYLE.accent.blue()},0.4); }}"
+            f"QListWidget {{ background: rgb({list_bg.red()},{list_bg.green()},{list_bg.blue()}); "
+            f"color: {TEXT_PRIMARY}; "
+            f"border: 1px solid rgb({list_border.red()},{list_border.green()},{list_border.blue()}); "
+            f"font-size: 11px; }}"
+            f"QListWidget::item {{ padding: 4px 6px; }}"
+            f"QListWidget::item:selected {{ background: {STYLE.accent_css}; color: #000; }}"
             f"QListWidget::item:hover {{ background: rgba({STYLE.accent.red()},{STYLE.accent.green()},{STYLE.accent.blue()},0.2); }}"
             + SCROLLBAR_CSS
         )
-        self.chime_list.itemClicked.connect(self._on_chime_selected)
-        list_layout.addWidget(self.chime_list, 1)
+        self.chime_list.currentRowChanged.connect(self._on_chime_list_changed)
+        main_content.addWidget(self.chime_list)
 
-        self.splitter.addWidget(list_container)
-        self.splitter.setSizes([450, 150])
-        layout.addWidget(self.splitter, 1)
+        layout.addLayout(main_content, 1)
 
-        self.setMinimumSize(650, 450)
+        # No minimum size - allow free resizing
         self._populate_chime_list()
         self._load_chime('demo')
 
+        # Keyboard -> semitone mapping (imported from piano.py)
+        self._keyboard_map = PianoWidget.KEYBOARD_MAP
+        self._pressed_semitones = set()  # Currently held semitones
+        self._sustained_notes = {}  # semitone -> midi_note for sustain
+
+    def _key_to_semitone(self, key):
+        """Convert Qt key to semitone."""
+        return self._keyboard_map.get(key)
+
+    def keyPressEvent(self, e):
+        """Handle keyboard input for playing/highlighting notes."""
+        if e.isAutoRepeat():
+            return
+        key = e.key()
+
+        # Escape closes dialog
+        if key == Qt.Key.Key_Escape:
+            self.close()
+            return
+
+        # Spacebar plays the current pattern
+        if key == Qt.Key.Key_Space:
+            self._play_current()
+            return
+
+        semitone = self._key_to_semitone(key)
+        if semitone is not None:
+            if semitone not in self._pressed_semitones:
+                self._pressed_semitones.add(semitone)
+                # Start sustained note
+                from synth import note_on
+                midi_note = note_on(
+                    semitone,
+                    shift=-12 + S.CHIME_PITCH,
+                    volume=S.CHIME_VOLUME,
+                    program=S.CHIME_PROGRAM
+                )
+                self._sustained_notes[semitone] = midi_note
+                # Update highlights
+                self.piano.set_highlighted(self._pressed_semitones)
+                self.grid.set_highlighted(self._pressed_semitones)
+        else:
+            super().keyPressEvent(e)
+
+    def keyReleaseEvent(self, e):
+        """Stop sustained note when key released."""
+        if e.isAutoRepeat():
+            return
+        key = e.key()
+        semitone = self._key_to_semitone(key)
+        if semitone is not None:
+            self._pressed_semitones.discard(semitone)
+            # Stop sustained note
+            if semitone in self._sustained_notes:
+                from synth import note_off
+                note_off(self._sustained_notes[semitone])
+                del self._sustained_notes[semitone]
+            # Update highlights
+            self.piano.set_highlighted(self._pressed_semitones)
+            self.grid.set_highlighted(self._pressed_semitones)
+        else:
+            super().keyReleaseEvent(e)
+
+    def closeEvent(self, e):
+        """Release all sustained notes when dialog closes."""
+        from synth import note_off
+        for midi_note in self._sustained_notes.values():
+            note_off(midi_note)
+        self._sustained_notes.clear()
+        self._pressed_semitones.clear()
+        # Unregister chime callback
+        if self._chime_callback in _chime_log_callbacks:
+            _chime_log_callbacks.remove(self._chime_callback)
+        super().closeEvent(e)
+
+    def _on_chime_played(self, entry):
+        """Called when any chime plays - refresh list to show recently played first."""
+        # Only refresh if chime name is in current theme and not from editor itself
+        name = entry.get('name', '')
+        if name and not name.startswith('editor:'):
+            # Refresh list while preserving current selection
+            current = self._current_chime
+            self._populate_chime_list()
+            self._select_chime_in_list(current)
+
     def _populate_chime_list(self):
         """Populate chime list, ordering by recent plays."""
+        self.chime_list.blockSignals(True)
         self.chime_list.clear()
         theme = CHIME_THEMES.get(S.CHIME_THEME, CHIME_THEMES['default'])
         all_chimes = list(theme.keys())
@@ -4713,32 +4852,51 @@ class ChimeEditorDialog(DraggableDialog):
         log = load_chime_log_from_file()
         recent_order = []
         seen = set()
-        for entry in reversed(log[-100:]):  # Last 100 entries
+        for entry in reversed(log[-100:]):
             name = entry.get('name', '')
             if name and name not in seen and name in all_chimes:
                 recent_order.append(name)
                 seen.add(name)
-
-        # Add remaining chimes not in recent
         for name in all_chimes:
             if name not in seen:
                 recent_order.append(name)
 
-        # Populate list
         for name in recent_order:
-            item = QListWidgetItem(name)
+            # Mark custom chimes
+            display = f"{name} *" if name in S.CUSTOM_CHIMES else name
+            item = QListWidgetItem(display)
             item.setData(Qt.ItemDataRole.UserRole, name)
             self.chime_list.addItem(item)
 
-    def _on_chime_selected(self, item):
-        """Load selected chime into grid."""
-        name = item.data(Qt.ItemDataRole.UserRole)
-        self._load_chime(name)
+        self.chime_list.blockSignals(False)
+
+    def _select_chime_in_list(self, name):
+        """Select a chime by name in the list."""
+        for i in range(self.chime_list.count()):
+            item = self.chime_list.item(i)
+            if item.data(Qt.ItemDataRole.UserRole) == name:
+                self.chime_list.blockSignals(True)
+                self.chime_list.setCurrentRow(i)
+                self.chime_list.blockSignals(False)
+                return
+
+    def _on_chime_list_changed(self, row):
+        """Handle chime selection from list - load and play preview."""
+        if row < 0:
+            return
+        item = self.chime_list.item(row)
+        if item:
+            name = item.data(Qt.ItemDataRole.UserRole)
+            if name:
+                self._load_chime(name)
+                self._play_current()  # Preview chime on selection
 
     def _load_chime(self, name):
         """Load a chime pattern into the grid."""
         self._current_chime = name
-        self.chime_label.setText(name)
+
+        # Update list selection to match
+        self._select_chime_in_list(name)
 
         # Check for custom pattern first
         if name in S.CUSTOM_CHIMES:
@@ -4756,8 +4914,11 @@ class ChimeEditorDialog(DraggableDialog):
                 self._pattern = []
                 self._duration = 0.1
 
-        # Update grid
-        self.grid.set_pattern(self._pattern, self.SEMITONE_MIN)
+        # Expand pattern to match beat count
+        while len(self._pattern) < self._num_beats:
+            self._pattern.append([])
+
+        self.grid.set_pattern(self._pattern)
         self.duration_knob.setValue(int(self._duration * 1000), emit=False)
 
     def _on_pattern_changed(self, pattern):
@@ -4766,76 +4927,297 @@ class ChimeEditorDialog(DraggableDialog):
 
     def _on_duration_changed(self, value):
         """Handle duration knob change."""
-        self._duration = value / 1000.0  # Convert ms to seconds
+        self._duration = value / 1000.0
+
+    def _on_beats_changed(self, value):
+        """Handle beat count slider change."""
+        self._num_beats = value
+        self.beats_num_label.setText(str(value))
+        # Resize pattern
+        while len(self._pattern) < value:
+            self._pattern.append([])
+        self._pattern = self._pattern[:value]
+        # Recreate grid with new beat count
+        old_pattern = self._pattern
+        self.grid.set_num_beats(value)
+        self.grid.set_pattern(old_pattern)
+
+    def _play_note(self, semitone):
+        """Play a single note and highlight the key briefly."""
+        chime([semitone], t=0.2, name="editor:note")
+        # Highlight the key being played
+        self.piano.set_highlighted({semitone})
+        self.grid.set_highlighted({semitone})
+        # Clear highlight after a short delay
+        QTimer.singleShot(200, lambda: self._clear_note_highlight(semitone))
+
+    def _clear_note_highlight(self, semitone):
+        """Clear single note highlight if not held by keyboard."""
+        # Only clear if not currently pressed via keyboard
+        if semitone not in self._pressed_semitones:
+            self.piano.set_highlighted(self._pressed_semitones)
+            self.grid.set_highlighted(self._pressed_semitones)
 
     def _play_current(self):
-        """Play the current pattern."""
-        if not self._pattern:
+        """Play the current pattern with visual animation."""
+        # Trim trailing empty beats but keep interior empty beats for pauses
+        pattern = list(self._pattern)
+        while pattern and not pattern[-1]:
+            pattern.pop()
+        if not pattern:
             return
-        # Convert pattern to chords tuple
-        chords = tuple(self._pattern)
+
+        # Play the audio
+        chords = tuple(pattern)
         chime(*chords, t=self._duration, name=f"editor:{self._current_chime}")
 
+        # Start animated playback in a thread (uses signals for thread-safe UI updates)
+        import threading
+        def animate_playback():
+            import time
+            duration = self._duration
+            for beat_idx, chord in enumerate(pattern):
+                # Emit signal to update UI on main thread
+                self._highlightBeat.emit(beat_idx, list(chord))
+                time.sleep(duration)
+            # Emit signal to clear highlights after playback
+            self._clearHighlight.emit()
+
+        t = threading.Thread(target=animate_playback, daemon=True)
+        t.start()
+
+    def _highlight_beat(self, beat_idx, chord):
+        """Highlight the current beat column and notes being played."""
+        self.grid.set_playing_beat(beat_idx)
+        self.piano.set_highlighted(set(chord) if chord else set())
+
+    def _clear_playback_highlight(self):
+        """Clear all playback highlighting."""
+        self.grid.set_playing_beat(-1)
+        self.piano.set_highlighted(set())
+
     def _save_custom(self):
-        """Save current pattern as custom chime."""
-        if not self._pattern:
-            return
+        """Save current pattern as custom chime, keeping empty beats as pauses."""
+        # Keep all beats including empty ones (for pauses)
         S.CUSTOM_CHIMES[self._current_chime] = {
             'pattern': [list(beat) for beat in self._pattern],
             'duration': self._duration
         }
-        # Refresh the list to show custom indicator
         self._populate_chime_list()
+        self._select_chime_in_list(self._current_chime)
+
+    def _revert_to_original(self):
+        """Revert to original theme pattern, discarding any custom pattern."""
+        name = self._current_chime
+        # Remove custom pattern if exists
+        if name in S.CUSTOM_CHIMES:
+            del S.CUSTOM_CHIMES[name]
+        # Reload from theme
+        theme = CHIME_THEMES.get(S.CHIME_THEME, CHIME_THEMES['default'])
+        if name in theme:
+            chords, duration = theme[name]
+            self._pattern = [list(chord) for chord in chords]
+            self._duration = duration
+        else:
+            self._pattern = []
+            self._duration = 0.1
+        # Expand pattern to match beat count
+        while len(self._pattern) < self._num_beats:
+            self._pattern.append([])
+        self.grid.set_pattern(self._pattern)
+        self.duration_knob.setValue(int(self._duration * 1000), emit=False)
+        self._populate_chime_list()
+        self._select_chime_in_list(name)
+
+
+class ChimePianoWidget(QWidget):
+    """Vertical piano keyboard for the chime editor."""
+    noteClicked = pyqtSignal(int)  # Emits semitone when clicked
+
+    NOTE_NAMES = ['A', 'A#', 'B', 'C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#']
+
+    def __init__(self, semitone_range, cell_size, semitone_min, parent=None):
+        super().__init__(parent)
+        self.semitone_range = semitone_range
+        self.cell_size = cell_size
+        self.semitone_min = semitone_min
+        self._highlighted = set()  # Set of highlighted semitones
+        self._dragging = False
+        self._last_semitone = None
+        self.setMouseTracking(True)
+        # +18 to match grid height (beat numbers at bottom)
+        self.setFixedSize(50, semitone_range * cell_size + 18)
+
+    def set_highlighted(self, semitones):
+        """Set which semitones are highlighted."""
+        self._highlighted = set(semitones)
+        self.update()
+
+    def _get_note_name(self, semitone):
+        """Get note name for semitone (0 = A4)."""
+        # A4 = 0, so note index = semitone mod 12
+        note_idx = semitone % 12
+        if note_idx < 0:
+            note_idx += 12
+        octave = 4 + (semitone + 3) // 12  # A4=0, C5=3, so adjust
+        return f"{self.NOTE_NAMES[note_idx]}{octave}"
+
+    def _is_black_key(self, semitone):
+        """Check if semitone is a black key."""
+        note_idx = semitone % 12
+        if note_idx < 0:
+            note_idx += 12
+        return note_idx in [1, 4, 6, 9, 11]  # A#, C#, D#, F#, G#
+
+    def _semitone_at(self, y):
+        """Get semitone at y position, or None if outside range."""
+        row = int(y) // self.cell_size
+        if 0 <= row < self.semitone_range:
+            return self.semitone_min + (self.semitone_range - 1 - row)
+        return None
+
+    def mousePressEvent(self, e):
+        """Handle click on piano key - start drag."""
+        self._dragging = True
+        semitone = self._semitone_at(e.position().y())
+        if semitone is not None:
+            self._last_semitone = semitone
+            self.noteClicked.emit(semitone)
+
+    def mouseMoveEvent(self, e):
+        """Handle drag across piano keys."""
+        if self._dragging:
+            semitone = self._semitone_at(e.position().y())
+            if semitone is not None and semitone != self._last_semitone:
+                self._last_semitone = semitone
+                self.noteClicked.emit(semitone)
+
+    def mouseReleaseEvent(self, e):
+        """End drag."""
+        self._dragging = False
+        self._last_semitone = None
+
+    def leaveEvent(self, e):
+        """Stop drag when leaving widget."""
+        self._dragging = False
+        self._last_semitone = None
+
+    def paintEvent(self, e):
+        """Draw vertical piano keys with theme colors."""
+        from PyQt6.QtGui import QPainter, QFont
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        # Get theme colors
+        bg_color = STYLE.chime_grid_bg
+        white_key = STYLE.chime_piano_white
+        black_key = STYLE.chime_piano_black
+        label_white = STYLE.chime_piano_label_white
+        label_black = STYLE.chime_piano_label_black
+        accent = STYLE.chime_cell_active or STYLE.accent
+        highlight = STYLE.chime_cell_highlight or QColor(accent.red(), accent.green(), accent.blue(), 100)
+        grid_line = STYLE.chime_grid_line
+
+        painter.fillRect(self.rect(), bg_color)
+        painter.setFont(QFont("Menlo", 7))
+
+        for row in range(self.semitone_range):
+            semitone = self.semitone_min + (self.semitone_range - 1 - row)
+            y = row * self.cell_size
+            is_black = self._is_black_key(semitone)
+            is_highlighted = semitone in self._highlighted
+
+            # Key background
+            if is_highlighted:
+                painter.fillRect(0, y, 48, self.cell_size - 1, highlight if not isinstance(highlight, QColor) else highlight)
+            elif is_black:
+                painter.fillRect(0, y, 35, self.cell_size - 1, black_key)
+            else:
+                painter.fillRect(0, y, 35, self.cell_size - 1, white_key)
+
+            # Note name
+            note_name = self._get_note_name(semitone)
+            if is_highlighted:
+                painter.setPen(QColor(255, 255, 255))
+            elif is_black:
+                painter.setPen(label_black)
+            else:
+                painter.setPen(label_white)
+            painter.drawText(3, y + self.cell_size - 4, note_name)
+
+            # Border
+            painter.setPen(grid_line)
+            painter.drawLine(0, y + self.cell_size - 1, 50, y + self.cell_size - 1)
 
 
 class ChimeGridWidget(QWidget):
     """Grid widget for editing chime note patterns."""
     patternChanged = pyqtSignal(list)  # Emits pattern when changed
+    noteClicked = pyqtSignal(int)  # Emits semitone when note clicked
 
-    def __init__(self, max_beats, semitone_range, cell_size, parent=None):
+    def __init__(self, num_beats, semitone_range, cell_size, semitone_min, parent=None):
         super().__init__(parent)
-        self.max_beats = max_beats
+        self.num_beats = num_beats
         self.semitone_range = semitone_range
         self.cell_size = cell_size
-        self.semitone_min = -12
+        self.semitone_min = semitone_min
+        self._highlighted = set()  # Set of highlighted semitones (keyboard playing)
+        self._playing_beat = -1  # Currently playing beat column (-1 = none)
 
         # Pattern: list of lists, each inner list is semitones for that beat
-        self._pattern = [[] for _ in range(max_beats)]
+        self._pattern = [[] for _ in range(num_beats)]
+        self._update_size()
 
-        # Fixed size based on grid dimensions
+    def set_highlighted(self, semitones):
+        """Set which semitones are highlighted (keyboard playing)."""
+        self._highlighted = set(semitones)
+        self.update()
+
+    def set_playing_beat(self, beat):
+        """Set which beat column is currently playing (-1 for none)."""
+        self._playing_beat = beat
+        self.update()
+
+    def _update_size(self):
+        """Update widget size based on grid dimensions."""
         self.setFixedSize(
-            max_beats * cell_size + 40,  # +40 for Y-axis labels
-            semitone_range * cell_size + 20  # +20 for X-axis labels
+            self.num_beats * self.cell_size + 5,
+            self.semitone_range * self.cell_size + 18  # +18 for beat numbers
         )
-        self.setMouseTracking(True)
 
-    def set_pattern(self, pattern, semitone_min=-12):
+    def set_num_beats(self, num_beats):
+        """Change the number of beats."""
+        self.num_beats = num_beats
+        self._pattern = [[] for _ in range(num_beats)]
+        self._update_size()
+        self.update()
+
+    def set_pattern(self, pattern):
         """Set the pattern to display."""
-        self.semitone_min = semitone_min
-        self._pattern = [[] for _ in range(self.max_beats)]
+        self._pattern = [[] for _ in range(self.num_beats)]
         for i, beat in enumerate(pattern):
-            if i < self.max_beats:
+            if i < self.num_beats:
                 self._pattern[i] = list(beat)
         self.update()
 
     def get_pattern(self):
-        """Get the current pattern (filtered to non-empty beats)."""
-        return [beat for beat in self._pattern if beat]
+        """Get the current pattern."""
+        return [list(beat) for beat in self._pattern]
 
     def _cell_at(self, pos):
         """Get (beat, semitone) at position, or None if outside grid."""
-        x, y = pos.x() - 35, pos.y() - 5
-        if x < 0 or y < 0:
+        x, y = pos.x(), pos.y()
+        if y < 0 or y >= self.semitone_range * self.cell_size:
             return None
         beat = x // self.cell_size
         row = y // self.cell_size
-        if beat >= self.max_beats or row >= self.semitone_range:
+        if beat < 0 or beat >= self.num_beats or row >= self.semitone_range:
             return None
         semitone = self.semitone_min + (self.semitone_range - 1 - row)
         return (beat, semitone)
 
     def mousePressEvent(self, e):
-        """Toggle cell on click."""
+        """Toggle cell on click and play note."""
         cell = self._cell_at(e.position().toPoint())
         if cell:
             beat, semitone = cell
@@ -4844,59 +5226,79 @@ class ChimeGridWidget(QWidget):
             else:
                 self._pattern[beat].append(semitone)
                 self._pattern[beat].sort()
+                # Play the note
+                self.noteClicked.emit(semitone)
             self.update()
             self.patternChanged.emit(self.get_pattern())
 
     def paintEvent(self, e):
-        """Draw the grid and active cells."""
+        """Draw the grid and active cells with theme colors."""
         from PyQt6.QtGui import QPainter, QFont
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
+        # Get theme colors
+        bg_color = STYLE.chime_grid_bg
+        grid_line = STYLE.chime_grid_line
+        inactive = STYLE.chime_cell_inactive
+        active = STYLE.chime_cell_active or STYLE.accent
+        highlight = STYLE.chime_cell_highlight or QColor(active.red(), active.green(), active.blue(), 80)
+        # Playing column highlight color (brighter/more saturated)
+        playing_col = QColor(active.red(), active.green(), active.blue(), 50)
+
         # Background
-        painter.fillRect(self.rect(), QColor(30, 30, 35))
-
-        # Draw grid
-        grid_x, grid_y = 35, 5
-        accent = STYLE.accent
-
-        # Y-axis labels (semitones)
-        painter.setFont(QFont("Menlo", 8))
-        for row in range(self.semitone_range):
-            semitone = self.semitone_min + (self.semitone_range - 1 - row)
-            y = grid_y + row * self.cell_size
-            # Label every 6 semitones
-            if semitone % 6 == 0:
-                painter.setPen(QColor(TEXT_SECONDARY))
-                painter.drawText(2, y + self.cell_size - 4, f"{semitone:+d}")
-
-        # X-axis labels (beats)
-        for beat in range(self.max_beats):
-            x = grid_x + beat * self.cell_size
-            painter.setPen(QColor(TEXT_SECONDARY))
-            painter.drawText(x + 4, grid_y + self.semitone_range * self.cell_size + 14, str(beat + 1))
+        painter.fillRect(self.rect(), bg_color)
+        grid_y = 0
 
         # Grid cells
-        for beat in range(self.max_beats):
+        for beat in range(self.num_beats):
+            is_playing_col = (beat == self._playing_beat)
             for row in range(self.semitone_range):
                 semitone = self.semitone_min + (self.semitone_range - 1 - row)
-                x = grid_x + beat * self.cell_size
+                x = beat * self.cell_size
                 y = grid_y + row * self.cell_size
 
                 # Cell background
                 is_active = semitone in self._pattern[beat]
+                is_highlighted = semitone in self._highlighted
+
+                # Base cell color
                 if is_active:
-                    painter.fillRect(x + 1, y + 1, self.cell_size - 2, self.cell_size - 2, accent)
+                    cell_color = active
+                elif is_highlighted:
+                    cell_color = highlight
                 else:
-                    # Highlight octave lines
-                    if semitone % 12 == 0:
-                        painter.fillRect(x + 1, y + 1, self.cell_size - 2, self.cell_size - 2, QColor(45, 45, 55))
+                    # Highlight octave lines (C notes) and black keys with subtle variations
+                    note_in_octave = semitone % 12
+                    if note_in_octave == 3:  # C - slightly brighter
+                        cell_color = QColor(inactive.red() + 15, inactive.green() + 15, inactive.blue() + 15)
+                    elif note_in_octave in [1, 4, 6, 9, 11]:  # Black keys - darker
+                        cell_color = QColor(inactive.red() - 10, inactive.green() - 10, inactive.blue() - 10)
                     else:
-                        painter.fillRect(x + 1, y + 1, self.cell_size - 2, self.cell_size - 2, QColor(40, 40, 45))
+                        cell_color = inactive
+
+                painter.fillRect(x + 1, y + 1, self.cell_size - 2, self.cell_size - 2, cell_color)
+
+                # Playing column overlay
+                if is_playing_col:
+                    painter.fillRect(x + 1, y + 1, self.cell_size - 2, self.cell_size - 2, playing_col)
 
                 # Cell border
-                painter.setPen(QColor(60, 60, 70))
+                painter.setPen(grid_line)
                 painter.drawRect(x, y, self.cell_size, self.cell_size)
+
+        # Beat numbers at bottom
+        painter.setFont(QFont("Menlo", 8))
+        for beat in range(self.num_beats):
+            x = beat * self.cell_size
+            # Show every 4th beat number, or all if few beats
+            if self.num_beats <= 8 or beat % 4 == 0:
+                # Highlight playing beat number
+                if beat == self._playing_beat:
+                    painter.setPen(active)
+                else:
+                    painter.setPen(STYLE.chime_piano_label_black)
+                painter.drawText(x + 2, self.semitone_range * self.cell_size + 12, str(beat + 1))
 
 
 class PermissionDialog(DraggableDialog):

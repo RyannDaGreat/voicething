@@ -89,6 +89,17 @@ class Y2KWinampStyle(BaseStyle):
     transcription_row_btn_hover = "rgba(0,255,0,0.2)"  # Green hover
     transcription_row_btn_pressed = "rgba(0,255,0,0.35)"
 
+    # Chime editor - Winamp dark style
+    chime_grid_bg = QColor(20, 22, 25)  # Near black
+    chime_grid_line = QColor(50, 55, 60)  # Dark border
+    chime_cell_inactive = QColor(35, 40, 45)  # Dark gray
+    chime_cell_active = QColor(90, 255, 90)  # Winamp green
+    chime_cell_highlight = QColor(90, 255, 90, 80)  # Green glow
+    chime_piano_white = QColor(180, 185, 190)  # Metal gray
+    chime_piano_black = QColor(30, 35, 40)  # Very dark
+    chime_piano_label_white = QColor(45, 50, 55)  # Dark text
+    chime_piano_label_black = QColor(90, 255, 90)  # Green text
+
     def button_css(self):
         # Windows 95 beveled button with Y2K metallic gradient
         return (

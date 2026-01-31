@@ -110,6 +110,17 @@ class FrutigerAeroStyle(BaseStyle):
     transcription_row_btn_hover = TRANS_BTN_HOVER
     transcription_row_btn_pressed = TRANS_BTN_PRESSED
 
+    # Chime editor - Aero glass blue style
+    chime_grid_bg = QColor(20, 40, 60)  # Deep blue
+    chime_grid_line = QColor(60, 100, 140)  # Blue border
+    chime_cell_inactive = QColor(40, 70, 100)  # Medium blue
+    chime_cell_active = QColor(100, 200, 255)  # Bright aqua
+    chime_cell_highlight = QColor(100, 200, 255, 100)  # Aqua glow
+    chime_piano_white = QColor(220, 235, 250)  # Light blue-white
+    chime_piano_black = QColor(30, 50, 70)  # Dark blue
+    chime_piano_label_white = QColor(50, 80, 110)  # Blue text
+    chime_piano_label_black = QColor(180, 220, 255)  # Light aqua text
+
     def button_css(self):
         # Soft Aero button - subtle light-to-slightly-darker gradient
         # No harsh dark blue, just gentle silver/white transitions

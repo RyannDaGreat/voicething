@@ -112,6 +112,17 @@ class Windows95Style(BaseStyle):
     transcription_row_btn_hover = "rgba(0,255,0,0.2)"
     transcription_row_btn_pressed = "rgba(0,255,0,0.35)"
 
+    # Chime editor - Windows 95 gray
+    chime_grid_bg = QColor(192, 192, 192)  # Win95 gray
+    chime_grid_line = QColor(128, 128, 128)  # Dark gray border
+    chime_cell_inactive = QColor(210, 210, 210)  # Light gray
+    chime_cell_active = QColor(0, 0, 128)  # Win95 blue
+    chime_cell_highlight = QColor(0, 0, 128, 80)  # Blue highlight
+    chime_piano_white = QColor(255, 255, 255)  # White
+    chime_piano_black = QColor(0, 0, 0)  # Black
+    chime_piano_label_white = QColor(0, 0, 0)  # Black text
+    chime_piano_label_black = QColor(255, 255, 255)  # White text
+
     def button_css(self):
         # Authentic Windows 95 3D beveled button
         # Raised: white/light on top-left, shadow/dark on bottom-right

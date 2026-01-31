@@ -83,6 +83,17 @@ class VaporwaveStyle(BaseStyle):
     transcription_row_btn_hover = "rgba(255,113,206,0.25)"
     transcription_row_btn_pressed = "rgba(255,113,206,0.4)"
 
+    # Chime editor - vaporwave pink/purple aesthetic
+    chime_grid_bg = QColor(48, 3, 80)  # Deep purple
+    chime_grid_line = QColor(100, 60, 140)  # Purple border
+    chime_cell_inactive = QColor(70, 30, 110)  # Medium purple
+    chime_cell_active = QColor(255, 113, 206)  # Hot pink
+    chime_cell_highlight = QColor(255, 113, 206, 100)  # Pink glow
+    chime_piano_white = QColor(255, 220, 240)  # Light pink
+    chime_piano_black = QColor(60, 20, 90)  # Dark purple
+    chime_piano_label_white = QColor(100, 50, 130)  # Purple text on pink
+    chime_piano_label_black = QColor(255, 180, 230)  # Light pink text
+
     def button_css(self):
         # Pink/purple gradient buttons with glow
         return (

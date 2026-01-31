@@ -90,6 +90,17 @@ class CyberpunkMetalStyle(BaseStyle):
     transcription_row_btn_hover = "rgba(0,255,255,0.2)"
     transcription_row_btn_pressed = "rgba(0,255,255,0.35)"
 
+    # Chime editor - dark metal with cyan glow
+    chime_grid_bg = QColor(20, 22, 28)  # Near black
+    chime_grid_line = QColor(40, 45, 55)  # Dark border
+    chime_cell_inactive = QColor(30, 35, 42)  # Dark button color
+    chime_cell_active = QColor(0, 255, 255)  # Pure cyan
+    chime_cell_highlight = QColor(0, 255, 255, 80)  # Cyan glow
+    chime_piano_white = QColor(180, 185, 195)  # Light metal gray
+    chime_piano_black = QColor(25, 28, 35)  # Dark metal
+    chime_piano_label_white = QColor(35, 38, 45)  # Dark text on light
+    chime_piano_label_black = QColor(0, 200, 200)  # Cyan text on dark
+
     def button_css(self):
         # Dark buttons with cyan glow on hover
         return (

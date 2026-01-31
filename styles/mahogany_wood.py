@@ -93,6 +93,17 @@ class MahoganyWoodStyle(BaseStyle):
     transcription_row_btn_hover = "rgba(210, 150, 70, 0.25)"
     transcription_row_btn_pressed = "rgba(210, 150, 70, 0.4)"
 
+    # Chime editor - brassy/golden look on dark wood
+    chime_grid_bg = QColor(45, 28, 20)  # Dark mahogany
+    chime_grid_line = QColor(70, 45, 32)  # Wood grain line
+    chime_cell_inactive = QColor(55, 35, 25)  # Slightly lighter wood
+    chime_cell_active = QColor(200, 140, 60)  # Brass/gold
+    chime_cell_highlight = QColor(210, 150, 70, 100)  # Amber glow
+    chime_piano_white = QColor(245, 235, 215)  # Ivory keys
+    chime_piano_black = QColor(50, 32, 22)  # Dark wood keys
+    chime_piano_label_white = QColor(70, 45, 32)  # Brown text on white
+    chime_piano_label_black = QColor(210, 190, 160)  # Cream text on dark
+
     def button_css(self):
         # Wood-grain buttons with carved inset look
         return (

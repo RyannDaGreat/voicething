@@ -93,6 +93,17 @@ class RustGrungeStyle(BaseStyle):
     transcription_row_btn_hover = "rgba(255, 140, 40, 0.22)"
     transcription_row_btn_pressed = "rgba(255, 140, 40, 0.35)"
 
+    # Chime editor - rusty metal
+    chime_grid_bg = QColor(45, 35, 30)  # Dark rust
+    chime_grid_line = QColor(80, 60, 50)  # Rust border
+    chime_cell_inactive = QColor(60, 45, 38)  # Medium rust
+    chime_cell_active = QColor(255, 140, 60)  # Orange rust
+    chime_cell_highlight = QColor(255, 140, 60, 90)  # Orange glow
+    chime_piano_white = QColor(210, 195, 180)  # Aged ivory
+    chime_piano_black = QColor(50, 40, 35)  # Dark rust
+    chime_piano_label_white = QColor(80, 60, 50)  # Rust text
+    chime_piano_label_black = QColor(200, 170, 150)  # Light rust text
+
     def button_css(self):
         # Industrial buttons - raised metal with rust
         return (
