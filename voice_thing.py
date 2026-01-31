@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
 """Voice transcription: double-tap Option to record, transcribe, and type."""
 
-import collections
 import difflib
-import functools
 import json
 import math
 import os
@@ -28,8 +26,8 @@ import sounddevice as sd
 from AppKit import NSWorkspace, NSApplicationActivateIgnoringOtherApps
 from pynput import keyboard
 from pynput.keyboard import Controller as KeyboardController, Key
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QSize, QPointF, QRect, QRectF, QPropertyAnimation, QEasingCurve, pyqtProperty, QEvent, QSortFilterProxyModel
-from PyQt6.QtGui import QPainter, QColor, QPen, QIcon, QFont, QFontDatabase, QPolygonF, QLinearGradient, QRadialGradient, QBrush, QPainterPath, QPixmap, QCursor
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QSize, QPointF, QRect, QRectF, QEvent, QSortFilterProxyModel
+from PyQt6.QtGui import QPainter, QColor, QPen, QIcon, QFont, QFontDatabase, QPolygonF, QLinearGradient, QRadialGradient, QBrush, QPixmap, QCursor
 from PyQt6.QtSvg import QSvgRenderer
 from PyQt6.QtWidgets import (
     QApplication,
@@ -323,6 +321,14 @@ class TeeOutput:
 # =============================================================================
 # SETTINGS - use S.ENTER_DELAY to read, S.set('ENTER_DELAY', val) to write
 # =============================================================================
+
+# Default wake word phrases (single source of truth)
+DEFAULT_WAKEWORD_PHRASES = 'hey computer, computer, start recording'
+DEFAULT_WAKEWORD_CANCEL_PHRASES = 'cancel, never mind'
+DEFAULT_OPENWAKEWORD_MODEL = 'computer'
+DEFAULT_OPENWAKEWORD_SENSITIVITY = 0.2
+
+
 class Settings(dict):
     """Settings dict with attribute access and hooks. Use S.set() to trigger hooks."""
     hooks = {}  # name -> callback(new_value)
@@ -353,8 +359,8 @@ DEFAULTS = dict(
     THEME='macos_2005',
     # Wake word engine selection and per-engine settings
     WAKEWORD_ENGINE='openwakeword',  # 'openwakeword' or 'macos'
-    WAKEWORD_OPENWAKEWORD={'model': 'computer', 'sensitivity': 0.2},
-    WAKEWORD_MACOS={'phrases': 'hey computer, computer, start recording', 'cancel_phrases': 'cancel, never mind'},
+    WAKEWORD_OPENWAKEWORD={'model': DEFAULT_OPENWAKEWORD_MODEL, 'sensitivity': DEFAULT_OPENWAKEWORD_SENSITIVITY},
+    WAKEWORD_MACOS={'phrases': DEFAULT_WAKEWORD_PHRASES, 'cancel_phrases': DEFAULT_WAKEWORD_CANCEL_PHRASES},
     TMUX_MODE=False,
     TMUX_TARGET='%',  # Tmux pane target (% = current pane)
     TMUX_PANE_NAMES={},  # pane_id -> {phrase: str}
@@ -448,6 +454,106 @@ def make_close_btn(text="Esc  Close", on_click=None):
     btn.setStyleSheet(get_btn_css())
     if on_click:
         btn.clicked.connect(on_click)
+    return btn
+
+
+def make_checkbox(text, checked, tooltip=None, on_change=None, css_size=11):
+    """Create a styled checkbox with optional tooltip and handler."""
+    cb = QCheckBox(text)
+    cb.setChecked(checked)
+    cb.setStyleSheet(get_checkbox_css(css_size))
+    if tooltip:
+        cb.setToolTip(tooltip)
+    if on_change:
+        cb.stateChanged.connect(on_change)
+    return cb
+
+
+def make_icon_label(icon_name, size=14, color=None):
+    """Create a QLabel with an icon pixmap."""
+    label = QLabel()
+    icon = load_icon(icon_name, color=color or ICON_COLOR_DARK)
+    if icon:
+        label.setPixmap(icon.pixmap(size, size))
+    return label
+
+
+def make_icon_btn(text, icon_name, on_click=None, icon_size=16, tooltip=None, checkable=False):
+    """Create a styled button with icon."""
+    btn = QPushButton(text)
+    btn.setIcon(load_icon(icon_name, color=ICON_COLOR_DARK))
+    btn.setIconSize(QSize(icon_size, icon_size))
+    btn.setStyleSheet(get_btn_css())
+    if on_click:
+        btn.clicked.connect(on_click)
+    if tooltip:
+        btn.setToolTip(tooltip)
+    if checkable:
+        btn.setCheckable(True)
+    return btn
+
+
+def make_pref_label(text, tooltip=None):
+    """Create a styled preference label."""
+    label = QLabel(text)
+    label.setStyleSheet(get_pref_label_css())
+    if tooltip:
+        set_tooltip(label, tooltip)
+    return label
+
+
+def make_hbox(spacing=8):
+    """Create horizontal layout with standard spacing."""
+    layout = QHBoxLayout()
+    layout.setSpacing(spacing)
+    return layout
+
+
+def make_vbox(spacing=8):
+    """Create vertical layout with standard spacing."""
+    layout = QVBoxLayout()
+    layout.setSpacing(spacing)
+    return layout
+
+
+def make_separator(vertical=True):
+    """Create a separator line."""
+    sep = QLabel()
+    if vertical:
+        sep.setFixedWidth(1)
+    else:
+        sep.setFixedHeight(1)
+    sep.setStyleSheet(f"background: {BORDER_COLOR};")
+    return sep
+
+
+def make_button_row(dialog, save_text="Save", cancel_text="Cancel",
+                    revert_callback=None, revert_text="Revert"):
+    """Create standard save/cancel button row for dialogs."""
+    btn_row = QHBoxLayout()
+    btn_row.setSpacing(8)
+    if revert_callback:
+        revert_btn = QPushButton(revert_text)
+        revert_btn.setStyleSheet(get_btn_css())
+        revert_btn.clicked.connect(revert_callback)
+        btn_row.addWidget(revert_btn)
+    btn_row.addStretch()
+    cancel_btn = QPushButton(cancel_text)
+    cancel_btn.setStyleSheet(get_btn_css())
+    cancel_btn.clicked.connect(dialog.reject)
+    btn_row.addWidget(cancel_btn)
+    save_btn = QPushButton(save_text)
+    save_btn.setStyleSheet(get_btn_css())
+    save_btn.clicked.connect(dialog.accept)
+    btn_row.addWidget(save_btn)
+    return btn_row
+
+
+def make_traffic_light_close(on_click):
+    """Create red traffic light close button."""
+    btn = TrafficLightButton("rgb(255, 95, 87)", "rgb(255, 120, 110)", "macos-close")
+    btn.setToolTip("Close")
+    btn.clicked.connect(on_click)
     return btn
 
 
@@ -1058,16 +1164,31 @@ def _log_chime_to_file(entry):
     with open(CHIME_LOG_FILE, 'a') as f:
         f.write(json.dumps(entry) + '\n')
 
+
+def get_effective_shift():
+    """Get effective pitch shift (-12 base + user setting)."""
+    return -12 + S.CHIME_PITCH
+
+
+def get_chime_audio_params():
+    """Get current chime audio parameters as dict."""
+    return {
+        'shift': get_effective_shift(),
+        'volume': S.CHIME_VOLUME,
+        'program': S.CHIME_PROGRAM,
+    }
+
+
 def chime(*chords, t=0.15, gap=0.0, name=None, **kwargs):
     """Play chime using native FluidSynth audio (non-blocking, layerable)."""
     if not S.SOUND_ENABLED or S.CHIME_VOLUME <= 0:
         return
+    params = get_chime_audio_params()
     # Log if debug enabled
     if _CHIME_DEBUG and name:
         import datetime
-        shift = -12 + S.CHIME_PITCH
         # Compute final semitones after shift for analysis
-        final_semitones = [[note + shift for note in chord] for chord in chords]
+        final_semitones = [[note + params['shift'] for note in chord] for chord in chords]
         entry = {
             'ts': datetime.datetime.now().isoformat(),
             'name': name,
@@ -1087,9 +1208,7 @@ def chime(*chords, t=0.15, gap=0.0, name=None, **kwargs):
                 cb(entry)
             except Exception:
                 pass  # Don't let callback errors break chime playback
-    # shift param adds to the base -12 octave shift
-    play_native(chords, duration=t, gap=gap, volume=S.CHIME_VOLUME,
-                shift=-12 + S.CHIME_PITCH, program=S.CHIME_PROGRAM)
+    play_native(chords, duration=t, gap=gap, **params)
 
 
 def play_chime(name):
@@ -1166,12 +1285,6 @@ def apply_audio_settings(theme_name=None):
     # Chorus: map 0-1 to level 0-0.6 and depth 2-12
     chorus_amt = settings.get('chorus', 0.3)
     set_chorus(level=chorus_amt * 0.6, depth=2 + chorus_amt * 10)
-
-
-def clear_chime_log():
-    """Clear the in-memory chime log (file log is preserved)."""
-    global _chime_log
-    _chime_log = []
 
 
 def load_icon(name, color=None):
@@ -1708,77 +1821,6 @@ AI_CODER_PROCESSES = ['claude', 'opencode', 'gemini', 'aider', 'cursor']
 # Cache of rendered HTML for each pane (pane_id -> html)
 # Polling thread writes to this, UI reads from it for instant display
 _pane_html_cache = {}
-
-
-def _get_tmux_pane_state(target, lines=50):
-    """Get scrollback and cursor position from tmux pane in a single call.
-
-    Returns:
-        (text, cursor_info) where cursor_info is (cursor_x, cursor_y, pane_height) or None.
-    """
-    try:
-        # Single shell command to get both cursor info and pane content
-        # Format: CURSOR_INFO\n---SEPARATOR---\nPANE_CONTENT
-        result = subprocess.run(
-            ['tmux', 'display-message', '-p', '-t', target,
-             '#{cursor_x},#{cursor_y},#{pane_height}'],
-            capture_output=True, text=True, timeout=1
-        )
-        cursor_info = None
-        if result.returncode == 0 and result.stdout.strip():
-            parts = result.stdout.strip().split(',')
-            if len(parts) == 3:
-                try:
-                    cursor_info = (int(parts[0]), int(parts[1]), int(parts[2]))
-                except ValueError:
-                    pass
-
-        # Get pane content
-        result = subprocess.run(
-            ['tmux', 'capture-pane', '-t', target, '-p', '-e', '-S', f'-{lines}'],
-            capture_output=True, text=True, timeout=2
-        )
-        text = result.stdout if result.returncode == 0 else None
-        return text, cursor_info
-    except (subprocess.TimeoutExpired, FileNotFoundError):
-        return None, None
-
-
-def _get_tmux_cursor(target):
-    """Get cursor position from tmux pane.
-
-    Returns:
-        (cursor_x, cursor_y, pane_height) or None if unavailable.
-        cursor_y is relative to visible pane (0 = top of visible area).
-    """
-    try:
-        result = subprocess.run(
-            ['tmux', 'display-message', '-p', '-t', target,
-             '#{cursor_x},#{cursor_y},#{pane_height}'],
-            capture_output=True, text=True, timeout=1
-        )
-        if result.returncode == 0 and result.stdout.strip():
-            parts = result.stdout.strip().split(',')
-            if len(parts) == 3:
-                return int(parts[0]), int(parts[1]), int(parts[2])
-    except (subprocess.TimeoutExpired, FileNotFoundError, ValueError):
-        pass
-    return None
-
-
-def _get_tmux_scrollback(target, lines=50):
-    """Get scrollback from tmux pane (includes ANSI escape codes)."""
-    try:
-        # -e flag preserves ANSI escape sequences for colors
-        result = subprocess.run(
-            ['tmux', 'capture-pane', '-t', target, '-p', '-e', '-S', f'-{lines}'],
-            capture_output=True, text=True, timeout=2
-        )
-        if result.returncode == 0:
-            return result.stdout
-        return None
-    except (subprocess.TimeoutExpired, FileNotFoundError):
-        return None
 
 
 def _ansi_to_html(text: str, cursor_info=None, scrollback_lines=50, ansi_colors=True) -> str:
@@ -3579,7 +3621,7 @@ class WakeWordSettingsWidget(QWidget):
         wake_word_options = get_wake_words_ordered()
         for ww in wake_word_options:
             self._model_combo.addItem(get_wake_word_display(ww), ww)
-        current_model = S.WAKEWORD_OPENWAKEWORD.get('model', 'computer')
+        current_model = S.WAKEWORD_OPENWAKEWORD.get('model', DEFAULT_OPENWAKEWORD_MODEL)
         idx = wake_word_options.index(current_model) if current_model in wake_word_options else 0
         self._model_combo.setCurrentIndex(idx)
         make_combobox_searchable(self._model_combo)
@@ -3631,7 +3673,7 @@ class WakeWordSettingsWidget(QWidget):
         self._phrases_edit = QLineEdit()
         self._phrases_edit.setStyleSheet(get_lineedit_css())
         self._phrases_edit.setPlaceholderText("hey computer, computer, start")
-        current_phrases = S.WAKEWORD_MACOS.get('phrases', 'hey computer, computer')
+        current_phrases = S.WAKEWORD_MACOS.get('phrases', DEFAULT_WAKEWORD_PHRASES)
         self._phrases_edit.setText(current_phrases)
         self._phrases_edit.editingFinished.connect(self._on_phrases_changed)
         phrases_row.addWidget(self._phrases_edit, 1)
@@ -3748,10 +3790,10 @@ class WakeWordSettingsWidget(QWidget):
         """Get display name for current wake word (for tooltip etc)."""
         engine = self._get_engine()
         if engine == 'openwakeword':
-            model = S.WAKEWORD_OPENWAKEWORD.get('model', 'computer')
+            model = S.WAKEWORD_OPENWAKEWORD.get('model', DEFAULT_OPENWAKEWORD_MODEL)
             return get_wake_word_display(model)
         else:
-            phrases = S.WAKEWORD_MACOS.get('phrases', 'hey computer')
+            phrases = S.WAKEWORD_MACOS.get('phrases', DEFAULT_WAKEWORD_PHRASES)
             # Return first phrase
             first = phrases.split(',')[0].strip() if phrases else 'hey computer'
             return first
@@ -4855,7 +4897,8 @@ class ChimeEditorDialog(DraggableDialog):
 
         layout.addLayout(main_content, 1)
 
-        # No minimum size - allow free resizing
+        # Explicitly set very small minimum to allow free resizing
+        self.setMinimumSize(200, 150)
         self._populate_chime_list()
         self._load_chime('demo')
         self._update_playable_range()  # Set initial playable range based on pitch
@@ -4872,8 +4915,8 @@ class ChimeEditorDialog(DraggableDialog):
     def _update_playable_range(self):
         """Update the playable note range based on current pitch shift setting."""
         # MIDI notes are 0-127, A4 = MIDI 69 = semitone 0
-        # Pitch shift is -12 + S.CHIME_PITCH, so MIDI note = semitone + 69 + shift
-        shift = -12 + S.CHIME_PITCH
+        # Pitch shift uses get_effective_shift(), so MIDI note = semitone + 69 + shift
+        shift = get_effective_shift()
         # MIDI 0 -> semitone = 0 - 69 - shift = -69 - shift
         # MIDI 127 -> semitone = 127 - 69 - shift = 58 - shift
         min_playable = -69 - shift
@@ -5041,12 +5084,8 @@ class ChimeEditorDialog(DraggableDialog):
                 self._pressed_semitones.add(semitone)
                 # Start sustained note
                 from synth import note_on
-                midi_note = note_on(
-                    semitone,
-                    shift=-12 + S.CHIME_PITCH,
-                    volume=S.CHIME_VOLUME,
-                    program=S.CHIME_PROGRAM
-                )
+                params = get_chime_audio_params()
+                midi_note = note_on(semitone, **params)
                 self._sustained_notes[semitone] = midi_note
                 # Update highlights
                 self.piano.set_highlighted(self._pressed_semitones)
@@ -5183,11 +5222,13 @@ class ChimeEditorDialog(DraggableDialog):
 
         self.grid.set_pattern(self._pattern)
         self.duration_knob.setValue(int(self._duration * 1000), emit=False)
+        self._update_beats_slider_min()
 
     def _on_pattern_changed(self, pattern):
         """Handle grid pattern change."""
         self._push_undo()
         self._pattern = pattern
+        self._update_beats_slider_min()
 
     def _on_duration_changed(self, value):
         """Handle duration knob change."""
@@ -5208,6 +5249,17 @@ class ChimeEditorDialog(DraggableDialog):
         old_pattern = self._pattern
         self.grid.set_num_beats(value)
         self.grid.set_pattern(old_pattern)
+
+    def _update_beats_slider_min(self):
+        """Update beats slider minimum to prevent removing notes."""
+        # Find the last beat that has notes
+        last_used = 0
+        for i, beat in enumerate(self._pattern):
+            if beat:  # Has notes
+                last_used = i + 1  # Beat numbers are 1-indexed in UI
+        # Minimum is at least 4, or last used beat (whichever is larger)
+        min_beats = max(4, last_used)
+        self.beats_slider.setMinimum(min_beats)
 
     def _play_note(self, semitone):
         """Play a single note and highlight the key briefly."""
@@ -5417,7 +5469,6 @@ class ChimePianoWidget(QWidget):
             y = row * self.cell_size
             is_black = self._is_black_key(semitone)
             is_highlighted = semitone in self._highlighted
-            is_playable = self._playable_min <= semitone <= self._playable_max
             is_hovered = (self._hover_semitone == semitone)
 
             # Key background
@@ -5428,10 +5479,6 @@ class ChimePianoWidget(QWidget):
             else:
                 painter.fillRect(0, y, 35, self.cell_size - 1, white_key)
 
-            # Gray overlay for unplayable notes
-            if not is_playable and not is_highlighted:
-                painter.fillRect(0, y, 50, self.cell_size - 1, gray_overlay)
-
             # Hover effect - brighten key
             if is_hovered and not is_highlighted:
                 painter.fillRect(0, y, 48, self.cell_size - 1, hover_brighten)
@@ -5440,8 +5487,6 @@ class ChimePianoWidget(QWidget):
             note_name = self._get_note_name(semitone)
             if is_highlighted:
                 painter.setPen(QColor(255, 255, 255))
-            elif not is_playable:
-                painter.setPen(QColor(120, 120, 120))  # Dimmed text for unplayable
             elif is_black:
                 painter.setPen(label_black)
             else:
@@ -5699,8 +5744,6 @@ class ChimeGridWidget(QWidget):
                 semitone = self.semitone_min + (self.semitone_range - 1 - row)
                 x = beat * self.cell_size
                 y = grid_y + row * self.cell_size
-                is_playable = self._playable_min <= semitone <= self._playable_max
-
                 # Cell background
                 is_active = semitone in self._pattern[beat]
                 is_highlighted = semitone in self._highlighted
@@ -5723,10 +5766,9 @@ class ChimeGridWidget(QWidget):
 
                 painter.fillRect(x + 1, y + 1, self.cell_size - 2, self.cell_size - 2, cell_color)
 
-                # Gray overlay for unplayable notes or unused columns
-                if not is_playable or is_unused_col:
-                    if not is_active:  # Don't gray out active notes
-                        painter.fillRect(x + 1, y + 1, self.cell_size - 2, self.cell_size - 2, gray_overlay)
+                # Gray overlay for unused columns only (removed playable note check)
+                if is_unused_col and not is_active:
+                    painter.fillRect(x + 1, y + 1, self.cell_size - 2, self.cell_size - 2, gray_overlay)
 
                 # Playing column overlay
                 if is_playing_col:
@@ -7930,10 +7972,10 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         """Get display name for current wake word configuration (first phrase only, for tooltip)."""
         engine = S.WAKEWORD_ENGINE
         if engine == 'openwakeword':
-            model = S.WAKEWORD_OPENWAKEWORD.get('model', 'computer')
+            model = S.WAKEWORD_OPENWAKEWORD.get('model', DEFAULT_OPENWAKEWORD_MODEL)
             return get_wake_word_display(model)
         else:
-            phrases = S.WAKEWORD_MACOS.get('phrases', 'hey computer')
+            phrases = S.WAKEWORD_MACOS.get('phrases', DEFAULT_WAKEWORD_PHRASES)
             first = phrases.split(',')[0].strip() if phrases else 'hey computer'
             return first
 
@@ -7941,11 +7983,11 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         """Get all active wake words/phrases as a list (for starting recording)."""
         engine = S.WAKEWORD_ENGINE
         if engine == 'openwakeword':
-            model = S.WAKEWORD_OPENWAKEWORD.get('model', 'computer')
+            model = S.WAKEWORD_OPENWAKEWORD.get('model', DEFAULT_OPENWAKEWORD_MODEL)
             return [get_wake_word_display(model)]
         else:
             # macOS: get all configured phrases
-            phrases_str = S.WAKEWORD_MACOS.get('phrases', 'hey computer')
+            phrases_str = S.WAKEWORD_MACOS.get('phrases', DEFAULT_WAKEWORD_PHRASES)
             phrases = [p.strip() for p in phrases_str.split(',') if p.strip()]
             # Add tmux phrases if enabled
             if listening_for_tmux_panes_as_wakewords():
@@ -7956,11 +7998,11 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         """Get wake words that can STOP recording (excludes tmux-only phrases)."""
         engine = S.WAKEWORD_ENGINE
         if engine == 'openwakeword':
-            model = S.WAKEWORD_OPENWAKEWORD.get('model', 'computer')
+            model = S.WAKEWORD_OPENWAKEWORD.get('model', DEFAULT_OPENWAKEWORD_MODEL)
             return [get_wake_word_display(model)]
         else:
             # macOS: only regular phrases can stop (not tmux phrases)
-            phrases_str = S.WAKEWORD_MACOS.get('phrases', 'hey computer')
+            phrases_str = S.WAKEWORD_MACOS.get('phrases', DEFAULT_WAKEWORD_PHRASES)
             phrases = [p.strip() for p in phrases_str.split(',') if p.strip()]
             return phrases if phrases else ['hey computer']
 
@@ -8098,7 +8140,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
                 self.wake_word_engine = create_engine(
                     engine_name,
                     callback=self._on_wake_word_detected,
-                    model=cfg.get('model', 'computer'),
+                    model=cfg.get('model', DEFAULT_OPENWAKEWORD_MODEL),
                     sensitivity=cfg.get('sensitivity', 0.2),
                 )
             else:  # macos
@@ -8113,7 +8155,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
                 self.wake_word_engine = create_engine(
                     engine_name,
                     callback=self._on_wake_word_detected,
-                    phrases=cfg.get('phrases', 'hey computer, computer'),
+                    phrases=cfg.get('phrases', DEFAULT_WAKEWORD_PHRASES),
                     tmux_phrases=tmux_phrases,
                     cancel_phrases=cfg.get('cancel_phrases', ''),
                 )
