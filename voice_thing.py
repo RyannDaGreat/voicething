@@ -4708,48 +4708,44 @@ class ChimeEditorDialog(DraggableDialog):
 
         controls.addSpacing(10)
 
-        # Edit mode buttons (Pencil vs Brush)
-        self.pencil_btn = QPushButton()
+        # Edit mode buttons (Pencil vs Brush) with keyboard shortcuts
+        self.pencil_btn = QPushButton("⌘P")
         self.pencil_btn.setIcon(load_icon("pencil", ICON_COLOR_DARK))
         self.pencil_btn.setIconSize(QSize(14, 14))
-        self.pencil_btn.setFixedSize(24, 24)
         self.pencil_btn.setCheckable(True)
         self.pencil_btn.setChecked(True)  # Pencil mode is default
         self.pencil_btn.setStyleSheet(get_btn_css())
         self.pencil_btn.clicked.connect(lambda: self._set_edit_mode('pencil'))
-        set_tooltip(self.pencil_btn, "Pencil: Click to toggle, drag places note at release")
+        set_tooltip(self.pencil_btn, "Pencil: Click to toggle, drag places note at release (⌘P)")
         controls.addWidget(self.pencil_btn)
 
-        self.brush_btn = QPushButton()
+        self.brush_btn = QPushButton("⌘B")
         self.brush_btn.setIcon(load_icon("brush", ICON_COLOR_DARK))
         self.brush_btn.setIconSize(QSize(14, 14))
-        self.brush_btn.setFixedSize(24, 24)
         self.brush_btn.setCheckable(True)
         self.brush_btn.setStyleSheet(get_btn_css())
         self.brush_btn.clicked.connect(lambda: self._set_edit_mode('brush'))
-        set_tooltip(self.brush_btn, "Brush: Paint notes on/off as you drag")
+        set_tooltip(self.brush_btn, "Brush: Paint notes on/off as you drag (⌘B)")
         controls.addWidget(self.brush_btn)
 
         controls.addSpacing(10)
 
-        # Zoom buttons
-        zoom_out_btn = QPushButton()
-        zoom_out_btn.setIcon(load_icon("zoom-out", ICON_COLOR_DARK))
-        zoom_out_btn.setIconSize(QSize(14, 14))
-        zoom_out_btn.setFixedSize(24, 24)
-        zoom_out_btn.setStyleSheet(get_btn_css())
-        zoom_out_btn.clicked.connect(self._zoom_out)
-        set_tooltip(zoom_out_btn, "Zoom out (smaller cells)")
-        controls.addWidget(zoom_out_btn)
+        # Zoom buttons with keyboard shortcuts
+        self.zoom_out_btn = QPushButton("⌘-")
+        self.zoom_out_btn.setIcon(load_icon("zoom-out", ICON_COLOR_DARK))
+        self.zoom_out_btn.setIconSize(QSize(14, 14))
+        self.zoom_out_btn.setStyleSheet(get_btn_css())
+        self.zoom_out_btn.clicked.connect(self._zoom_out)
+        set_tooltip(self.zoom_out_btn, "Zoom out (⌘-)")
+        controls.addWidget(self.zoom_out_btn)
 
-        zoom_in_btn = QPushButton()
-        zoom_in_btn.setIcon(load_icon("zoom-in", ICON_COLOR_DARK))
-        zoom_in_btn.setIconSize(QSize(14, 14))
-        zoom_in_btn.setFixedSize(24, 24)
-        zoom_in_btn.setStyleSheet(get_btn_css())
-        zoom_in_btn.clicked.connect(self._zoom_in)
-        set_tooltip(zoom_in_btn, "Zoom in (larger cells)")
-        controls.addWidget(zoom_in_btn)
+        self.zoom_in_btn = QPushButton("⌘+")
+        self.zoom_in_btn.setIcon(load_icon("zoom-in", ICON_COLOR_DARK))
+        self.zoom_in_btn.setIconSize(QSize(14, 14))
+        self.zoom_in_btn.setStyleSheet(get_btn_css())
+        self.zoom_in_btn.clicked.connect(self._zoom_in)
+        set_tooltip(self.zoom_in_btn, "Zoom in (⌘+)")
+        controls.addWidget(self.zoom_in_btn)
 
         controls.addStretch()
 
@@ -4758,12 +4754,12 @@ class ChimeEditorDialog(DraggableDialog):
         help_hint.setStyleSheet("color: rgba(255,255,255,0.5); font-size: 10px;")
         controls.addWidget(help_hint)
 
-        # Save button
-        self.save_btn = QPushButton("Save Custom")
+        # Save button with keyboard shortcut
+        self.save_btn = QPushButton("⌘S Save")
         self.save_btn.setIcon(load_icon("save", ICON_COLOR_DARK))
         self.save_btn.setStyleSheet(get_btn_css())
         self.save_btn.clicked.connect(self._save_custom)
-        set_tooltip(self.save_btn, "Save as custom pattern for this chime event")
+        set_tooltip(self.save_btn, "Save as custom pattern (⌘S)")
         controls.addWidget(self.save_btn)
 
         # Revert button
@@ -4896,11 +4892,31 @@ class ChimeEditorDialog(DraggableDialog):
         if e.isAutoRepeat():
             return
         key = e.key()
+        mods = e.modifiers()
+        is_cmd = mods & Qt.KeyboardModifier.ControlModifier
 
         # Escape closes dialog
         if key == Qt.Key.Key_Escape:
             self.close()
             return
+
+        # Command key shortcuts
+        if is_cmd:
+            if key == Qt.Key.Key_P:
+                self._set_edit_mode('pencil')
+                return
+            elif key == Qt.Key.Key_B:
+                self._set_edit_mode('brush')
+                return
+            elif key == Qt.Key.Key_S:
+                self._save_custom()
+                return
+            elif key == Qt.Key.Key_Plus or key == Qt.Key.Key_Equal:
+                self._zoom_in()
+                return
+            elif key == Qt.Key.Key_Minus:
+                self._zoom_out()
+                return
 
         # Spacebar plays the current pattern
         if key == Qt.Key.Key_Space:
