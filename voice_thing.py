@@ -348,6 +348,7 @@ DEFAULTS = dict(
     CHIME_VOLUME=0.5,  # Volume for chimes (0.0 to 1.0)
     CHIME_PROGRAM=127,  # Program number (0-127), single source of truth
     CHIME_PITCH=12,  # Pitch shift in semitones (-24 to +24)
+    CHIME_EDITOR_ZOOM=12,  # Cell size in pixels for chime editor (8-24)
     CHIME_THEME='bright',  # Chime theme (default, blues, melancholy, bright)
     # Per-theme audio settings (reverb, chorus) keyed by chime theme name
     CHIME_AUDIO_SETTINGS={
@@ -4605,7 +4606,8 @@ class ChimeEditorDialog(DraggableDialog):
     # Full MIDI range: 128 notes (MIDI 0-127). A4 = MIDI 69, so semitones from -69 to +58
     SEMITONE_RANGE = 128  # Full MIDI range
     SEMITONE_MIN = -69  # MIDI note 0 (C-1)
-    CELL_SIZE = 12  # Smaller cells to fit full range
+    MIN_CELL_SIZE = 8
+    MAX_CELL_SIZE = 24
 
     # Note names for display (A4 = 0)
     NOTE_NAMES = ['A', 'A#', 'B', 'C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#']
@@ -4616,6 +4618,7 @@ class ChimeEditorDialog(DraggableDialog):
         self._pattern = []  # List of lists: [[semitones for beat 0], [beat 1], ...]
         self._duration = 0.1  # Seconds per beat
         self._num_beats = self.DEFAULT_BEATS
+        self._cell_size = S.CHIME_EDITOR_ZOOM  # Use saved zoom setting
 
         # Register callback for real-time chime log updates
         self._chime_callback = self._on_chime_played
@@ -4678,6 +4681,23 @@ class ChimeEditorDialog(DraggableDialog):
         self.beats_num_label.setFixedWidth(20)
         controls.addWidget(self.beats_num_label)
 
+        controls.addSpacing(10)
+
+        # Zoom buttons
+        zoom_out_btn = QPushButton("-")
+        zoom_out_btn.setFixedSize(24, 24)
+        zoom_out_btn.setStyleSheet(get_btn_css())
+        zoom_out_btn.clicked.connect(self._zoom_out)
+        set_tooltip(zoom_out_btn, "Zoom out (smaller cells)")
+        controls.addWidget(zoom_out_btn)
+
+        zoom_in_btn = QPushButton("+")
+        zoom_in_btn.setFixedSize(24, 24)
+        zoom_in_btn.setStyleSheet(get_btn_css())
+        zoom_in_btn.clicked.connect(self._zoom_in)
+        set_tooltip(zoom_in_btn, "Zoom in (larger cells)")
+        controls.addWidget(zoom_in_btn)
+
         controls.addStretch()
 
         # Save button
@@ -4702,11 +4722,14 @@ class ChimeEditorDialog(DraggableDialog):
         main_content = QHBoxLayout()
         main_content.setSpacing(6)
 
-        # Scroll area for piano + grid
+        # Scroll area for piano + grid - use theme colors
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
+        scroll_bg = STYLE.chime_grid_bg
+        scroll_border = STYLE.chime_grid_line
         self.scroll.setStyleSheet(
-            f"QScrollArea {{ background: rgb(30,30,35); border: 1px solid rgb(60,60,70); }}"
+            f"QScrollArea {{ background: rgb({scroll_bg.red()},{scroll_bg.green()},{scroll_bg.blue()}); "
+            f"border: 1px solid rgb({scroll_border.red()},{scroll_border.green()},{scroll_border.blue()}); }}"
             + SCROLLBAR_CSS
         )
 
@@ -4717,12 +4740,12 @@ class ChimeEditorDialog(DraggableDialog):
         scroll_layout.setSpacing(0)
 
         # Vertical piano on left
-        self.piano = ChimePianoWidget(self.SEMITONE_RANGE, self.CELL_SIZE, self.SEMITONE_MIN)
+        self.piano = ChimePianoWidget(self.SEMITONE_RANGE, self._cell_size, self.SEMITONE_MIN)
         self.piano.noteClicked.connect(self._play_note)
         scroll_layout.addWidget(self.piano)
 
         # Grid widget
-        self.grid = ChimeGridWidget(self._num_beats, self.SEMITONE_RANGE, self.CELL_SIZE, self.SEMITONE_MIN)
+        self.grid = ChimeGridWidget(self._num_beats, self.SEMITONE_RANGE, self._cell_size, self.SEMITONE_MIN)
         self.grid.patternChanged.connect(self._on_pattern_changed)
         self.grid.noteClicked.connect(self._play_note)
         scroll_layout.addWidget(self.grid)
@@ -4755,6 +4778,7 @@ class ChimeEditorDialog(DraggableDialog):
         # No minimum size - allow free resizing
         self._populate_chime_list()
         self._load_chime('demo')
+        self._update_playable_range()  # Set initial playable range based on pitch
 
         # Keyboard -> semitone mapping (imported from piano.py)
         self._keyboard_map = PianoWidget.KEYBOARD_MAP
@@ -4764,6 +4788,42 @@ class ChimeEditorDialog(DraggableDialog):
     def _key_to_semitone(self, key):
         """Convert Qt key to semitone."""
         return self._keyboard_map.get(key)
+
+    def _update_playable_range(self):
+        """Update the playable note range based on current pitch shift setting."""
+        # MIDI notes are 0-127, A4 = MIDI 69 = semitone 0
+        # Pitch shift is -12 + S.CHIME_PITCH, so MIDI note = semitone + 69 + shift
+        shift = -12 + S.CHIME_PITCH
+        # MIDI 0 -> semitone = 0 - 69 - shift = -69 - shift
+        # MIDI 127 -> semitone = 127 - 69 - shift = 58 - shift
+        min_playable = -69 - shift
+        max_playable = 58 - shift
+        self.piano.set_playable_range(min_playable, max_playable)
+        self.grid.set_playable_range(min_playable, max_playable)
+
+    def _zoom_in(self):
+        """Increase cell size (zoom in)."""
+        new_size = min(self._cell_size + 2, self.MAX_CELL_SIZE)
+        if new_size != self._cell_size:
+            self._set_zoom(new_size)
+
+    def _zoom_out(self):
+        """Decrease cell size (zoom out)."""
+        new_size = max(self._cell_size - 2, self.MIN_CELL_SIZE)
+        if new_size != self._cell_size:
+            self._set_zoom(new_size)
+
+    def _set_zoom(self, cell_size):
+        """Set the cell size and recreate widgets."""
+        self._cell_size = cell_size
+        S.CHIME_EDITOR_ZOOM = cell_size
+        # Update widget sizes
+        self.piano.cell_size = cell_size
+        self.piano.setFixedSize(50, self.SEMITONE_RANGE * cell_size + 18)
+        self.piano.update()
+        self.grid.cell_size = cell_size
+        self.grid._update_size()
+        self.grid.update()
 
     def keyPressEvent(self, e):
         """Handle keyboard input for playing/highlighting notes."""
@@ -5044,9 +5104,19 @@ class ChimePianoWidget(QWidget):
         self._highlighted = set()  # Set of highlighted semitones
         self._dragging = False
         self._last_semitone = None
+        self._hover_semitone = None  # Semitone under mouse
+        self._playable_min = semitone_min  # Min playable semitone (considering pitch shift)
+        self._playable_max = semitone_min + semitone_range - 1  # Max playable semitone
         self.setMouseTracking(True)
+        self.setCursor(Qt.CursorShape.ArrowCursor)
         # +18 to match grid height (beat numbers at bottom)
         self.setFixedSize(50, semitone_range * cell_size + 18)
+
+    def set_playable_range(self, min_semitone, max_semitone):
+        """Set the range of playable semitones (outside this range will be grayed out)."""
+        self._playable_min = min_semitone
+        self._playable_max = max_semitone
+        self.update()
 
     def set_highlighted(self, semitones):
         """Set which semitones are highlighted."""
@@ -5085,9 +5155,14 @@ class ChimePianoWidget(QWidget):
             self.noteClicked.emit(semitone)
 
     def mouseMoveEvent(self, e):
-        """Handle drag across piano keys."""
+        """Handle drag across piano keys and hover tracking."""
+        semitone = self._semitone_at(e.position().y())
+        # Update hover
+        if semitone != self._hover_semitone:
+            self._hover_semitone = semitone
+            self.update()
+        # Handle drag
         if self._dragging:
-            semitone = self._semitone_at(e.position().y())
             if semitone is not None and semitone != self._last_semitone:
                 self._last_semitone = semitone
                 self.noteClicked.emit(semitone)
@@ -5098,9 +5173,12 @@ class ChimePianoWidget(QWidget):
         self._last_semitone = None
 
     def leaveEvent(self, e):
-        """Stop drag when leaving widget."""
+        """Stop drag and clear hover when leaving widget."""
         self._dragging = False
         self._last_semitone = None
+        if self._hover_semitone is not None:
+            self._hover_semitone = None
+            self.update()
 
     def paintEvent(self, e):
         """Draw vertical piano keys with theme colors."""
@@ -5117,6 +5195,8 @@ class ChimePianoWidget(QWidget):
         accent = STYLE.chime_cell_active or STYLE.accent
         highlight = STYLE.chime_cell_highlight or QColor(accent.red(), accent.green(), accent.blue(), 100)
         grid_line = STYLE.chime_grid_line
+        # Gray overlay for unplayable notes
+        gray_overlay = QColor(80, 80, 80, 140)
 
         painter.fillRect(self.rect(), bg_color)
         painter.setFont(QFont("Menlo", 7))
@@ -5126,19 +5206,26 @@ class ChimePianoWidget(QWidget):
             y = row * self.cell_size
             is_black = self._is_black_key(semitone)
             is_highlighted = semitone in self._highlighted
+            is_playable = self._playable_min <= semitone <= self._playable_max
 
             # Key background
             if is_highlighted:
-                painter.fillRect(0, y, 48, self.cell_size - 1, highlight if not isinstance(highlight, QColor) else highlight)
+                painter.fillRect(0, y, 48, self.cell_size - 1, highlight)
             elif is_black:
                 painter.fillRect(0, y, 35, self.cell_size - 1, black_key)
             else:
                 painter.fillRect(0, y, 35, self.cell_size - 1, white_key)
 
+            # Gray overlay for unplayable notes
+            if not is_playable and not is_highlighted:
+                painter.fillRect(0, y, 50, self.cell_size - 1, gray_overlay)
+
             # Note name
             note_name = self._get_note_name(semitone)
             if is_highlighted:
                 painter.setPen(QColor(255, 255, 255))
+            elif not is_playable:
+                painter.setPen(QColor(120, 120, 120))  # Dimmed text for unplayable
             elif is_black:
                 painter.setPen(label_black)
             else:
@@ -5163,9 +5250,15 @@ class ChimeGridWidget(QWidget):
         self.semitone_min = semitone_min
         self._highlighted = set()  # Set of highlighted semitones (keyboard playing)
         self._playing_beat = -1  # Currently playing beat column (-1 = none)
+        self._playable_min = semitone_min  # Min playable semitone
+        self._playable_max = semitone_min + semitone_range - 1  # Max playable semitone
+        self._last_used_beat = -1  # Last beat with notes (-1 = none)
+        self._hover_cell = None  # (beat, semitone) under mouse
 
         # Pattern: list of lists, each inner list is semitones for that beat
         self._pattern = [[] for _ in range(num_beats)]
+        self.setMouseTracking(True)  # Enable hover tracking
+        self.setCursor(Qt.CursorShape.ArrowCursor)  # Use arrow cursor
         self._update_size()
 
     def set_highlighted(self, semitones):
@@ -5177,6 +5270,20 @@ class ChimeGridWidget(QWidget):
         """Set which beat column is currently playing (-1 for none)."""
         self._playing_beat = beat
         self.update()
+
+    def set_playable_range(self, min_semitone, max_semitone):
+        """Set the range of playable semitones (outside this range will be grayed out)."""
+        self._playable_min = min_semitone
+        self._playable_max = max_semitone
+        self.update()
+
+    def _update_last_used_beat(self):
+        """Calculate the last beat that has any notes."""
+        self._last_used_beat = -1
+        for i in range(len(self._pattern) - 1, -1, -1):
+            if self._pattern[i]:
+                self._last_used_beat = i
+                break
 
     def _update_size(self):
         """Update widget size based on grid dimensions."""
@@ -5198,6 +5305,7 @@ class ChimeGridWidget(QWidget):
         for i, beat in enumerate(pattern):
             if i < self.num_beats:
                 self._pattern[i] = list(beat)
+        self._update_last_used_beat()
         self.update()
 
     def get_pattern(self):
@@ -5228,8 +5336,22 @@ class ChimeGridWidget(QWidget):
                 self._pattern[beat].sort()
                 # Play the note
                 self.noteClicked.emit(semitone)
+            self._update_last_used_beat()
             self.update()
             self.patternChanged.emit(self.get_pattern())
+
+    def mouseMoveEvent(self, e):
+        """Track hover position for highlighting."""
+        cell = self._cell_at(e.position().toPoint())
+        if cell != self._hover_cell:
+            self._hover_cell = cell
+            self.update()
+
+    def leaveEvent(self, e):
+        """Clear hover when mouse leaves."""
+        if self._hover_cell is not None:
+            self._hover_cell = None
+            self.update()
 
     def paintEvent(self, e):
         """Draw the grid and active cells with theme colors."""
@@ -5245,6 +5367,10 @@ class ChimeGridWidget(QWidget):
         highlight = STYLE.chime_cell_highlight or QColor(active.red(), active.green(), active.blue(), 80)
         # Playing column highlight color (brighter/more saturated)
         playing_col = QColor(active.red(), active.green(), active.blue(), 50)
+        # Gray overlay for unplayable/unused areas
+        gray_overlay = QColor(80, 80, 80, 140)
+        # Hover highlight
+        hover_brighten = QColor(255, 255, 255, 30)
 
         # Background
         painter.fillRect(self.rect(), bg_color)
@@ -5253,14 +5379,17 @@ class ChimeGridWidget(QWidget):
         # Grid cells
         for beat in range(self.num_beats):
             is_playing_col = (beat == self._playing_beat)
+            is_unused_col = (beat > self._last_used_beat) if self._last_used_beat >= 0 else True
             for row in range(self.semitone_range):
                 semitone = self.semitone_min + (self.semitone_range - 1 - row)
                 x = beat * self.cell_size
                 y = grid_y + row * self.cell_size
+                is_playable = self._playable_min <= semitone <= self._playable_max
 
                 # Cell background
                 is_active = semitone in self._pattern[beat]
                 is_highlighted = semitone in self._highlighted
+                is_hovered = (hasattr(self, '_hover_cell') and self._hover_cell == (beat, semitone))
 
                 # Base cell color
                 if is_active:
@@ -5279,9 +5408,23 @@ class ChimeGridWidget(QWidget):
 
                 painter.fillRect(x + 1, y + 1, self.cell_size - 2, self.cell_size - 2, cell_color)
 
+                # Gray overlay for unplayable notes or unused columns
+                if not is_playable or is_unused_col:
+                    if not is_active:  # Don't gray out active notes
+                        painter.fillRect(x + 1, y + 1, self.cell_size - 2, self.cell_size - 2, gray_overlay)
+
                 # Playing column overlay
                 if is_playing_col:
                     painter.fillRect(x + 1, y + 1, self.cell_size - 2, self.cell_size - 2, playing_col)
+
+                # Hover effect - brighten cell
+                if is_hovered:
+                    if is_active:
+                        # For active notes, use a lighter version of active color
+                        painter.fillRect(x + 1, y + 1, self.cell_size - 2, self.cell_size - 2,
+                                       QColor(255, 255, 255, 50))
+                    else:
+                        painter.fillRect(x + 1, y + 1, self.cell_size - 2, self.cell_size - 2, hover_brighten)
 
                 # Cell border
                 painter.setPen(grid_line)
@@ -5293,9 +5436,12 @@ class ChimeGridWidget(QWidget):
             x = beat * self.cell_size
             # Show every 4th beat number, or all if few beats
             if self.num_beats <= 8 or beat % 4 == 0:
+                is_unused = (beat > self._last_used_beat) if self._last_used_beat >= 0 else True
                 # Highlight playing beat number
                 if beat == self._playing_beat:
                     painter.setPen(active)
+                elif is_unused:
+                    painter.setPen(QColor(100, 100, 100))  # Dimmed for unused
                 else:
                     painter.setPen(STYLE.chime_piano_label_black)
                 painter.drawText(x + 2, self.semitone_range * self.cell_size + 12, str(beat + 1))
