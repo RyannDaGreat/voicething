@@ -3838,7 +3838,14 @@ class PrefsDialog(DraggableDialog):
         layout.setContentsMargins(15, 15, 15, 15)
         layout.setSpacing(12)
 
-        layout.addWidget(make_title("Preferences"))
+        # Title row with close button
+        title_row = QHBoxLayout()
+        title_row.setSpacing(6)
+        close_btn = make_traffic_light_close(self.accept)
+        title_row.addWidget(close_btn)
+        title_row.addWidget(make_title("Preferences"), 1)
+        title_row.addWidget(QWidget())  # Spacer for balance
+        layout.addLayout(title_row)
 
         # Main content: Theme | Settings
         content = QHBoxLayout()
@@ -8244,10 +8251,11 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
 
     def show_prefs(self):
         """Show preferences dialog (non-modal). Settings apply live, Cancel reverts."""
-        # Close existing prefs dialog if open
+        # If already open, just raise to top
         if hasattr(self, '_prefs_dialog') and self._prefs_dialog is not None:
-            self._prefs_dialog.close()
-            self._prefs_dialog = None
+            self._prefs_dialog.raise_()
+            self._prefs_dialog.activateWindow()
+            return
 
         self._open_prefs_dialog()
 
