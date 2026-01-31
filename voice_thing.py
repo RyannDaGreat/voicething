@@ -5227,22 +5227,12 @@ class ChimeEditorDialog(DraggableDialog):
 
         controls.addSpacing(10)
 
-        # Beat count slider
-        beats_label = QLabel("Beats:")
-        beats_label.setStyleSheet("color: #ffffff; font-size: 11px;")
-        controls.addWidget(beats_label)
-
-        self.beats_slider = QSlider(Qt.Orientation.Horizontal)
-        self.beats_slider.setRange(4, 64)
-        self.beats_slider.setValue(self._num_beats)
-        self.beats_slider.setFixedWidth(100)
-        self.beats_slider.valueChanged.connect(self._on_beats_changed)
-        controls.addWidget(self.beats_slider)
-
-        self.beats_num_label = QLabel(str(self._num_beats))
-        self.beats_num_label.setStyleSheet("color: #ffffff; font-size: 11px;")
-        self.beats_num_label.setFixedWidth(20)
-        controls.addWidget(self.beats_num_label)
+        # Beat count knob - shows "X beats" in label
+        self.beats_knob = RotaryKnob(f"{self._num_beats} beats", min_val=4, max_val=64,
+                                     value=self._num_beats, fmt="{:.0f}", size=32)
+        self.beats_knob.valueChanged.connect(self._on_beats_changed)
+        set_tooltip(self.beats_knob, "Number of beats in the chime pattern")
+        controls.addWidget(self.beats_knob)
 
         controls.addSpacing(10)
 
@@ -5456,10 +5446,8 @@ class ChimeEditorDialog(DraggableDialog):
         # Update num_beats first if changed
         if num_beats != self._num_beats:
             self._num_beats = num_beats
-            self.beats_slider.blockSignals(True)
-            self.beats_slider.setValue(num_beats)
-            self.beats_slider.blockSignals(False)
-            self.beats_num_label.setText(str(num_beats))
+            self.beats_knob.setValue(num_beats, emit=False)
+            self.beats_knob.setLabel(f"{num_beats} beats")
             self.grid.set_num_beats(num_beats)
 
         # Update duration
@@ -5698,13 +5686,13 @@ class ChimeEditorDialog(DraggableDialog):
 
         self.grid.set_pattern(self._pattern)
         self.duration_knob.setValue(int(self._duration * 1000), emit=False)
-        self._update_beats_slider_min()
+        self._update_beats_knob_min()
 
     def _on_pattern_changed(self, pattern):
         """Handle grid pattern change."""
         self._push_undo()
         self._pattern = pattern
-        self._update_beats_slider_min()
+        self._update_beats_knob_min()
 
     def _on_duration_changed(self, value):
         """Handle duration knob change."""
@@ -5713,10 +5701,11 @@ class ChimeEditorDialog(DraggableDialog):
         self.duration_knob.setLabel(f"{int(value)}ms")
 
     def _on_beats_changed(self, value):
-        """Handle beat count slider change."""
+        """Handle beat count knob change."""
+        value = int(value)  # Knob returns float
         self._push_undo()
         self._num_beats = value
-        self.beats_num_label.setText(str(value))
+        self.beats_knob.setLabel(f"{value} beats")
         # Resize pattern
         while len(self._pattern) < value:
             self._pattern.append([])
@@ -5726,8 +5715,8 @@ class ChimeEditorDialog(DraggableDialog):
         self.grid.set_num_beats(value)
         self.grid.set_pattern(old_pattern)
 
-    def _update_beats_slider_min(self):
-        """Update beats slider minimum to prevent removing notes."""
+    def _update_beats_knob_min(self):
+        """Update beats knob minimum to prevent removing notes."""
         # Find the last beat that has notes
         last_used = 0
         for i, beat in enumerate(self._pattern):
@@ -5735,7 +5724,7 @@ class ChimeEditorDialog(DraggableDialog):
                 last_used = i + 1  # Beat numbers are 1-indexed in UI
         # Minimum is at least 4, or last used beat (whichever is larger)
         min_beats = max(4, last_used)
-        self.beats_slider.setMinimum(min_beats)
+        self.beats_knob._min = min_beats
 
     def _play_note(self, semitone):
         """Play a single note and highlight the key briefly."""
