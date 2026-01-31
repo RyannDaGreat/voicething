@@ -77,6 +77,7 @@ _VOICETHING_DIR       = os.path.dirname(__file__)
 SETTINGS_FILE         = os.path.join(_VOICETHING_DIR, "settings.json")
 ASSETS_DIR            = os.path.join(_VOICETHING_DIR, "assets")
 DEFAULT_RECORDINGS_DIR = os.path.join(tempfile.gettempdir(), APP_NAME)
+DEFAULT_TRANSCRIPTIONS_DIR = os.path.join(_VOICETHING_DIR, "transcriptions")
 
 # Audio settings
 SAMPLE_RATE = 16000
@@ -393,6 +394,7 @@ DEFAULTS = dict(
     # Format: {chime_name: {'pattern': [[semitones], ...], 'duration': float}}
     CUSTOM_CHIMES={},
     RECORDINGS_DIR=DEFAULT_RECORDINGS_DIR,  # Folder for audio recordings and transcripts
+    TRANSCRIPTIONS_DIR=DEFAULT_TRANSCRIPTIONS_DIR,  # Permanent folder for text transcriptions (persists across reboots)
     ALWAYS_ON_TOP=True,  # Keep window above other windows
     SPEAK_BACK_VOICE='say',  # TTS backend: 'say', 'supertonic', or 'kitten'
     # Per-backend TTS settings (each backend remembers its own settings)
@@ -2643,12 +2645,12 @@ class TmuxSelectionDialog(DraggableDialog):
             return None
 
     def _refresh_table(self):
-        """Populate table with tmux panes."""
+        """Populate table with tmux panes, showing stale magic phrases at top."""
         self.table.blockSignals(True)
         self.table.setRowCount(0)
-        self._pane_data = self._get_tmux_panes_flat()
+        live_panes = self._get_tmux_panes_flat()
 
-        if self._pane_data is None:
+        if live_panes is None:
             self.table.hide()
             self.preview.hide()
             self.preview_label.hide()
@@ -2661,10 +2663,27 @@ class TmuxSelectionDialog(DraggableDialog):
         self.preview.show()
         self.preview_label.show()
 
+        # Find stale pane IDs (have magic phrase but pane no longer exists)
+        live_ids = {p['pane_id'] for p in live_panes}
+        stale_entries = []
+        for pane_id, info in S.TMUX_PANE_NAMES.items():
+            if pane_id not in live_ids and info.get('phrase'):
+                stale_entries.append({
+                    'address': '❌ Invalid',
+                    'pane_id': pane_id,
+                    'process': 'N/A',
+                    'target': None,
+                    'is_stale': True,
+                })
+
+        # Combine: stale entries first, then live panes
+        self._pane_data = stale_entries + live_panes
+
         self.table.setRowCount(len(self._pane_data))
         for row, pane in enumerate(self._pane_data):
             pane_id = pane['pane_id']
             saved = S.TMUX_PANE_NAMES.get(pane_id, {})
+            is_stale = pane.get('is_stale', False)
 
             # Address (read-only)
             addr_item = QTableWidgetItem(pane['address'])
@@ -2687,15 +2706,27 @@ class TmuxSelectionDialog(DraggableDialog):
             phrase_item = QTableWidgetItem(phrase)
             self.table.setItem(row, self.COL_PHRASE, phrase_item)
 
+            # Gray out stale rows
+            if is_stale:
+                gray = QColor(128, 128, 128)
+                for col in range(4):
+                    item = self.table.item(row, col)
+                    if item:
+                        item.setForeground(gray)
+
         self.table.resizeColumnsToContents()
         self.table.setColumnWidth(self.COL_PHRASE, 120)
         self.table.blockSignals(False)
 
-        # Select first row by default
-        if self._pane_data:
+        # Select first live row by default (skip stale)
+        first_live_row = len(stale_entries)
+        if first_live_row < len(self._pane_data):
+            self.table.selectRow(first_live_row)
+            self._selected_pane_id = self._pane_data[first_live_row]['pane_id']
+            self._update_preview(self._selected_pane_id)
+        elif self._pane_data:
             self.table.selectRow(0)
             self._selected_pane_id = self._pane_data[0]['pane_id']
-            self._update_preview(self._selected_pane_id)
 
     def _on_cell_clicked(self, row, col):
         """Single-click on Magic Phrase column starts editing."""
@@ -2727,9 +2758,17 @@ class TmuxSelectionDialog(DraggableDialog):
         pane_id = self._pane_data[row]['pane_id']
         phrase = self.table.item(row, col).text().strip()
         if phrase:
+            # Remove this phrase from any other pane (no duplicates allowed)
+            for other_id in list(S.TMUX_PANE_NAMES.keys()):
+                if other_id != pane_id and S.TMUX_PANE_NAMES[other_id].get('phrase') == phrase:
+                    del S.TMUX_PANE_NAMES[other_id]
             S.TMUX_PANE_NAMES[pane_id] = {'phrase': phrase}
+            # Refresh table to show removed phrases
+            self._refresh_table()
         elif pane_id in S.TMUX_PANE_NAMES:
             del S.TMUX_PANE_NAMES[pane_id]
+            # Refresh table to remove stale row if deleted
+            self._refresh_table()
 
     def eventFilter(self, obj, event):
         """Handle mouse hover for preview."""
@@ -4342,8 +4381,13 @@ class PrefsDialog(DraggableDialog):
         )
         settings_box.addLayout(llm_prefix_layout)
 
-        # Recordings Folder section
-        settings_box.addWidget(make_section("Recordings Folder"))
+        # Recordings and Transcriptions Folders section
+        settings_box.addWidget(make_section("Recordings and Transcriptions Folders"))
+
+        # Recordings folder (audio + text, can be temp)
+        rec_label = QLabel("Audio Recordings:")
+        rec_label.setStyleSheet(f"QLabel {{ color: {TEXT_SECONDARY}; font-size: 10px; }}")
+        settings_box.addWidget(rec_label)
         folder_row = QHBoxLayout()
         folder_row.setSpacing(8)
         self.folder_label = QLabel(S.RECORDINGS_DIR)
@@ -4351,7 +4395,8 @@ class PrefsDialog(DraggableDialog):
             f"QLabel {{ color: {TEXT_PRIMARY}; font-size: 11px; font-family: Menlo, monospace; "
             f"background: rgba(255,255,255,0.1); padding: 4px 8px; border-radius: 3px; }}"
         )
-        self.folder_label.setToolTip("Folder where audio recordings and transcripts are saved.\n\n"
+        self.folder_label.setToolTip("Folder where audio recordings (.wav) and transcripts (.txt) are saved.\n"
+                                      "This can be a temp folder - audio files are large.\n\n"
                                       "Click 'Select' to choose a different folder.\n"
                                       "Click the reset arrow to revert to the default temp folder.")
         folder_row.addWidget(self.folder_label, 1)
@@ -4368,6 +4413,37 @@ class PrefsDialog(DraggableDialog):
         revert_folder_btn.clicked.connect(self._revert_recordings_folder)
         folder_row.addWidget(revert_folder_btn)
         settings_box.addLayout(folder_row)
+
+        # Transcriptions archive folder (text only, permanent)
+        trans_label = QLabel("Transcription Archive (text only, permanent):")
+        trans_label.setStyleSheet(f"QLabel {{ color: {TEXT_SECONDARY}; font-size: 10px; }}")
+        settings_box.addWidget(trans_label)
+        trans_row = QHBoxLayout()
+        trans_row.setSpacing(8)
+        self.trans_folder_label = QLabel(S.TRANSCRIPTIONS_DIR)
+        self.trans_folder_label.setStyleSheet(
+            f"QLabel {{ color: {TEXT_PRIMARY}; font-size: 11px; font-family: Menlo, monospace; "
+            f"background: rgba(255,255,255,0.1); padding: 4px 8px; border-radius: 3px; }}"
+        )
+        self.trans_folder_label.setToolTip("Permanent folder for transcription text files only.\n"
+                                            "Text files are small and worth keeping permanently.\n"
+                                            "Survives reboots (unlike the temp recordings folder).\n\n"
+                                            "Click 'Select' to choose a different folder.\n"
+                                            "Click the reset arrow to revert to the default.")
+        trans_row.addWidget(self.trans_folder_label, 1)
+        select_trans_btn = QPushButton("Select")
+        select_trans_btn.setStyleSheet(get_btn_css())
+        select_trans_btn.setToolTip("Choose a folder for transcription archive")
+        select_trans_btn.clicked.connect(self._select_transcriptions_folder)
+        trans_row.addWidget(select_trans_btn)
+        revert_trans_btn = QPushButton()
+        revert_trans_btn.setIcon(load_icon("reset", color=ICON_COLOR_DARK))
+        revert_trans_btn.setFixedSize(28, 28)
+        revert_trans_btn.setStyleSheet(get_btn_css())
+        revert_trans_btn.setToolTip(f"Revert to default folder:\n{DEFAULT_TRANSCRIPTIONS_DIR}")
+        revert_trans_btn.clicked.connect(self._revert_transcriptions_folder)
+        trans_row.addWidget(revert_trans_btn)
+        settings_box.addLayout(trans_row)
 
         # Pet section - checkboxes for multi-select
         settings_box.addWidget(make_section("Pet Companions"))
@@ -4709,6 +4785,20 @@ class PrefsDialog(DraggableDialog):
         """Revert recordings folder to default."""
         S.set('RECORDINGS_DIR', DEFAULT_RECORDINGS_DIR)
         self.folder_label.setText(DEFAULT_RECORDINGS_DIR)
+
+    def _select_transcriptions_folder(self):
+        """Open folder selection dialog for transcription archive."""
+        folder = QFileDialog.getExistingDirectory(
+            self, "Select Transcriptions Archive Folder", S.TRANSCRIPTIONS_DIR
+        )
+        if folder:
+            S.set('TRANSCRIPTIONS_DIR', folder)
+            self.trans_folder_label.setText(folder)
+
+    def _revert_transcriptions_folder(self):
+        """Revert transcriptions folder to default."""
+        S.set('TRANSCRIPTIONS_DIR', DEFAULT_TRANSCRIPTIONS_DIR)
+        self.trans_folder_label.setText(DEFAULT_TRANSCRIPTIONS_DIR)
 
     def _open_settings_folder(self):
         rp.open_file_with_default_application(_VOICETHING_DIR)
@@ -8471,7 +8561,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         for key in ['ENTER_DELAY', 'CUSTOM_WORDS', 'WHISPER_MODEL',
                     'LLM_MODEL', 'LLM_PREFIX', 'CHIME_VOLUME', 'CHIME_PITCH',
                     'CHIME_PROGRAM', 'CHIME_THEME', 'SILENCE_SKIP_ENABLED', 'SILENCE_THRESHOLD',
-                    'TMUX_TARGET', 'TMUX_PANE_NAMES', 'TMUX_PHRASES_AS_CONTEXT', 'TMUX_ANNOUNCE_PANE', 'RECORDINGS_DIR',
+                    'TMUX_TARGET', 'TMUX_PANE_NAMES', 'TMUX_PHRASES_AS_CONTEXT', 'TMUX_ANNOUNCE_PANE', 'RECORDINGS_DIR', 'TRANSCRIPTIONS_DIR',
                     'SPEAK_BACK_VOICE', 'TTS_SAY', 'TTS_SUPERTONIC', 'TTS_KITTEN',
                     'SPEAK_BACK_APPEND_INSTRUCTION', 'SPEAK_BACK_TMUX_ONLY', 'SPEAK_BACK_INSTRUCTION_TEMPLATE',
                     'WAKEWORD_ENGINE', 'WAKEWORD_OPENWAKEWORD', 'WAKEWORD_MACOS',
@@ -8701,7 +8791,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
             return text, ""
         return text, self._run_llm(text)
 
-    def _handle_transcription_result(self, text, txt_path=None, audio_path=None):
+    def _handle_transcription_result(self, text, txt_path=None, audio_path=None, archive_txt_path=None):
         """Process transcription result: LLM, save, paste, add to list."""
         if is_blacklisted(text):
             raw_text = ""
@@ -8719,6 +8809,12 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
             return
         play_chime('transcribe')  # Transcription done chime
 
+        def save_text(path, content):
+            """Save text to file if path is provided."""
+            if path:
+                with open(path, "w") as f:
+                    f.write(content)
+
         if S.LLM_ENABLED:
             # Show raw immediately, paste after LLM finishes
             index = len(self.transcriptions)
@@ -8726,17 +8822,15 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
 
             def run_llm_and_update():
                 processed = self._run_llm(raw_text)
-                if txt_path:
-                    with open(txt_path, "w") as f:
-                        f.write(processed)
+                save_text(txt_path, processed)
+                save_text(archive_txt_path, processed)  # Also save to permanent archive
                 self.last_transcription = processed
                 self.update_transcription_signal.emit(index, raw_text, processed)
                 self.paste_signal.emit(processed)
             threading.Thread(target=run_llm_and_update, daemon=True).start()
         else:
-            if txt_path:
-                with open(txt_path, "w") as f:
-                    f.write(raw_text)
+            save_text(txt_path, raw_text)
+            save_text(archive_txt_path, raw_text)  # Also save to permanent archive
             self.last_transcription = raw_text
             self.paste_signal.emit(raw_text)
             self.add_transcription_signal.emit(raw_text, "", audio_path or "")
@@ -8749,9 +8843,11 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
             print(f"Recorded {len(audio) / SAMPLE_RATE:.2f}s")
 
             os.makedirs(S.RECORDINGS_DIR, exist_ok=True)
+            os.makedirs(S.TRANSCRIPTIONS_DIR, exist_ok=True)
             ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
             wav_path = os.path.join(S.RECORDINGS_DIR, f"{ts}.wav")
             txt_path = os.path.join(S.RECORDINGS_DIR, f"{ts}.txt")
+            archive_txt_path = os.path.join(S.TRANSCRIPTIONS_DIR, f"{ts}.txt")
 
             scipy.io.wavfile.write(wav_path, SAMPLE_RATE, (audio * 32767).astype(np.int16))
             self.last_audio_path = wav_path
@@ -8761,7 +8857,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
                 wav_path, model=S.WHISPER_MODEL, show_progress=True,
                 initial_prompt=initial_prompt
             )
-            self._handle_transcription_result(result.text, txt_path, audio_path=wav_path)
+            self._handle_transcription_result(result.text, txt_path, audio_path=wav_path, archive_txt_path=archive_txt_path)
         except Exception as e:
             print(f"Transcription error: {e}")
             raise
