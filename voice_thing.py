@@ -2329,12 +2329,14 @@ class TmuxSelectionDialog(DraggableDialog):
         self.table = QTableWidget()
         self.table.setColumnCount(4)
         self.table.setHorizontalHeaderLabels(["Address", "Pane ID", "Process", "Magic Phrase"])
+        # Use accent_css for stylesheet (ACCENT is QColor, not valid for CSS)
+        accent_css = STYLE.accent_css
         self.table.setStyleSheet(
             f"QTableWidget {{ {PANEL_BG_FLAT_CSS} color: {TEXT_PRIMARY}; "
             f"border: 1px solid {BORDER_COLOR}; font-family: Menlo, monospace; font-size: 11px; }}"
             f"QTableWidget::item {{ padding: 1px 4px; color: {TEXT_PRIMARY}; }}"
-            f"QTableWidget::item:hover {{ background: {ACCENT}40; }}"  # 40 = 25% opacity
-            f"QTableWidget::item:selected {{ background: {ACCENT}80; color: {TEXT_PRIMARY}; }}"  # 80 = 50% opacity
+            f"QTableWidget::item:hover {{ background: rgba({STYLE.accent.red()},{STYLE.accent.green()},{STYLE.accent.blue()},0.25); }}"
+            f"QTableWidget::item:selected {{ background: rgba({STYLE.accent.red()},{STYLE.accent.green()},{STYLE.accent.blue()},0.5); color: {TEXT_PRIMARY}; }}"
             f"QHeaderView::section {{ background: {BORDER_COLOR}; color: {TEXT_PRIMARY}; padding: 2px 4px; "
             f"border: 1px solid {BORDER_COLOR}; font-weight: bold; }}"
             + SCROLLBAR_CSS
@@ -2453,6 +2455,15 @@ class TmuxSelectionDialog(DraggableDialog):
         self.tmux_paste_btn.clicked.connect(self._paste_from_tmux_clipboard)
         set_tooltip(self.tmux_paste_btn, "Paste tmux clipboard contents to selected pane")
         btn_row.addWidget(self.tmux_paste_btn)
+
+        # Refresh button - refresh pane list when tmux panes change
+        self.refresh_btn = QPushButton("R")
+        self.refresh_btn.setIcon(load_icon("refresh", ICON_COLOR_DARK))
+        self.refresh_btn.setIconSize(QSize(16, 16))
+        self.refresh_btn.setStyleSheet(get_btn_css())
+        self.refresh_btn.clicked.connect(self._refresh_table)
+        set_tooltip(self.refresh_btn, "R  Refresh pane list")
+        btn_row.addWidget(self.refresh_btn)
 
         btn_row.addStretch()
         # No cancel button - all changes auto-save
