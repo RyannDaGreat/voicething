@@ -2306,7 +2306,9 @@ class TmuxPreviewWidget(QTextEdit):
             modifiers.append('M')
         if mods & Qt.KeyboardModifier.ShiftModifier and key in self.QT_TO_TMUX_KEYS:
             # Only add shift for special keys, not for regular shifted chars
-            modifiers.append('S')
+            # Exception: Shift+Space should just be Space (no S- prefix)
+            if key != Qt.Key.Key_Space:
+                modifiers.append('S')
 
         # Check for special keys
         if key in self.QT_TO_TMUX_KEYS:
