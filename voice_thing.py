@@ -90,6 +90,19 @@ WAVEFORM_DURATION_SECONDS = 10  # Duration of audio shown in waveform display
 MIN_TOOLBAR_BUTTON_WIDTH = 28  # Minimum button width before toolbar wraps/collapses
 RESIZE_MARGIN = 20  # Pixels from edge for resize detection
 
+# Button and icon sizes
+ICON_BTN_SIZE = 28  # Standard icon-only button size (square)
+ICON_BTN_SIZE_SMALL = 24  # Small icon-only button size (square)
+ICON_SIZE = 16  # Standard icon size inside buttons
+ICON_SIZE_SMALL = 14  # Small icon size inside buttons
+
+# Layout spacing and margins
+DIALOG_MARGIN = 15  # Standard dialog content margin
+DIALOG_MARGIN_COMPACT = 12  # Compact dialog content margin
+BTN_SPACING = 8  # Standard spacing between buttons
+BTN_PADDING_H = 8  # Horizontal padding inside button layouts
+BTN_PADDING_V = 4  # Vertical padding inside button layouts
+
 # Chime event descriptions - tooltips for the chime editor
 # Note: record_start/stop are for main button, start_rec/stop_rec are for D-key quick workflow
 CHIME_DESCRIPTIONS = {
@@ -929,7 +942,7 @@ def make_labeled_textedit(label_text, value, placeholder, tooltip, on_change=Non
         # Styled button with icon and keyboard shortcut label
         preset_btn = QPushButton("P  Presets")
         preset_btn.setIcon(load_icon("reset", ICON_COLOR_DARK))
-        preset_btn.setIconSize(QSize(14, 14))
+        preset_btn.setIconSize(QSize(ICON_SIZE_SMALL, ICON_SIZE_SMALL))
         preset_btn.setStyleSheet(get_btn_css())
         preset_btn.setToolTip("Select a prompt preset (P)")
         header.addWidget(preset_btn)
@@ -948,7 +961,7 @@ def make_labeled_textedit(label_text, value, placeholder, tooltip, on_change=Non
         reset_btn = QPushButton()
         reset_btn.setIcon(load_icon("reset", ICON_COLOR_DARK))
         reset_btn.setFixedSize(20, 20)
-        reset_btn.setIconSize(QSize(14, 14))
+        reset_btn.setIconSize(QSize(ICON_SIZE_SMALL, ICON_SIZE_SMALL))
         reset_btn.setToolTip("Reset to default")
         reset_btn.setStyleSheet("QPushButton { padding: 0; border: none; background: transparent; }")
         header.addWidget(reset_btn)
@@ -1669,7 +1682,7 @@ class OptionsDialog(DraggableDialog):
         self._key_map = {}
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(15, 15, 15, 15)
+        layout.setContentsMargins(DIALOG_MARGIN, DIALOG_MARGIN, DIALOG_MARGIN, DIALOG_MARGIN)
         layout.setSpacing(8)
 
         layout.addWidget(make_title(title))
@@ -1709,7 +1722,7 @@ class HelpDialog(DraggableDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(15, 15, 15, 15)
+        layout.setContentsMargins(DIALOG_MARGIN, DIALOG_MARGIN, DIALOG_MARGIN, DIALOG_MARGIN)
         layout.setSpacing(10)
 
         layout.addWidget(make_title(APP_NAME, 18))
@@ -1781,7 +1794,7 @@ class HelpDialog(DraggableDialog):
             btn = QPushButton(key)
             if icon_name:
                 btn.setIcon(load_icon(icon_name, color=ICON_COLOR_DARK))
-                btn.setIconSize(QSize(14, 14))
+                btn.setIconSize(QSize(ICON_SIZE_SMALL, ICON_SIZE_SMALL))
             btn.setStyleSheet(get_btn_css())
             btn.setFixedWidth(60)
             btn.setEnabled(False)
@@ -1863,7 +1876,7 @@ class TranscriptionActionsDialog(DraggableDialog):
         self._key_map = {}
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setContentsMargins(DIALOG_MARGIN_COMPACT, DIALOG_MARGIN_COMPACT, DIALOG_MARGIN_COMPACT, DIALOG_MARGIN_COMPACT)
         layout.setSpacing(6)
 
         layout.addWidget(make_title("Actions"))
@@ -1876,7 +1889,7 @@ class TranscriptionActionsDialog(DraggableDialog):
 
             btn = QPushButton()
             btn_layout = QHBoxLayout()
-            btn_layout.setContentsMargins(8, 4, 8, 4)
+            btn_layout.setContentsMargins(BTN_PADDING_H, BTN_PADDING_V, BTN_PADDING_H, BTN_PADDING_V)
             btn_layout.setSpacing(8)
 
             # Key badge
@@ -1889,7 +1902,7 @@ class TranscriptionActionsDialog(DraggableDialog):
             icon_label = QLabel()
             icon = load_icon(icon_name, color=ICON_COLOR_DARK if enabled else "#666666")
             if icon:
-                icon_label.setPixmap(icon.pixmap(16, 16))
+                icon_label.setPixmap(icon.pixmap(ICON_SIZE, ICON_SIZE))
             btn_layout.addWidget(icon_label)
 
             # Label
@@ -1938,7 +1951,7 @@ class TmuxPaneSelectorDialog(DraggableDialog):
         self._key_map = {}
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setContentsMargins(DIALOG_MARGIN_COMPACT, DIALOG_MARGIN_COMPACT, DIALOG_MARGIN_COMPACT, DIALOG_MARGIN_COMPACT)
         layout.setSpacing(6)
 
         layout.addWidget(make_title("Send to Pane"))
@@ -1959,7 +1972,7 @@ class TmuxPaneSelectorDialog(DraggableDialog):
 
                 btn = QPushButton()
                 btn_layout = QHBoxLayout()
-                btn_layout.setContentsMargins(8, 4, 8, 4)
+                btn_layout.setContentsMargins(BTN_PADDING_H, BTN_PADDING_V, BTN_PADDING_H, BTN_PADDING_V)
                 btn_layout.setSpacing(8)
 
                 # Key badge
@@ -2601,7 +2614,7 @@ class TmuxSelectionDialog(DraggableDialog):
         self.installEventFilter(self)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(15, 15, 15, 15)
+        layout.setContentsMargins(DIALOG_MARGIN, DIALOG_MARGIN, DIALOG_MARGIN, DIALOG_MARGIN)
         layout.setSpacing(8)
 
         # Title row with traffic light buttons
@@ -2706,7 +2719,7 @@ class TmuxSelectionDialog(DraggableDialog):
         # Enable tmux mode toggle button
         self.tmux_toggle_btn = QPushButton("U  Enable tmux mode")
         self.tmux_toggle_btn.setIcon(load_icon("tmux" if S.TMUX_MODE else "tmux-off", ICON_COLOR_DARK))
-        self.tmux_toggle_btn.setIconSize(QSize(16, 16))
+        self.tmux_toggle_btn.setIconSize(QSize(ICON_SIZE, ICON_SIZE))
         self.tmux_toggle_btn.setStyleSheet(get_btn_css())
         self.tmux_toggle_btn.setCheckable(True)
         self.tmux_toggle_btn.setChecked(S.TMUX_MODE)
@@ -2727,7 +2740,7 @@ class TmuxSelectionDialog(DraggableDialog):
         # Dark/light mode toggle (checkable button like toolbar)
         self.theme_btn = QPushButton("D")
         self.theme_btn.setIcon(load_icon("sun" if self._preview_dark_mode else "moon", ICON_COLOR_DARK))
-        self.theme_btn.setIconSize(QSize(16, 16))
+        self.theme_btn.setIconSize(QSize(ICON_SIZE, ICON_SIZE))
         self.theme_btn.setStyleSheet(get_btn_css())
         self.theme_btn.setCheckable(True)
         self.theme_btn.setChecked(self._preview_dark_mode)
@@ -2738,7 +2751,7 @@ class TmuxSelectionDialog(DraggableDialog):
         # ANSI colors toggle (checkable button)
         self.ansi_btn = QPushButton("A")
         self.ansi_btn.setIcon(load_icon("rainbow"))  # Rainbow icon (no color override)
-        self.ansi_btn.setIconSize(QSize(16, 16))
+        self.ansi_btn.setIconSize(QSize(ICON_SIZE, ICON_SIZE))
         self.ansi_btn.setStyleSheet(get_btn_css())
         self.ansi_btn.setCheckable(True)
         self.ansi_btn.setChecked(self._ansi_colors_enabled)
@@ -2750,7 +2763,7 @@ class TmuxSelectionDialog(DraggableDialog):
         self._unlimited_scroll = S.TMUX_UNLIMITED_SCROLL
         self.scroll_btn = QPushButton("S")
         self.scroll_btn.setIcon(load_icon("scroll", ICON_COLOR_DARK))
-        self.scroll_btn.setIconSize(QSize(16, 16))
+        self.scroll_btn.setIconSize(QSize(ICON_SIZE, ICON_SIZE))
         self.scroll_btn.setStyleSheet(get_btn_css())
         self.scroll_btn.setCheckable(True)
         self.scroll_btn.setChecked(self._unlimited_scroll)
@@ -2762,7 +2775,7 @@ class TmuxSelectionDialog(DraggableDialog):
         self._auto_scroll = S.TMUX_AUTO_SCROLL
         self.autoscroll_btn = QPushButton("B")
         self.autoscroll_btn.setIcon(load_icon("scroll-down", ICON_COLOR_DARK))
-        self.autoscroll_btn.setIconSize(QSize(16, 16))
+        self.autoscroll_btn.setIconSize(QSize(ICON_SIZE, ICON_SIZE))
         self.autoscroll_btn.setStyleSheet(get_btn_css())
         self.autoscroll_btn.setCheckable(True)
         self.autoscroll_btn.setChecked(self._auto_scroll)
@@ -2773,7 +2786,7 @@ class TmuxSelectionDialog(DraggableDialog):
         # Font size increase (zoom in)
         self.font_plus_btn = QPushButton("I")
         self.font_plus_btn.setIcon(load_icon("zoom-in", ICON_COLOR_DARK))
-        self.font_plus_btn.setIconSize(QSize(16, 16))
+        self.font_plus_btn.setIconSize(QSize(ICON_SIZE, ICON_SIZE))
         self.font_plus_btn.setStyleSheet(get_btn_css())
         self.font_plus_btn.clicked.connect(self._increase_font_size)
         set_tooltip(self.font_plus_btn, "I  Zoom in (increase font size)")
@@ -2782,7 +2795,7 @@ class TmuxSelectionDialog(DraggableDialog):
         # Font size decrease (zoom out)
         self.font_minus_btn = QPushButton("O")
         self.font_minus_btn.setIcon(load_icon("zoom-out", ICON_COLOR_DARK))
-        self.font_minus_btn.setIconSize(QSize(16, 16))
+        self.font_minus_btn.setIconSize(QSize(ICON_SIZE, ICON_SIZE))
         self.font_minus_btn.setStyleSheet(get_btn_css())
         self.font_minus_btn.clicked.connect(self._decrease_font_size)
         set_tooltip(self.font_minus_btn, "O  Zoom out (decrease font size)")
@@ -2798,7 +2811,7 @@ class TmuxSelectionDialog(DraggableDialog):
         # Refresh button - refresh pane list when tmux panes change
         self.refresh_btn = QPushButton("R")
         self.refresh_btn.setIcon(load_icon("refresh", ICON_COLOR_DARK))
-        self.refresh_btn.setIconSize(QSize(16, 16))
+        self.refresh_btn.setIconSize(QSize(ICON_SIZE, ICON_SIZE))
         self.refresh_btn.setStyleSheet(get_btn_css())
         self.refresh_btn.clicked.connect(self._refresh_table)
         set_tooltip(self.refresh_btn, "R  Refresh pane list")
@@ -3391,7 +3404,7 @@ class TextEditDialog(DraggableDialog):
         self._default_text = default_text
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(15, 15, 15, 15)
+        layout.setContentsMargins(DIALOG_MARGIN, DIALOG_MARGIN, DIALOG_MARGIN, DIALOG_MARGIN)
         layout.setSpacing(10)
 
         layout.addWidget(make_title(title))
@@ -3457,7 +3470,7 @@ class TTSInstructionDialog(DraggableDialog):
         super().__init__(parent)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(15, 15, 15, 15)
+        layout.setContentsMargins(DIALOG_MARGIN, DIALOG_MARGIN, DIALOG_MARGIN, DIALOG_MARGIN)
         layout.setSpacing(10)
 
         layout.addWidget(make_title("Edit TTS Instruction"))
@@ -3660,7 +3673,7 @@ class TTSSettingsWidget(QWidget):
         append_row.addWidget(self._edit_btn)
         self._copy_btn = QPushButton()
         self._copy_btn.setIcon(load_icon("copy", color=ICON_COLOR_DARK))
-        self._copy_btn.setFixedWidth(28)
+        self._copy_btn.setFixedWidth(ICON_BTN_SIZE)
         self._copy_btn.setStyleSheet(get_btn_css().replace("padding: 3px 8px;", "padding: 1px 4px;"))
         self._copy_btn.setToolTip("Copy TTS instruction to clipboard")
         self._copy_btn.clicked.connect(self._copy_tts_instruction)
@@ -4140,7 +4153,7 @@ class PrefsDialog(DraggableDialog):
         self._style_buttons = {}  # Map button -> style_name
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(15, 15, 15, 15)
+        layout.setContentsMargins(DIALOG_MARGIN, DIALOG_MARGIN, DIALOG_MARGIN, DIALOG_MARGIN)
         layout.setSpacing(12)
 
         # Title row with close button
@@ -4222,7 +4235,7 @@ class PrefsDialog(DraggableDialog):
         inst_grid.setSpacing(2)
         for i, (prog_num, icon_name) in enumerate(preset_icons):
             btn = QPushButton()
-            btn.setFixedSize(24, 24)
+            btn.setFixedSize(ICON_BTN_SIZE_SMALL, ICON_BTN_SIZE_SMALL)
             icon = load_icon(icon_name, color=ICON_COLOR_DARK)  # Dark gray icons on light themes
             if icon:
                 btn.setIcon(icon)
@@ -4253,11 +4266,11 @@ class PrefsDialog(DraggableDialog):
         prog_row.addWidget(prog_label)
         # Minus button with icon
         self.prog_minus = QPushButton()
-        self.prog_minus.setFixedSize(24, 24)
+        self.prog_minus.setFixedSize(ICON_BTN_SIZE_SMALL, ICON_BTN_SIZE_SMALL)
         minus_icon = load_icon('minus', color=ICON_COLOR_DARK)
         if minus_icon:
             self.prog_minus.setIcon(minus_icon)
-            self.prog_minus.setIconSize(QSize(14, 14))
+            self.prog_minus.setIconSize(QSize(ICON_SIZE_SMALL, ICON_SIZE_SMALL))
         prog_btn_css = get_btn_css().replace("padding: 3px 8px;", "padding: 0px; margin: 0px;").replace("text-align: left;", "text-align: center;")
         self.prog_minus.setStyleSheet(prog_btn_css)
         self.prog_minus.clicked.connect(self._prog_decrement)
@@ -4267,11 +4280,11 @@ class PrefsDialog(DraggableDialog):
         prog_row.addWidget(self.prog_display)
         # Plus button with icon
         self.prog_plus = QPushButton()
-        self.prog_plus.setFixedSize(24, 24)
+        self.prog_plus.setFixedSize(ICON_BTN_SIZE_SMALL, ICON_BTN_SIZE_SMALL)
         plus_icon = load_icon('plus', color=ICON_COLOR_DARK)
         if plus_icon:
             self.prog_plus.setIcon(plus_icon)
-            self.prog_plus.setIconSize(QSize(14, 14))
+            self.prog_plus.setIconSize(QSize(ICON_SIZE_SMALL, ICON_SIZE_SMALL))
         self.prog_plus.setStyleSheet(prog_btn_css)
         self.prog_plus.clicked.connect(self._prog_increment)
         prog_row.addWidget(self.prog_plus)
@@ -4311,7 +4324,7 @@ class PrefsDialog(DraggableDialog):
         # Chime editor button
         self.chime_editor_btn = QPushButton("I")
         self.chime_editor_btn.setIcon(load_icon("music", ICON_COLOR_DARK))
-        self.chime_editor_btn.setIconSize(QSize(16, 16))
+        self.chime_editor_btn.setIconSize(QSize(ICON_SIZE, ICON_SIZE))
         self.chime_editor_btn.setStyleSheet(get_btn_css())
         self.chime_editor_btn.clicked.connect(self._open_chime_editor)
         set_tooltip(self.chime_editor_btn, "I  Open chime editor")
@@ -4376,7 +4389,7 @@ class PrefsDialog(DraggableDialog):
         copy_icon_label = QLabel()
         copy_icon = load_icon("copy", color=ICON_COLOR_DARK)
         if copy_icon:
-            copy_icon_label.setPixmap(copy_icon.pixmap(14, 14))
+            copy_icon_label.setPixmap(copy_icon.pixmap(ICON_SIZE_SMALL, ICON_SIZE_SMALL))
         auto_row.addWidget(copy_icon_label)
         self.copy_checkbox = QCheckBox("Copy to clipboard")
         self.copy_checkbox.setChecked(S.AUTO_COPY)
@@ -4390,7 +4403,7 @@ class PrefsDialog(DraggableDialog):
         paste_icon_label = QLabel()
         paste_icon = load_icon("layers", color=ICON_COLOR_DARK)
         if paste_icon:
-            paste_icon_label.setPixmap(paste_icon.pixmap(14, 14))
+            paste_icon_label.setPixmap(paste_icon.pixmap(ICON_SIZE_SMALL, ICON_SIZE_SMALL))
         auto_row.addWidget(paste_icon_label)
         self._paste_icon_labels.append(paste_icon_label)
         self.paste_checkbox = QCheckBox("⌘V paste")
@@ -4405,7 +4418,7 @@ class PrefsDialog(DraggableDialog):
         tmux_icon_label = QLabel()
         tmux_icon = load_icon("tmux", color=ICON_COLOR_DARK)
         if tmux_icon:
-            tmux_icon_label.setPixmap(tmux_icon.pixmap(14, 14))
+            tmux_icon_label.setPixmap(tmux_icon.pixmap(ICON_SIZE_SMALL, ICON_SIZE_SMALL))
         auto_row.addWidget(tmux_icon_label)
         self._paste_icon_labels.append(tmux_icon_label)
         self.tmux_checkbox = QCheckBox("Tmux paste")
@@ -4421,7 +4434,7 @@ class PrefsDialog(DraggableDialog):
         enter_icon_label = QLabel()
         enter_icon = load_icon("enter", color=ICON_COLOR_DARK)
         if enter_icon:
-            enter_icon_label.setPixmap(enter_icon.pixmap(14, 14))
+            enter_icon_label.setPixmap(enter_icon.pixmap(ICON_SIZE_SMALL, ICON_SIZE_SMALL))
         auto_row.addWidget(enter_icon_label)
         self._paste_icon_labels.append(enter_icon_label)
         self.enter_checkbox = QCheckBox("Enter after paste")
@@ -4612,14 +4625,14 @@ class PrefsDialog(DraggableDialog):
         folder_row.addWidget(select_folder_btn)
         open_folder_btn = QPushButton(" ")
         open_folder_btn.setIcon(load_icon("folder-open", color=ICON_COLOR_DARK))
-        open_folder_btn.setFixedSize(28, 28)
+        open_folder_btn.setFixedSize(ICON_BTN_SIZE, ICON_BTN_SIZE)
         open_folder_btn.setStyleSheet(get_btn_css())
         open_folder_btn.setToolTip("Open recordings folder in Finder")
         open_folder_btn.clicked.connect(self._open_recordings_folder)
         folder_row.addWidget(open_folder_btn)
         revert_folder_btn = QPushButton(" ")
         revert_folder_btn.setIcon(load_icon("reset", color=ICON_COLOR_DARK))
-        revert_folder_btn.setFixedSize(28, 28)
+        revert_folder_btn.setFixedSize(ICON_BTN_SIZE, ICON_BTN_SIZE)
         revert_folder_btn.setStyleSheet(get_btn_css())
         revert_folder_btn.setToolTip(f"Revert to default folder:\n{DEFAULT_RECORDINGS_DIR}")
         revert_folder_btn.clicked.connect(self._revert_recordings_folder)
@@ -4650,14 +4663,14 @@ class PrefsDialog(DraggableDialog):
         trans_row.addWidget(select_trans_btn)
         open_trans_btn = QPushButton(" ")
         open_trans_btn.setIcon(load_icon("folder-open", color=ICON_COLOR_DARK))
-        open_trans_btn.setFixedSize(28, 28)
+        open_trans_btn.setFixedSize(ICON_BTN_SIZE, ICON_BTN_SIZE)
         open_trans_btn.setStyleSheet(get_btn_css())
         open_trans_btn.setToolTip("Open transcriptions folder in Finder")
         open_trans_btn.clicked.connect(self._open_transcriptions_folder)
         trans_row.addWidget(open_trans_btn)
         revert_trans_btn = QPushButton(" ")
         revert_trans_btn.setIcon(load_icon("reset", color=ICON_COLOR_DARK))
-        revert_trans_btn.setFixedSize(28, 28)
+        revert_trans_btn.setFixedSize(ICON_BTN_SIZE, ICON_BTN_SIZE)
         revert_trans_btn.setStyleSheet(get_btn_css())
         revert_trans_btn.setToolTip(f"Revert to default folder:\n{DEFAULT_TRANSCRIPTIONS_DIR}")
         revert_trans_btn.clicked.connect(self._revert_transcriptions_folder)
@@ -5153,7 +5166,7 @@ class ChimeEditorDialog(DraggableDialog):
         self._removePlayingBeat.connect(self._remove_playing_beat)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setContentsMargins(DIALOG_MARGIN_COMPACT, DIALOG_MARGIN_COMPACT, DIALOG_MARGIN_COMPACT, DIALOG_MARGIN_COMPACT)
         layout.setSpacing(6)
 
         # Title row with traffic light buttons
@@ -5186,7 +5199,7 @@ class ChimeEditorDialog(DraggableDialog):
         # Undo/Redo buttons
         self.undo_btn = QPushButton("⌘Z")
         self.undo_btn.setIcon(load_icon("reset", ICON_COLOR_DARK))
-        self.undo_btn.setIconSize(QSize(14, 14))
+        self.undo_btn.setIconSize(QSize(ICON_SIZE_SMALL, ICON_SIZE_SMALL))
         self.undo_btn.setStyleSheet(get_btn_css())
         self.undo_btn.clicked.connect(self._undo)
         self.undo_btn.setEnabled(False)
@@ -5195,7 +5208,7 @@ class ChimeEditorDialog(DraggableDialog):
 
         self.redo_btn = QPushButton("⌘Y")
         self.redo_btn.setIcon(load_icon("refresh", ICON_COLOR_DARK))
-        self.redo_btn.setIconSize(QSize(14, 14))
+        self.redo_btn.setIconSize(QSize(ICON_SIZE_SMALL, ICON_SIZE_SMALL))
         self.redo_btn.setStyleSheet(get_btn_css())
         self.redo_btn.clicked.connect(self._redo)
         self.redo_btn.setEnabled(False)
@@ -5236,7 +5249,7 @@ class ChimeEditorDialog(DraggableDialog):
         # Edit mode buttons (Pencil vs Brush) with keyboard shortcuts
         self.pencil_btn = QPushButton("⌘P")
         self.pencil_btn.setIcon(load_icon("pencil", ICON_COLOR_DARK))
-        self.pencil_btn.setIconSize(QSize(14, 14))
+        self.pencil_btn.setIconSize(QSize(ICON_SIZE_SMALL, ICON_SIZE_SMALL))
         self.pencil_btn.setCheckable(True)
         self.pencil_btn.setChecked(True)  # Pencil mode is default
         self.pencil_btn.setStyleSheet(get_btn_css())
@@ -5246,7 +5259,7 @@ class ChimeEditorDialog(DraggableDialog):
 
         self.brush_btn = QPushButton("⌘B")
         self.brush_btn.setIcon(load_icon("brush", ICON_COLOR_DARK))
-        self.brush_btn.setIconSize(QSize(14, 14))
+        self.brush_btn.setIconSize(QSize(ICON_SIZE_SMALL, ICON_SIZE_SMALL))
         self.brush_btn.setCheckable(True)
         self.brush_btn.setStyleSheet(get_btn_css())
         self.brush_btn.clicked.connect(lambda: self._set_edit_mode('brush'))
@@ -5258,7 +5271,7 @@ class ChimeEditorDialog(DraggableDialog):
         # Zoom buttons with keyboard shortcuts
         self.zoom_out_btn = QPushButton("⌘-")
         self.zoom_out_btn.setIcon(load_icon("zoom-out", ICON_COLOR_DARK))
-        self.zoom_out_btn.setIconSize(QSize(14, 14))
+        self.zoom_out_btn.setIconSize(QSize(ICON_SIZE_SMALL, ICON_SIZE_SMALL))
         self.zoom_out_btn.setStyleSheet(get_btn_css())
         self.zoom_out_btn.clicked.connect(self._zoom_out)
         set_tooltip(self.zoom_out_btn, "Zoom out (⌘-)")
@@ -5266,7 +5279,7 @@ class ChimeEditorDialog(DraggableDialog):
 
         self.zoom_in_btn = QPushButton("⌘+")
         self.zoom_in_btn.setIcon(load_icon("zoom-in", ICON_COLOR_DARK))
-        self.zoom_in_btn.setIconSize(QSize(14, 14))
+        self.zoom_in_btn.setIconSize(QSize(ICON_SIZE_SMALL, ICON_SIZE_SMALL))
         self.zoom_in_btn.setStyleSheet(get_btn_css())
         self.zoom_in_btn.clicked.connect(self._zoom_in)
         set_tooltip(self.zoom_in_btn, "Zoom in (⌘+)")
@@ -6440,7 +6453,7 @@ class TranscriptionRow(QFrame):
         self._buttons = []  # Store button references for style updates
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(8, 4, 8, 4)
+        layout.setContentsMargins(BTN_PADDING_H, BTN_PADDING_V, BTN_PADDING_H, BTN_PADDING_V)
         layout.setSpacing(4)
 
         self.label = QLabel()
@@ -6459,8 +6472,8 @@ class TranscriptionRow(QFrame):
 
         # Hamburger menu button (replaces copy + deramble buttons)
         menu_btn = QPushButton()
-        menu_btn.setFixedSize(24, 24)
-        menu_btn.setIconSize(QSize(16, 16))
+        menu_btn.setFixedSize(ICON_BTN_SIZE_SMALL, ICON_BTN_SIZE_SMALL)
+        menu_btn.setIconSize(QSize(ICON_SIZE, ICON_SIZE))
         menu_btn.setToolTip("Actions menu (Copy, Tmux, Play, Re-transcribe, LLM)")
         menu_btn.clicked.connect(self.menu_clicked.emit)
         menu_btn.icon_name = "more"
@@ -7678,7 +7691,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
             btn = QPushButton(text)
             # Dark icons for light Aqua buttons (embossed look)
             btn.setIcon(load_icon(icon_name, color=ICON_COLOR_DARK))
-            btn.setIconSize(QSize(16, 16))
+            btn.setIconSize(QSize(ICON_SIZE, ICON_SIZE))
             btn.setStyleSheet(get_btn_css())
             btn.clicked.connect(handler)
             btn.setEnabled(False)
@@ -7789,7 +7802,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         tab_row.setContentsMargins(0, 4, 0, 0)
         # Tab buttons with dark icons (light when checked)
         self.output_tab = QPushButton("O  Console")
-        self.output_tab.setIconSize(QSize(14, 14))
+        self.output_tab.setIconSize(QSize(ICON_SIZE_SMALL, ICON_SIZE_SMALL))
         self.output_tab.setCheckable(True)
         self.output_tab.setChecked(True)
         self.output_tab.setStyleSheet(get_tab_css())
@@ -7799,7 +7812,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         tab_row.addWidget(self.output_tab, 1)
 
         self.transcriptions_tab = QPushButton("T  Transcriptions")
-        self.transcriptions_tab.setIconSize(QSize(14, 14))
+        self.transcriptions_tab.setIconSize(QSize(ICON_SIZE_SMALL, ICON_SIZE_SMALL))
         self.transcriptions_tab.setCheckable(True)
         self.transcriptions_tab.setStyleSheet(get_tab_css())
         self.transcriptions_tab.setToolTip("Show transcription history")
