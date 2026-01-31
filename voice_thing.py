@@ -4902,6 +4902,11 @@ class ChimeEditorDialog(DraggableDialog):
         else:
             super().keyReleaseEvent(e)
 
+    def showEvent(self, e):
+        """Refresh playable range when dialog is shown (in case pitch changed)."""
+        super().showEvent(e)
+        self._update_playable_range()
+
     def closeEvent(self, e):
         """Release all sustained notes when dialog closes."""
         from synth import note_off
