@@ -5,40 +5,41 @@
   "SOUND_ENABLED": true,
   "LLM_ENABLED": false,
   "AUTO_ENTER": true,
-  "WAKE_WORD_ENABLED": false,
+  "WAKE_WORD_ENABLED": true,
   "SIMPLE_MODE": false,
   "PET_TYPES": [
-    "emmy",
-    "lpc_dog_tan",
-    "lpc_dog_golden",
-    "lpc_dog_black",
-    "lpc_cat_white",
-    "lpc_cat_orange",
-    "lpc_cat_gray",
-    "lpc_cat_black"
+    "emmy"
   ],
-  "WHISPER_MODEL": "medium",
-  "THEME": "mahogany_wood",
+  "WHISPER_MODEL": "large-v3",
+  "THEME": "cyberpunk_metal",
   "WAKEWORD_ENGINE": "macos",
   "WAKEWORD_OPENWAKEWORD": {
     "model": "jarvis",
     "sensitivity": 0.02
   },
   "WAKEWORD_MACOS": {
-    "phrases": "r",
+    "phrases": "roger",
     "use_tmux_phrases": true,
     "cancel_phrases": "cancel, never mind"
   },
-  "TMUX_MODE": false,
-  "TMUX_TARGET": "%5",
+  "TMUX_MODE": true,
+  "TMUX_TARGET": "%32",
   "TMUX_PANE_NAMES": {
     "%5": {
       "phrase": "paper"
+    },
+    "%32": {
+      "phrase": "chicken"
+    },
+    "%2": {
+      "phrase": "chunk"
     }
   },
   "TMUX_PREVIEW_DARK_MODE": true,
   "TMUX_PREVIEW_ANSI_COLORS": true,
   "TMUX_PREVIEW_FONT_SIZE": 10,
+  "TMUX_UNLIMITED_SCROLL": false,
+  "TMUX_AUTO_SCROLL": true,
   "TMUX_PHRASES_AS_CONTEXT": true,
   "TMUX_ANNOUNCE_PANE": true,
   "AUTO_COPY": true,
@@ -48,9 +49,10 @@
   "SILENCE_SKIP_ENABLED": true,
   "SILENCE_THRESHOLD": -60,
   "CHIME_VOLUME": 0.7599999999999999,
-  "CHIME_PROGRAM": 48,
+  "CHIME_PROGRAM": 68,
   "CHIME_PITCH": 24,
-  "CHIME_THEME": "default",
+  "CHIME_EDITOR_ZOOM": 12,
+  "CHIME_THEME": "bright",
   "CHIME_AUDIO_SETTINGS": {
     "_default": {
       "reverb": 0.4,
@@ -58,23 +60,16 @@
     },
     "default": {
       "reverb": 1.0,
-      "chorus": 1.0,
-      "filter": 0.0,
-      "pan": 1.0
+      "chorus": 0.3
     },
     "bright": {
       "reverb": 0.0,
       "chorus": 0.3
-    },
-    "melancholy": {
-      "reverb": 1.0,
-      "chorus": 0.96,
-      "filter": 0.0,
-      "pan": 1.0
     }
   },
+  "CUSTOM_CHIMES": {},
   "RECORDINGS_DIR": "/var/folders/pm/461ntwb12b7bbqcjw1s6t0kw0000gn/T/VoiceThing",
-  "ALWAYS_ON_TOP": true,
+  "ALWAYS_ON_TOP": false,
   "SPEAK_BACK_VOICE": "supertonic",
   "TTS_SAY": {
     "voice": "Boing",
@@ -91,13 +86,13 @@
     "speed": 1.0
   },
   "SPEAK_BACK_APPEND_INSTRUCTION": true,
-  "SPEAK_BACK_TMUX_ONLY": false,
+  "SPEAK_BACK_TMUX_ONLY": true,
   "SPEAK_BACK_INSTRUCTION_TEMPLATE": "Please speak back with {command}",
   "RESTORE_WINDOW_GEOMETRY": true,
   "WINDOW_GEOMETRY": {
     "main": {
-      "x": 625,
-      "y": 348,
+      "x": 58,
+      "y": 593,
       "width": 478,
       "height": 460
     },
@@ -112,16 +107,22 @@
       ]
     },
     "preferences": {
-      "x": 1103,
-      "y": 73,
+      "x": 701,
+      "y": 38,
       "width": 600,
-      "height": 1084
+      "height": 1075
     },
     "help": {
       "x": 619,
       "y": 117,
       "width": 490,
-      "height": 915
+      "height": 1001
+    },
+    "chime_editor": {
+      "x": 44,
+      "y": 161,
+      "width": 999,
+      "height": 423
     }
   }
 }
