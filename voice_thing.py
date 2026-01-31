@@ -88,6 +88,29 @@ WAVEFORM_DURATION_SECONDS = 10  # Duration of audio shown in waveform display
 MIN_TOOLBAR_BUTTON_WIDTH = 28  # Minimum button width before toolbar wraps/collapses
 RESIZE_MARGIN = 20  # Pixels from edge for resize detection
 
+# Chime event descriptions - tooltips for the chime editor
+CHIME_DESCRIPTIONS = {
+    'demo':           "Preview sound for this theme",
+    'focus':          "Window gains focus",
+    'unfocus':        "Window loses focus",
+    'copy':           "Text copied to clipboard",
+    'delete':         "Transcription deleted",
+    'enter':          "Text sent (Enter key)",
+    'cancel':         "Recording cancelled",
+    'pre_cancel':     "About to cancel (warning)",
+    'record_start':   "Recording started",
+    'record_stop':    "Recording stopped",
+    'loading_start':  "Processing started",
+    'loading_done':   "Processing complete",
+    'start_rec':      "Quick: recording started",
+    'stop_rec':       "Quick: recording stopped",
+    'transcribe':     "Quick: transcription started",
+    'null_text':      "Empty transcription result",
+    'llm_start':      "LLM processing started",
+    'llm_done':       "LLM processing complete",
+    'tmux_send':      "Text sent to tmux pane",
+}
+
 # Chime themes - each theme defines sounds for various events
 # Format: {theme_name: {event_name: (chords_tuple, duration)}}
 # Chords are lists of semitone offsets from A4 (0 = A4, 12 = A5, -12 = A3)
@@ -4926,6 +4949,9 @@ class ChimeEditorDialog(DraggableDialog):
             display = f"{name} *" if name in S.CUSTOM_CHIMES else name
             item = QListWidgetItem(display)
             item.setData(Qt.ItemDataRole.UserRole, name)
+            # Add tooltip from CHIME_DESCRIPTIONS
+            if name in CHIME_DESCRIPTIONS:
+                item.setToolTip(CHIME_DESCRIPTIONS[name])
             self.chime_list.addItem(item)
 
         self.chime_list.blockSignals(False)
@@ -5197,6 +5223,8 @@ class ChimePianoWidget(QWidget):
         grid_line = STYLE.chime_grid_line
         # Gray overlay for unplayable notes
         gray_overlay = QColor(80, 80, 80, 140)
+        # Hover brighten
+        hover_brighten = QColor(255, 255, 255, 40)
 
         painter.fillRect(self.rect(), bg_color)
         painter.setFont(QFont("Menlo", 7))
@@ -5207,6 +5235,7 @@ class ChimePianoWidget(QWidget):
             is_black = self._is_black_key(semitone)
             is_highlighted = semitone in self._highlighted
             is_playable = self._playable_min <= semitone <= self._playable_max
+            is_hovered = (self._hover_semitone == semitone)
 
             # Key background
             if is_highlighted:
@@ -5219,6 +5248,10 @@ class ChimePianoWidget(QWidget):
             # Gray overlay for unplayable notes
             if not is_playable and not is_highlighted:
                 painter.fillRect(0, y, 50, self.cell_size - 1, gray_overlay)
+
+            # Hover effect - brighten key
+            if is_hovered and not is_highlighted:
+                painter.fillRect(0, y, 48, self.cell_size - 1, hover_brighten)
 
             # Note name
             note_name = self._get_note_name(semitone)
