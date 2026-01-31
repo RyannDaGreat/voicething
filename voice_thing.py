@@ -4679,10 +4679,10 @@ class ChimeEditorDialog(DraggableDialog):
         set_tooltip(self.play_btn, "Play current pattern (Spacebar)")
         controls.addWidget(self.play_btn)
 
-        # Duration knob - shows ms value below
-        self.duration_knob = RotaryKnob("ms", min_val=20, max_val=500,
-                                        value=int(self._duration * 1000),
-                                        fmt="{:.0f}", size=32)
+        # Duration knob - shows ms value in label
+        initial_ms = int(self._duration * 1000)
+        self.duration_knob = RotaryKnob(f"{initial_ms}ms", min_val=20, max_val=500,
+                                        value=initial_ms, fmt="{:.0f}", size=32)
         self.duration_knob.valueChanged.connect(self._on_duration_changed)
         set_tooltip(self.duration_knob, "Duration per beat in milliseconds")
         controls.addWidget(self.duration_knob)
@@ -5058,6 +5058,7 @@ class ChimeEditorDialog(DraggableDialog):
     def _on_duration_changed(self, value):
         """Handle duration knob change."""
         self._duration = value / 1000.0
+        self.duration_knob.setLabel(f"{int(value)}ms")
 
     def _on_beats_changed(self, value):
         """Handle beat count slider change."""
@@ -5299,7 +5300,7 @@ class ChimePianoWidget(QWidget):
             if is_hovered and not is_highlighted:
                 painter.fillRect(0, y, 48, self.cell_size - 1, hover_brighten)
 
-            # Note name
+            # Note name - vertically centered
             note_name = self._get_note_name(semitone)
             if is_highlighted:
                 painter.setPen(QColor(255, 255, 255))
@@ -5309,7 +5310,8 @@ class ChimePianoWidget(QWidget):
                 painter.setPen(label_black)
             else:
                 painter.setPen(label_white)
-            painter.drawText(3, y + self.cell_size - 4, note_name)
+            text_rect = QRect(3, y, 45, self.cell_size - 1)
+            painter.drawText(text_rect, Qt.AlignmentFlag.AlignVCenter, note_name)
 
             # Border
             painter.setPen(grid_line)
@@ -6120,6 +6122,11 @@ class RotaryKnob(QWidget):
 
     def setColor(self, color):
         self._color = color
+        self.update()
+
+    def setLabel(self, label):
+        """Update the label text shown below the knob."""
+        self._label = label
         self.update()
 
     def paintEvent(self, event):
