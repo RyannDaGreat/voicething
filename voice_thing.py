@@ -4236,6 +4236,11 @@ class PrefsDialog(DraggableDialog):
         )
         self.phrases_ctx_check.stateChanged.connect(self._on_phrases_ctx_changed)
         phrases_ctx_row.addWidget(self.phrases_ctx_check)
+        # Hint label shown when tmux mode is disabled
+        self._phrases_ctx_hint = QLabel("")
+        self._phrases_ctx_hint.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 10px; font-style: italic;")
+        self._phrases_ctx_hint.hide()
+        phrases_ctx_row.addWidget(self._phrases_ctx_hint)
         phrases_ctx_row.addStretch()
         settings_box.addLayout(phrases_ctx_row)
 
@@ -4425,6 +4430,9 @@ class PrefsDialog(DraggableDialog):
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setFocus()  # Don't focus textboxes - allow number keys for themes
 
+        # Final state update for all dependent options (including phrases_ctx_check)
+        self._update_paste_options_state()
+
     def _select_style(self, style_name, clicked_btn):
         """Select a style and apply it immediately, then close dialog."""
         self.selected_style = style_name
@@ -4510,6 +4518,17 @@ class PrefsDialog(DraggableDialog):
                 label.setEnabled(copy_enabled)
             else:
                 label.setEnabled(enter_enabled)
+
+        # Tmux phrases checkbox only useful when tmux mode is enabled
+        self.phrases_ctx_check.setEnabled(tmux_enabled)
+        self.phrases_ctx_check.setStyleSheet(enabled_style if tmux_enabled else disabled_style)
+        # Update hint label
+        if tmux_enabled:
+            self._phrases_ctx_hint.setText("")
+            self._phrases_ctx_hint.hide()
+        else:
+            self._phrases_ctx_hint.setText("(Enable Tmux paste to use)")
+            self._phrases_ctx_hint.show()
 
     def _on_threshold_changed(self, value):
         S.SILENCE_THRESHOLD = value
@@ -4713,12 +4732,17 @@ class ChimeEditorDialog(DraggableDialog):
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(6)
 
-        # Title row with close button
+        # Title row with traffic light buttons
         title_row = QHBoxLayout()
         title_row.setSpacing(6)
         close_btn = TrafficLightButton("rgb(255, 95, 87)", "rgb(255, 120, 110)", "macos-close")
         close_btn.clicked.connect(self.close)
         title_row.addWidget(close_btn)
+        # Green button for save (same as ⌘S)
+        save_btn = TrafficLightButton("rgb(40, 200, 64)", "rgb(60, 220, 84)", "disc")
+        save_btn.setToolTip("Save Custom (⌘S)")
+        save_btn.clicked.connect(self._save_custom)
+        title_row.addWidget(save_btn)
         title_row.addWidget(make_title("Chime Editor"), 1)
         title_row.addWidget(QWidget())  # Spacer
         layout.addLayout(title_row)
