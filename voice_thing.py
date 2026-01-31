@@ -4738,11 +4738,12 @@ class ChimeEditorDialog(DraggableDialog):
         close_btn = TrafficLightButton("rgb(255, 95, 87)", "rgb(255, 120, 110)", "macos-close")
         close_btn.clicked.connect(self.close)
         title_row.addWidget(close_btn)
-        # Green button for save (same as ⌘S)
-        save_btn = TrafficLightButton("rgb(40, 200, 64)", "rgb(60, 220, 84)", "disc")
-        save_btn.setToolTip("Save Custom (⌘S)")
-        save_btn.clicked.connect(self._save_custom)
-        title_row.addWidget(save_btn)
+        # Green maximize button
+        self._pre_maximize_geometry = None
+        self.maximize_btn = TrafficLightButton("rgb(52, 199, 89)", "rgb(80, 220, 110)", "macos-fullscreen")
+        self.maximize_btn.setToolTip("Maximize (G)")
+        self.maximize_btn.clicked.connect(self._toggle_maximize)
+        title_row.addWidget(self.maximize_btn)
         title_row.addWidget(make_title("Chime Editor"), 1)
         title_row.addWidget(QWidget())  # Spacer
         layout.addLayout(title_row)
@@ -5106,6 +5107,11 @@ class ChimeEditorDialog(DraggableDialog):
                 self._zoom_out()
                 return
 
+        # G key for maximize toggle (no modifiers)
+        if key == Qt.Key.Key_G:
+            self._toggle_maximize()
+            return
+
         # Spacebar plays the current pattern
         if key == Qt.Key.Key_Space:
             self._play_current()
@@ -5357,6 +5363,24 @@ class ChimeEditorDialog(DraggableDialog):
         }
         self._populate_chime_list()
         self._select_chime_in_list(self._current_chime)
+
+    def _toggle_maximize(self):
+        """Toggle between maximized and normal window size."""
+        from PyQt6.QtWidgets import QApplication
+        screen = QApplication.primaryScreen().availableGeometry()
+
+        if self._pre_maximize_geometry is None:
+            # Save current geometry and maximize
+            self._pre_maximize_geometry = self.geometry()
+            self.setGeometry(screen)
+            self.maximize_btn.set_icon_name("macos-collapse")
+            self.maximize_btn.setToolTip("Restore (G)")
+        else:
+            # Restore previous geometry
+            self.setGeometry(self._pre_maximize_geometry)
+            self._pre_maximize_geometry = None
+            self.maximize_btn.set_icon_name("macos-fullscreen")
+            self.maximize_btn.setToolTip("Maximize (G)")
 
     def _revert_to_original(self):
         """Revert to original theme pattern, discarding any custom pattern."""
