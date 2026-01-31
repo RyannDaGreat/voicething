@@ -60,6 +60,9 @@ from PyQt6.QtWidgets import (
     QSplitter,
     QListWidget,
     QListWidgetItem,
+    QGesture,
+    QPinchGesture,
+    QGestureEvent,
 )
 from Foundation import NSBundle
 import os.path as osp
@@ -367,6 +370,7 @@ DEFAULTS = dict(
     TMUX_PREVIEW_DARK_MODE=True,  # Dark/light terminal preview background
     TMUX_PREVIEW_ANSI_COLORS=True,  # Enable ANSI color rendering
     TMUX_PREVIEW_FONT_SIZE=10,  # Terminal preview font size
+    TMUX_UNLIMITED_SCROLL=False,  # Show full scrollback (slow) vs limited (fast)
     TMUX_PHRASES_AS_CONTEXT=True,  # Include tmux phrases in context words
     TMUX_ANNOUNCE_PANE=False,  # Announce pane names via TTS when sending
     AUTO_COPY=True,   # Copy transcription to clipboard before paste
@@ -1458,7 +1462,30 @@ class DraggableResizableMixin:
         self.resize_edge = None
         self.resize_start_geo = None  # Geometry when resize started
         self.resize_start_pos = None  # Mouse position when resize started
+        self._pre_maximize_geometry = None  # For maximize toggle
         self.setMouseTracking(True)
+
+    def _toggle_maximize(self):
+        """Toggle between maximized and normal window size."""
+        from PyQt6.QtWidgets import QApplication
+        screen = QApplication.primaryScreen().availableGeometry()
+        # Allow subclasses to customize hotkey hint (default "G")
+        key = getattr(self, '_maximize_hotkey_hint', 'G')
+
+        if self._pre_maximize_geometry is None:
+            # Save current geometry and maximize
+            self._pre_maximize_geometry = self.geometry()
+            self.setGeometry(screen)
+            if hasattr(self, 'maximize_btn'):
+                self.maximize_btn.set_icon_name("macos-collapse")
+                self.maximize_btn.setToolTip(f"Restore ({key})")
+        else:
+            # Restore previous geometry
+            self.setGeometry(self._pre_maximize_geometry)
+            self._pre_maximize_geometry = None
+            if hasattr(self, 'maximize_btn'):
+                self.maximize_btn.set_icon_name("macos-fullscreen")
+                self.maximize_btn.setToolTip(f"Maximize ({key})")
 
     def _painted_rect(self):
         """Get the painted (non-transparent) area rect."""
@@ -2342,6 +2369,7 @@ class TmuxPreviewWidget(QTextEdit):
 class TmuxSelectionDialog(DraggableDialog):
     """Dialog to select tmux pane target with flat table and voice routing."""
     window_name = "tmux_selection"
+    _maximize_hotkey_hint = 'M'  # Used by mixin's _toggle_maximize
 
     # Column indices
     COL_ADDRESS = 0
@@ -2380,8 +2408,7 @@ class TmuxSelectionDialog(DraggableDialog):
         self.close_btn.clicked.connect(self.reject)
         title_row.addWidget(self.close_btn)
 
-        # Maximize/restore button (green)
-        self._pre_maximize_geometry = None
+        # Maximize/restore button (green) - uses mixin's _toggle_maximize
         self.maximize_btn = TrafficLightButton("rgb(52, 199, 89)", "rgb(80, 220, 110)", "macos-fullscreen")
         self.maximize_btn.setToolTip("Maximize (M)")
         self.maximize_btn.clicked.connect(self._toggle_maximize)
@@ -2512,6 +2539,18 @@ class TmuxSelectionDialog(DraggableDialog):
         self.ansi_btn.clicked.connect(self._on_ansi_toggle)
         set_tooltip(self.ansi_btn, "A  Toggle ANSI color rendering\n\nOFF = faster rendering\nON = slower but prettier")
         btn_row.addWidget(self.ansi_btn)
+
+        # Scroll toggle - limited (50 lines) vs unlimited scrollback
+        self._unlimited_scroll = S.TMUX_UNLIMITED_SCROLL
+        self.scroll_btn = QPushButton("S")
+        self.scroll_btn.setIcon(load_icon("scroll", ICON_COLOR_DARK))
+        self.scroll_btn.setIconSize(QSize(16, 16))
+        self.scroll_btn.setStyleSheet(get_btn_css())
+        self.scroll_btn.setCheckable(True)
+        self.scroll_btn.setChecked(self._unlimited_scroll)
+        self.scroll_btn.clicked.connect(self._on_scroll_toggle)
+        set_tooltip(self.scroll_btn, "S  Toggle unlimited scrollback\n\nOFF = 50 lines (fast)\nON = full history (slower)")
+        btn_row.addWidget(self.scroll_btn)
 
         # Font size increase (zoom in)
         self.font_plus_btn = QPushButton("I")
@@ -2739,10 +2778,12 @@ class TmuxSelectionDialog(DraggableDialog):
                 continue
 
             # Start a bash process that loops and outputs pane content
+            # Use -S -50 for limited (fast) or -S - for unlimited (shows full scrollback)
+            scroll_flag = "-S -" if self._unlimited_scroll else "-S -50"
             cmd = f'''
 while true; do
     echo "$(tmux display-message -p -t {pane_id} '#{{cursor_x}},#{{cursor_y}},#{{pane_height}}')"
-    tmux capture-pane -t {pane_id} -p -e -S -50
+    tmux capture-pane -t {pane_id} -p -e {scroll_flag}
     echo "{SEPARATOR}"
     sleep 0.1
 done
@@ -2920,6 +2961,8 @@ done
             self._increase_font_size()
         elif e.key() == Qt.Key.Key_O:
             self._decrease_font_size()
+        elif e.key() == Qt.Key.Key_S:
+            self.scroll_btn.click()
         elif e.key() == Qt.Key.Key_M:
             self._toggle_maximize()
         elif e.key() == Qt.Key.Key_F:
@@ -2985,6 +3028,14 @@ done
         self._ansi_colors_enabled = self.ansi_btn.isChecked()
         S.set('TMUX_PREVIEW_ANSI_COLORS', self._ansi_colors_enabled)
 
+    def _on_scroll_toggle(self, checked=None):
+        """Toggle unlimited scrollback - restarts poll to apply immediately."""
+        self._unlimited_scroll = self.scroll_btn.isChecked()
+        S.set('TMUX_UNLIMITED_SCROLL', self._unlimited_scroll)
+        # Restart poll thread with new scroll setting
+        self._stop_poll()
+        self._start_poll()
+
     def _increase_font_size(self):
         """Increase preview font size."""
         if self._preview_font_size < 28:  # Extended range (default 10, max 28)
@@ -3018,24 +3069,6 @@ done
                               capture_output=True, text=True)
         except FileNotFoundError:
             pass
-
-    def _toggle_maximize(self):
-        """Toggle between maximized and normal window size."""
-        from PyQt6.QtWidgets import QApplication
-        screen = QApplication.primaryScreen().availableGeometry()
-
-        if self._pre_maximize_geometry is None:
-            # Save current geometry and maximize
-            self._pre_maximize_geometry = self.geometry()
-            self.setGeometry(screen)
-            self.maximize_btn.set_icon_name("macos-collapse")
-            self.maximize_btn.setToolTip("Restore (M)")
-        else:
-            # Restore previous geometry
-            self.setGeometry(self._pre_maximize_geometry)
-            self._pre_maximize_geometry = None
-            self.maximize_btn.set_icon_name("macos-fullscreen")
-            self.maximize_btn.setToolTip("Maximize (M)")
 
     def select_pane(self, pane_id):
         """Select a pane by ID - called when text is sent to a tmux pane."""
@@ -4687,6 +4720,55 @@ class PrefsDialog(DraggableDialog):
             super().keyPressEvent(e)
 
 
+class PinchZoomScrollArea(QScrollArea):
+    """Scroll area that supports pinch-to-zoom gestures on macOS."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._zoom_in_callback = None
+        self._zoom_out_callback = None
+        self._pinch_scale_threshold = 0.15  # Minimum scale change to trigger zoom
+        self._last_scale = 1.0
+        # Enable pinch gesture recognition
+        self.grabGesture(Qt.GestureType.PinchGesture)
+
+    def set_zoom_callbacks(self, zoom_in, zoom_out):
+        """Set callbacks for zoom in/out actions."""
+        self._zoom_in_callback = zoom_in
+        self._zoom_out_callback = zoom_out
+
+    def event(self, event):
+        """Handle gesture events."""
+        if event.type() == QEvent.Type.Gesture:
+            return self._gestureEvent(event)
+        return super().event(event)
+
+    def _gestureEvent(self, event):
+        """Process gesture events."""
+        pinch = event.gesture(Qt.GestureType.PinchGesture)
+        if pinch:
+            self._pinchTriggered(pinch)
+        return True
+
+    def _pinchTriggered(self, gesture):
+        """Handle pinch gesture - zoom in/out based on scale factor."""
+        changeFlags = gesture.changeFlags()
+        if changeFlags & QPinchGesture.ChangeFlag.ScaleFactorChanged:
+            scale = gesture.totalScaleFactor()
+            # Trigger zoom based on scale change from last trigger point
+            if scale > self._last_scale + self._pinch_scale_threshold:
+                if self._zoom_in_callback:
+                    self._zoom_in_callback()
+                self._last_scale = scale
+            elif scale < self._last_scale - self._pinch_scale_threshold:
+                if self._zoom_out_callback:
+                    self._zoom_out_callback()
+                self._last_scale = scale
+        # Reset when gesture ends
+        if gesture.state() == Qt.GestureState.GestureFinished:
+            self._last_scale = 1.0
+
+
 class ChimeEditorDialog(DraggableDialog):
     """Floating dialog for editing chime patterns on a grid."""
     window_name = "chime_editor"
@@ -4738,8 +4820,7 @@ class ChimeEditorDialog(DraggableDialog):
         close_btn = TrafficLightButton("rgb(255, 95, 87)", "rgb(255, 120, 110)", "macos-close")
         close_btn.clicked.connect(self.close)
         title_row.addWidget(close_btn)
-        # Green maximize button
-        self._pre_maximize_geometry = None
+        # Green maximize button - uses mixin's _toggle_maximize
         self.maximize_btn = TrafficLightButton("rgb(52, 199, 89)", "rgb(80, 220, 110)", "macos-fullscreen")
         self.maximize_btn.setToolTip("Maximize (G)")
         self.maximize_btn.clicked.connect(self._toggle_maximize)
@@ -4878,9 +4959,10 @@ class ChimeEditorDialog(DraggableDialog):
         main_content = QHBoxLayout()
         main_content.setSpacing(6)
 
-        # Scroll area for piano + grid - use theme colors
-        self.scroll = QScrollArea()
+        # Scroll area for piano + grid - use theme colors with pinch-to-zoom
+        self.scroll = PinchZoomScrollArea()
         self.scroll.setWidgetResizable(True)
+        self.scroll.set_zoom_callbacks(self._zoom_in, self._zoom_out)
         scroll_bg = STYLE.chime_grid_bg
         scroll_border = STYLE.chime_grid_line
         self.scroll.setStyleSheet(
@@ -5363,24 +5445,6 @@ class ChimeEditorDialog(DraggableDialog):
         }
         self._populate_chime_list()
         self._select_chime_in_list(self._current_chime)
-
-    def _toggle_maximize(self):
-        """Toggle between maximized and normal window size."""
-        from PyQt6.QtWidgets import QApplication
-        screen = QApplication.primaryScreen().availableGeometry()
-
-        if self._pre_maximize_geometry is None:
-            # Save current geometry and maximize
-            self._pre_maximize_geometry = self.geometry()
-            self.setGeometry(screen)
-            self.maximize_btn.set_icon_name("macos-collapse")
-            self.maximize_btn.setToolTip("Restore (G)")
-        else:
-            # Restore previous geometry
-            self.setGeometry(self._pre_maximize_geometry)
-            self._pre_maximize_geometry = None
-            self.maximize_btn.set_icon_name("macos-fullscreen")
-            self.maximize_btn.setToolTip("Maximize (G)")
 
     def _revert_to_original(self):
         """Revert to original theme pattern, discarding any custom pattern."""
@@ -7174,8 +7238,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         self.small_btn.setToolTip("Toggle small mode (E)")
         self.small_btn.clicked.connect(self.toggle_small_mode)
         status_row.addWidget(self.small_btn)
-        # Green maximize button
-        self._pre_maximize_geometry = None
+        # Green maximize button - uses mixin's _toggle_maximize
         self.maximize_btn = TrafficLightButton("rgb(52, 199, 89)", "rgb(80, 220, 110)", "macos-fullscreen")
         self.maximize_btn.setToolTip("Maximize (G)")
         self.maximize_btn.clicked.connect(self._toggle_maximize)
@@ -8086,24 +8149,6 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         """Toggle simple mode - hides advanced buttons and shows only transcriptions."""
         S.set('SIMPLE_MODE', not S.SIMPLE_MODE)
         self._save_settings()
-
-    def _toggle_maximize(self):
-        """Toggle between maximized and normal window size."""
-        from PyQt6.QtWidgets import QApplication
-        screen = QApplication.primaryScreen().availableGeometry()
-
-        if self._pre_maximize_geometry is None:
-            # Save current geometry and maximize
-            self._pre_maximize_geometry = self.geometry()
-            self.setGeometry(screen)
-            self.maximize_btn.set_icon_name("macos-collapse")
-            self.maximize_btn.setToolTip("Restore (G)")
-        else:
-            # Restore previous geometry
-            self.setGeometry(self._pre_maximize_geometry)
-            self._pre_maximize_geometry = None
-            self.maximize_btn.set_icon_name("macos-fullscreen")
-            self.maximize_btn.setToolTip("Maximize (G)")
 
     def _toggle_blue_mode(self):
         """Toggle blue mode: open tmux pane manager in fullscreen, or exit if already in blue mode."""
