@@ -1845,6 +1845,208 @@ class ModelDialog(OptionsDialog):
         self.selected_value = value
 
 
+class TranscriptionActionsDialog(DraggableDialog):
+    """Dialog with actions for a transcription: Copy, Tmux, Play, Re-transcribe, LLM."""
+
+    # Action: (key, icon, label, description)
+    ACTIONS = [
+        ('C', 'copy', 'Copy', 'Copy transcription to clipboard'),
+        ('T', 'tmux', 'Send to Tmux', 'Send to a tmux pane via magic phrase'),
+        ('P', 'play', 'Play Audio', 'Play the original audio recording'),
+        ('R', 'refresh', 'Re-transcribe', 'Re-transcribe with current model'),
+        ('L', 'robot', 'Run LLM', 'Process with LLM (de-ramble)'),
+    ]
+
+    def __init__(self, has_audio=True, parent=None):
+        super().__init__(parent)
+        self.selected_action = None
+        self._key_map = {}
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(6)
+
+        layout.addWidget(make_title("Actions"))
+
+        for key, icon_name, label, desc in self.ACTIONS:
+            # Disable Play if no audio
+            enabled = True
+            if icon_name == 'play' and not has_audio:
+                enabled = False
+
+            btn = QPushButton()
+            btn_layout = QHBoxLayout()
+            btn_layout.setContentsMargins(8, 4, 8, 4)
+            btn_layout.setSpacing(8)
+
+            # Key badge
+            key_label = QLabel(key)
+            key_label.setFixedWidth(20)
+            key_label.setStyleSheet(f"color: {CYAN_CSS}; font-weight: bold; font-size: 12px;")
+            btn_layout.addWidget(key_label)
+
+            # Icon
+            icon_label = QLabel()
+            icon = load_icon(icon_name, color=ICON_COLOR_DARK if enabled else "#666666")
+            if icon:
+                icon_label.setPixmap(icon.pixmap(16, 16))
+            btn_layout.addWidget(icon_label)
+
+            # Label
+            text_label = QLabel(label)
+            text_label.setStyleSheet(f"color: {TEXT_PRIMARY if enabled else TEXT_SECONDARY}; font-size: 11px;")
+            btn_layout.addWidget(text_label, 1)
+
+            btn_widget = QWidget()
+            btn_widget.setLayout(btn_layout)
+            btn.setLayout(QVBoxLayout())
+            btn.layout().setContentsMargins(0, 0, 0, 0)
+            btn.layout().addWidget(btn_widget)
+
+            btn.setStyleSheet(get_btn_css())
+            btn.setToolTip(desc)
+            btn.setEnabled(enabled)
+            if enabled:
+                btn.clicked.connect(lambda checked, a=key: self._select(a))
+                self._key_map[getattr(Qt.Key, f"Key_{key.upper()}")] = key
+            layout.addWidget(btn)
+
+        layout.addWidget(make_close_btn("Esc  Cancel", self.reject))
+        self.setMinimumWidth(200)
+
+    def _select(self, action):
+        self.selected_action = action
+        self.accept()
+
+    def keyPressEvent(self, e):
+        key = e.key()
+        if key in self._key_map:
+            self._select(self._key_map[key])
+        elif key == Qt.Key.Key_Escape:
+            self.reject()
+        else:
+            super().keyPressEvent(e)
+
+
+class TmuxPaneSelectorDialog(DraggableDialog):
+    """Dialog to select a tmux pane by magic phrase for sending transcription."""
+
+    def __init__(self, panes, parent=None):
+        """panes: list of (pane_id, phrase, address) tuples for valid panes only."""
+        super().__init__(parent)
+        self.selected_pane_id = None
+        self._key_map = {}
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(6)
+
+        layout.addWidget(make_title("Send to Pane"))
+
+        if not panes:
+            no_panes = QLabel("No magic phrases configured.\nOpen Tmux Pane Manager (U) to set them up.")
+            no_panes.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 11px;")
+            no_panes.setWordWrap(True)
+            layout.addWidget(no_panes)
+        else:
+            # Generate keys: 1-9, then A-Z
+            keys = [str(i) for i in range(1, 10)] + [chr(i) for i in range(ord('A'), ord('Z') + 1)]
+
+            for i, (pane_id, phrase, address) in enumerate(panes):
+                if i >= len(keys):
+                    break  # Max 35 panes (9 + 26)
+                key = keys[i]
+
+                btn = QPushButton()
+                btn_layout = QHBoxLayout()
+                btn_layout.setContentsMargins(8, 4, 8, 4)
+                btn_layout.setSpacing(8)
+
+                # Key badge
+                key_label = QLabel(key)
+                key_label.setFixedWidth(20)
+                key_label.setStyleSheet(f"color: {CYAN_CSS}; font-weight: bold; font-size: 12px;")
+                btn_layout.addWidget(key_label)
+
+                # Phrase
+                phrase_label = QLabel(phrase)
+                phrase_label.setStyleSheet(f"color: {TEXT_PRIMARY}; font-size: 11px; font-weight: bold;")
+                btn_layout.addWidget(phrase_label)
+
+                # Address (dimmed)
+                addr_label = QLabel(f"({address})")
+                addr_label.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 10px;")
+                btn_layout.addWidget(addr_label, 1)
+
+                btn_widget = QWidget()
+                btn_widget.setLayout(btn_layout)
+                btn.setLayout(QVBoxLayout())
+                btn.layout().setContentsMargins(0, 0, 0, 0)
+                btn.layout().addWidget(btn_widget)
+
+                btn.setStyleSheet(get_btn_css())
+                btn.setToolTip(f"Send to {address}")
+                btn.clicked.connect(lambda checked, pid=pane_id: self._select(pid))
+
+                # Map key to pane_id
+                if key.isdigit():
+                    self._key_map[getattr(Qt.Key, f"Key_{key}")] = pane_id
+                else:
+                    self._key_map[getattr(Qt.Key, f"Key_{key}")] = pane_id
+
+                layout.addWidget(btn)
+
+        layout.addWidget(make_close_btn("Esc  Cancel", self.reject))
+        self.setMinimumWidth(250)
+
+    def _select(self, pane_id):
+        self.selected_pane_id = pane_id
+        self.accept()
+
+    def keyPressEvent(self, e):
+        key = e.key()
+        if key in self._key_map:
+            self._select(self._key_map[key])
+        elif key == Qt.Key.Key_Escape:
+            self.reject()
+        else:
+            super().keyPressEvent(e)
+
+
+def get_valid_magic_phrases():
+    """Get list of (pane_id, phrase, address) for valid panes only (not stale)."""
+    try:
+        result = subprocess.run(
+            ['tmux', 'list-panes', '-a', '-F', '#{session_name}\t#{window_index}\t#{window_name}\t#{pane_index}\t#{pane_current_command}\t#{pane_id}'],
+            capture_output=True, text=True, timeout=2
+        )
+        if result.returncode != 0:
+            return []
+
+        live_ids = set()
+        pane_addresses = {}
+        for line in result.stdout.strip().split('\n'):
+            if not line:
+                continue
+            parts = line.split('\t')
+            if len(parts) < 6:
+                continue
+            session, win_idx, win_name, pane_idx, cmd, pane_id = parts
+            live_ids.add(pane_id)
+            pane_addresses[pane_id] = f"{session}:{win_name}:{pane_idx}"
+
+        # Return only valid panes with magic phrases
+        valid_panes = []
+        for pane_id, info in S.TMUX_PANE_NAMES.items():
+            phrase = info.get('phrase', '')
+            if phrase and pane_id in live_ids:
+                valid_panes.append((pane_id, phrase, pane_addresses.get(pane_id, pane_id)))
+
+        return valid_panes
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return []
+
+
 # AI coder process names - panes running these get a star
 AI_CODER_PROCESSES = ['claude', 'opencode', 'gemini', 'aider', 'cursor']
 
@@ -2382,6 +2584,7 @@ class TmuxSelectionDialog(DraggableDialog):
 
     # Signal for thread-safe preview updates
     _preview_changed = pyqtSignal(str)  # html_content
+    magic_phrases_changed = pyqtSignal()  # Emitted when magic phrases are modified
 
     def __init__(self, current_target='%', parent=None):
         super().__init__(parent)
@@ -2765,10 +2968,12 @@ class TmuxSelectionDialog(DraggableDialog):
             S.TMUX_PANE_NAMES[pane_id] = {'phrase': phrase}
             # Refresh table to show removed phrases
             self._refresh_table()
+            self.magic_phrases_changed.emit()  # Update status bar
         elif pane_id in S.TMUX_PANE_NAMES:
             del S.TMUX_PANE_NAMES[pane_id]
             # Refresh table to remove stale row if deleted
             self._refresh_table()
+            self.magic_phrases_changed.emit()  # Update status bar
 
     def eventFilter(self, obj, event):
         """Handle mouse hover for preview."""
@@ -6185,9 +6390,10 @@ def word_diff_html(old_text, new_text, is_old, highlight=False):
 
 class TranscriptionRow(QFrame):
     """Clickable row for a single transcription text."""
-    clicked = pyqtSignal(str)
+    clicked = pyqtSignal(str)  # Copy action (for backwards compat)
     deramble_clicked = pyqtSignal(str)
     hover_changed = pyqtSignal(bool)  # Emitted when hover state changes
+    menu_clicked = pyqtSignal()  # Hamburger menu clicked
 
     @staticmethod
     def _btn_style():
@@ -6223,25 +6429,15 @@ class TranscriptionRow(QFrame):
         # Set initial HTML (unhighlighted)
         self._set_diff_highlight(False)
 
-        # Icons styled for current theme
-        if show_deramble:
-            deramble_btn = QPushButton()
-            deramble_btn.setFixedSize(24, 24)
-            deramble_btn.setIconSize(QSize(16, 16))
-            deramble_btn.setToolTip("De-ramble with LLM")
-            deramble_btn.clicked.connect(lambda: self.deramble_clicked.emit(self.text))
-            deramble_btn.icon_name = ACTIONS_BY_ID["llm"][2]
-            layout.addWidget(deramble_btn, 0, Qt.AlignmentFlag.AlignTop)
-            self._buttons.append(deramble_btn)
-
-        copy_btn = QPushButton()
-        copy_btn.setFixedSize(24, 24)
-        copy_btn.setIconSize(QSize(16, 16))
-        copy_btn.setToolTip("Copy to clipboard")
-        copy_btn.clicked.connect(lambda: self.clicked.emit(self.text))
-        copy_btn.icon_name = ACTIONS_BY_ID["copy"][2]
-        layout.addWidget(copy_btn, 0, Qt.AlignmentFlag.AlignTop)
-        self._buttons.append(copy_btn)
+        # Hamburger menu button (replaces copy + deramble buttons)
+        menu_btn = QPushButton()
+        menu_btn.setFixedSize(24, 24)
+        menu_btn.setIconSize(QSize(16, 16))
+        menu_btn.setToolTip("Actions menu (Copy, Tmux, Play, Re-transcribe, LLM)")
+        menu_btn.clicked.connect(self.menu_clicked.emit)
+        menu_btn.icon_name = "more"
+        layout.addWidget(menu_btn, 0, Qt.AlignmentFlag.AlignTop)
+        self._buttons.append(menu_btn)
 
         # Apply initial button styles
         self._update_button_styles()
@@ -6347,10 +6543,15 @@ class TranscriptionItem(QFrame):
     """Single transcription entry with one or two rows."""
     copy_clicked = pyqtSignal(str)
     deramble_clicked = pyqtSignal(int, str)  # (index, raw_text)
+    tmux_clicked = pyqtSignal(str, str)  # (pane_id, text) - send to tmux pane
+    play_clicked = pyqtSignal(str)  # audio_path
+    retranscribe_clicked = pyqtSignal(str)  # audio_path
 
     def __init__(self, raw_text, processed_text, index, audio_path=None, parent=None):
         super().__init__(parent)
         self.index = index
+        self.raw_text = raw_text
+        self.processed_text = processed_text
         self.audio_path = audio_path
         self.diff_rows = []  # Rows that need coordinated highlighting
         self.first_row = None
@@ -6361,25 +6562,47 @@ class TranscriptionItem(QFrame):
 
         if processed_text:
             raw_row = TranscriptionRow(raw_text, dimmed=True, other_text=processed_text, is_raw=True)
-            raw_row.clicked.connect(self.copy_clicked.emit)
+            raw_row.menu_clicked.connect(lambda: self._show_actions_menu(raw_text))
             raw_row.hover_changed.connect(self._on_hover_changed)
             layout.addWidget(raw_row)
 
             proc_row = TranscriptionRow(processed_text, dimmed=False, other_text=raw_text, is_raw=False)
-            proc_row.clicked.connect(self.copy_clicked.emit)
+            proc_row.menu_clicked.connect(lambda: self._show_actions_menu(processed_text))
             proc_row.hover_changed.connect(self._on_hover_changed)
             layout.addWidget(proc_row)
 
             self.diff_rows = [raw_row, proc_row]
             self.first_row = raw_row
         else:
-            row = TranscriptionRow(raw_text, dimmed=False, show_deramble=True)
-            row.clicked.connect(self.copy_clicked.emit)
-            row.deramble_clicked.connect(lambda t: self.deramble_clicked.emit(self.index, t))
+            row = TranscriptionRow(raw_text, dimmed=False, show_deramble=False)
+            row.menu_clicked.connect(lambda: self._show_actions_menu(raw_text))
             layout.addWidget(row)
             self.first_row = row
 
         self.setStyleSheet("TranscriptionItem { border-bottom: 1px solid rgba(255,255,255,0.1); }")
+
+    def _show_actions_menu(self, text):
+        """Show the actions menu for this transcription."""
+        dialog = TranscriptionActionsDialog(has_audio=bool(self.audio_path), parent=self.window())
+        if dialog.exec() == QDialog.DialogCode.Accepted and dialog.selected_action:
+            action = dialog.selected_action
+            if action == 'C':
+                self.copy_clicked.emit(text)
+            elif action == 'T':
+                self._show_tmux_selector(text)
+            elif action == 'P' and self.audio_path:
+                self.play_clicked.emit(self.audio_path)
+            elif action == 'R' and self.audio_path:
+                self.retranscribe_clicked.emit(self.audio_path)
+            elif action == 'L':
+                self.deramble_clicked.emit(self.index, self.raw_text)
+
+    def _show_tmux_selector(self, text):
+        """Show tmux pane selector and send text to selected pane."""
+        panes = get_valid_magic_phrases()
+        dialog = TmuxPaneSelectorDialog(panes, parent=self.window())
+        if dialog.exec() == QDialog.DialogCode.Accepted and dialog.selected_pane_id:
+            self.tmux_clicked.emit(dialog.selected_pane_id, text)
 
     def set_top_radius(self, radius):
         """Set rounded top corners on the first row."""
@@ -6403,6 +6626,9 @@ class TranscriptionList(QScrollArea):
     """Scrollable list of transcription items."""
     copy_requested = pyqtSignal(str)
     deramble_requested = pyqtSignal(int, str)  # (index, raw_text)
+    tmux_requested = pyqtSignal(str, str)  # (pane_id, text) - send to tmux pane
+    play_requested = pyqtSignal(str)  # audio_path
+    retranscribe_requested = pyqtSignal(str)  # audio_path
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -6432,12 +6658,19 @@ class TranscriptionList(QScrollArea):
             if item and item.widget():
                 item.widget().update_style()
 
+    def _connect_item_signals(self, item):
+        """Connect all signals from a TranscriptionItem."""
+        item.copy_clicked.connect(self.copy_requested.emit)
+        item.deramble_clicked.connect(self.deramble_requested.emit)
+        item.tmux_clicked.connect(self.tmux_requested.emit)
+        item.play_clicked.connect(self.play_requested.emit)
+        item.retranscribe_clicked.connect(self.retranscribe_requested.emit)
+
     def add_transcription(self, raw_text, processed_text, audio_path=None):
         index = self.item_count
         self.item_count += 1
         item = TranscriptionItem(raw_text, processed_text, index, audio_path=audio_path)
-        item.copy_clicked.connect(self.copy_requested.emit)
-        item.deramble_clicked.connect(self.deramble_requested.emit)
+        self._connect_item_signals(item)
         # Insert before the stretch
         self._layout.insertWidget(self._layout.count() - 1, item)
         # Scroll to bottom
@@ -6455,8 +6688,7 @@ class TranscriptionList(QScrollArea):
                     audio_path = getattr(old_item.widget(), 'audio_path', None)
                 old_item.widget().deleteLater()
             new_item = TranscriptionItem(raw_text, processed_text, index, audio_path=audio_path)
-            new_item.copy_clicked.connect(self.copy_requested.emit)
-            new_item.deramble_clicked.connect(self.deramble_requested.emit)
+            self._connect_item_signals(new_item)
             self._layout.insertWidget(index, new_item)
             # Scroll to bottom after update
             QTimer.singleShot(10, lambda: self.verticalScrollBar().setValue(
@@ -7561,6 +7793,9 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         self.transcriptions_panel = TranscriptionList()
         self.transcriptions_panel.copy_requested.connect(self._copy_to_clipboard)
         self.transcriptions_panel.deramble_requested.connect(self._deramble_transcription)
+        self.transcriptions_panel.tmux_requested.connect(self._send_to_tmux_pane)
+        self.transcriptions_panel.play_requested.connect(self._play_audio_file)
+        self.transcriptions_panel.retranscribe_requested.connect(self._retranscribe_audio_file)
         self.tab_stack.addWidget(self.output_panel)
         self.tab_stack.addWidget(self.transcriptions_panel)
 
@@ -7749,6 +7984,34 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
             processed = self._run_llm(raw_text)
             self.update_transcription_signal.emit(index, raw_text, processed)
         threading.Thread(target=do_deramble, daemon=True).start()
+
+    def _send_to_tmux_pane(self, pane_id, text):
+        """Send transcription text to a tmux pane."""
+        try:
+            subprocess.run(['tmux', 'send-keys', '-t', pane_id, text], check=True)
+            if S.AUTO_ENTER:
+                subprocess.run(['tmux', 'send-keys', '-t', pane_id, 'Enter'], check=True)
+            play_chime('enter')
+        except subprocess.CalledProcessError:
+            play_chime('delete')
+
+    def _play_audio_file(self, audio_path):
+        """Play an audio file."""
+        if audio_path and os.path.exists(audio_path):
+            try:
+                subprocess.Popen(['afplay', audio_path])
+                play_chime('copy')
+            except Exception:
+                play_chime('delete')
+        else:
+            play_chime('delete')
+
+    def _retranscribe_audio_file(self, audio_path):
+        """Retranscribe a specific audio file."""
+        if audio_path and os.path.exists(audio_path):
+            self._transcribe_file(audio_path)
+        else:
+            play_chime('delete')
 
     def retranscribe_latest(self):
         """Retranscribe the most recent audio file with the current model.
@@ -8331,6 +8594,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         self._tmux_dialog.set_main_window(self)  # For fullscreen floating
         self._tmux_dialog.center_on_parent()
         self._tmux_dialog.finished.connect(self._on_tmux_dialog_closed)
+        self._tmux_dialog.magic_phrases_changed.connect(self._update_status)  # Update status bar when phrases change
         self._tmux_dialog.show()  # Non-modal
 
     def show_chime_editor(self):
