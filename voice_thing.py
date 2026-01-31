@@ -4774,8 +4774,8 @@ class ChimeEditorDialog(DraggableDialog):
     window_name = "chime_editor"
 
     # Signals for thread-safe UI updates during playback
-    _highlightBeat = pyqtSignal(int, list)  # beat_idx, chord
-    _clearHighlight = pyqtSignal()
+    _addPlayingBeat = pyqtSignal(int, list)  # beat_idx, chord (add beat to playing set)
+    _removePlayingBeat = pyqtSignal(int)  # beat_idx (remove beat from playing set)
 
     # Grid dimensions
     DEFAULT_BEATS = 16  # X-axis: number of beats
@@ -4807,8 +4807,8 @@ class ChimeEditorDialog(DraggableDialog):
         _chime_log_callbacks.append(self._chime_callback)
 
         # Connect playback animation signals (thread-safe)
-        self._highlightBeat.connect(self._highlight_beat)
-        self._clearHighlight.connect(self._clear_playback_highlight)
+        self._addPlayingBeat.connect(self._add_playing_beat)
+        self._removePlayingBeat.connect(self._remove_playing_beat)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)
@@ -5416,25 +5416,32 @@ class ChimeEditorDialog(DraggableDialog):
         def animate_playback():
             import time
             duration = self._duration
+            prev_beat = -1
             for beat_idx, chord in enumerate(pattern):
-                # Emit signal to update UI on main thread
-                self._highlightBeat.emit(beat_idx, list(chord))
+                # Remove previous beat highlight (if any)
+                if prev_beat >= 0:
+                    self._removePlayingBeat.emit(prev_beat)
+                # Add current beat highlight
+                self._addPlayingBeat.emit(beat_idx, list(chord))
+                prev_beat = beat_idx
                 time.sleep(duration)
-            # Emit signal to clear highlights after playback
-            self._clearHighlight.emit()
+            # Remove final beat highlight
+            if prev_beat >= 0:
+                self._removePlayingBeat.emit(prev_beat)
 
         t = threading.Thread(target=animate_playback, daemon=True)
         t.start()
 
-    def _highlight_beat(self, beat_idx, chord):
-        """Highlight the current beat column and notes being played."""
-        self.grid.set_playing_beat(beat_idx)
-        self.piano.set_highlighted(set(chord) if chord else set())
+    def _add_playing_beat(self, beat_idx, chord):
+        """Add a beat to the playing highlights."""
+        self.grid.add_playing_beat(beat_idx)
+        # Merge chord notes with any existing piano highlights
+        current = self.piano._highlighted if hasattr(self.piano, '_highlighted') else set()
+        self.piano.set_highlighted(current | set(chord) if chord else current)
 
-    def _clear_playback_highlight(self):
-        """Clear all playback highlighting."""
-        self.grid.set_playing_beat(-1)
-        self.piano.set_highlighted(set())
+    def _remove_playing_beat(self, beat_idx):
+        """Remove a beat from the playing highlights."""
+        self.grid.remove_playing_beat(beat_idx)
 
     def _save_custom(self):
         """Save current pattern as custom chime, keeping empty beats as pauses."""
@@ -5632,7 +5639,7 @@ class ChimeGridWidget(QWidget):
         self.cell_size = cell_size
         self.semitone_min = semitone_min
         self._highlighted = set()  # Set of highlighted semitones (keyboard playing)
-        self._playing_beat = -1  # Currently playing beat column (-1 = none)
+        self._playing_beats = set()  # Set of currently playing beat columns
         self._playable_min = semitone_min  # Min playable semitone
         self._playable_max = semitone_min + semitone_range - 1  # Max playable semitone
         self._last_used_beat = -1  # Last beat with notes (-1 = none)
@@ -5657,9 +5664,20 @@ class ChimeGridWidget(QWidget):
         self._highlighted = set(semitones)
         self.update()
 
-    def set_playing_beat(self, beat):
-        """Set which beat column is currently playing (-1 for none)."""
-        self._playing_beat = beat
+    def add_playing_beat(self, beat):
+        """Add a beat to the set of currently playing columns."""
+        if beat >= 0:
+            self._playing_beats.add(beat)
+            self.update()
+
+    def remove_playing_beat(self, beat):
+        """Remove a beat from the set of currently playing columns."""
+        self._playing_beats.discard(beat)
+        self.update()
+
+    def clear_playing_beats(self):
+        """Clear all playing beat highlights."""
+        self._playing_beats.clear()
         self.update()
 
     def set_playable_range(self, min_semitone, max_semitone):
@@ -5859,7 +5877,7 @@ class ChimeGridWidget(QWidget):
 
         # Grid cells
         for beat in range(self.num_beats):
-            is_playing_col = (beat == self._playing_beat)
+            is_playing_col = (beat in self._playing_beats)
             is_unused_col = (beat > self._last_used_beat) if self._last_used_beat >= 0 else True
             for row in range(self.semitone_range):
                 semitone = self.semitone_min + (self.semitone_range - 1 - row)
@@ -5923,7 +5941,7 @@ class ChimeGridWidget(QWidget):
             if self.num_beats <= 8 or beat % 4 == 0:
                 is_unused = (beat > self._last_used_beat) if self._last_used_beat >= 0 else True
                 # Highlight playing beat number
-                if beat == self._playing_beat:
+                if beat in self._playing_beats:
                     painter.setPen(active)
                 elif is_unused:
                     painter.setPen(QColor(100, 100, 100))  # Dimmed for unused
