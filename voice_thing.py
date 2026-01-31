@@ -89,6 +89,7 @@ MIN_TOOLBAR_BUTTON_WIDTH = 28  # Minimum button width before toolbar wraps/colla
 RESIZE_MARGIN = 20  # Pixels from edge for resize detection
 
 # Chime event descriptions - tooltips for the chime editor
+# Note: record_start/stop are for main button, start_rec/stop_rec are for D-key quick workflow
 CHIME_DESCRIPTIONS = {
     'demo':           "Preview sound for this theme",
     'focus':          "Window gains focus",
@@ -98,13 +99,13 @@ CHIME_DESCRIPTIONS = {
     'enter':          "Text sent (Enter key)",
     'cancel':         "Recording cancelled",
     'pre_cancel':     "About to cancel (warning)",
-    'record_start':   "Recording started",
-    'record_stop':    "Recording stopped",
+    'record_start':   "Recording started (main button)",
+    'record_stop':    "Recording stopped (main button)",
     'loading_start':  "Processing started",
     'loading_done':   "Processing complete",
-    'start_rec':      "Quick: recording started",
-    'stop_rec':       "Quick: recording stopped",
-    'transcribe':     "Quick: transcription started",
+    'start_rec':      "D-key: recording started (quick sequence)",
+    'stop_rec':       "D-key: recording stopped (quick sequence)",
+    'transcribe':     "D-key: transcription in progress",
     'null_text':      "Empty transcription result",
     'llm_start':      "LLM processing started",
     'llm_done':       "LLM processing complete",
