@@ -4168,9 +4168,6 @@ class PrefsDialog(DraggableDialog):
         auto_row.addStretch()
         settings_box.addLayout(auto_row)
 
-        # Initial state update for grayed out options
-        self._update_paste_options_state()
-
         # Enter delay slider
         delay_row = QHBoxLayout()
         delay_row.setSpacing(8)
