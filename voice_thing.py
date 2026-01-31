@@ -60,6 +60,8 @@ from PyQt6.QtWidgets import (
     QTableWidget,
     QTableWidgetItem,
     QSplitter,
+    QListWidget,
+    QListWidgetItem,
 )
 from Foundation import NSBundle
 import os.path as osp
@@ -3919,6 +3921,16 @@ class PrefsDialog(DraggableDialog):
             self.chime_theme_combo.setCurrentIndex(idx)
         self.chime_theme_combo.currentIndexChanged.connect(self._on_chime_theme_changed)
         chime_theme_row.addWidget(self.chime_theme_combo, 1)
+
+        # Chime editor button
+        self.chime_editor_btn = QPushButton("I")
+        self.chime_editor_btn.setIcon(load_icon("music", ICON_COLOR_DARK))
+        self.chime_editor_btn.setIconSize(QSize(16, 16))
+        self.chime_editor_btn.setStyleSheet(get_btn_css())
+        self.chime_editor_btn.clicked.connect(self._open_chime_editor)
+        set_tooltip(self.chime_editor_btn, "I  Open chime editor")
+        chime_theme_row.addWidget(self.chime_editor_btn)
+
         theme_box.addLayout(chime_theme_row)
 
         # TTS (Text-to-Speech) Section
@@ -4446,6 +4458,15 @@ class PrefsDialog(DraggableDialog):
         # Play demo to hear the new theme
         import threading
         threading.Thread(target=lambda: play_chime('demo'), daemon=True).start()
+
+    def _open_chime_editor(self):
+        """Open the chime editor dialog."""
+        # Get main window from parent chain
+        main = self.parent()
+        while main and not hasattr(main, 'show_chime_editor'):
+            main = main.parent()
+        if main:
+            main.show_chime_editor()
 
     def _select_program(self, prog):
         """Select program number, update all UI, and play demo."""
