@@ -4642,6 +4642,7 @@ class ChimeEditorDialog(DraggableDialog):
         self._duration = 0.1  # Seconds per beat
         self._num_beats = self.DEFAULT_BEATS
         self._cell_size = S.CHIME_EDITOR_ZOOM  # Use saved zoom setting
+        self._edit_mode = 'pencil'  # 'pencil' or 'brush'
 
         # Register callback for real-time chime log updates
         self._chime_callback = self._on_chime_played
@@ -4706,15 +4707,39 @@ class ChimeEditorDialog(DraggableDialog):
 
         controls.addSpacing(10)
 
+        # Edit mode buttons (Pencil vs Brush)
+        self.pencil_btn = QPushButton()
+        self.pencil_btn.setIcon(load_icon("pencil", ICON_COLOR_DARK))
+        self.pencil_btn.setFixedSize(24, 24)
+        self.pencil_btn.setCheckable(True)
+        self.pencil_btn.setChecked(True)  # Pencil mode is default
+        self.pencil_btn.setStyleSheet(get_btn_css())
+        self.pencil_btn.clicked.connect(lambda: self._set_edit_mode('pencil'))
+        set_tooltip(self.pencil_btn, "Pencil: Click to toggle, drag places note at release")
+        controls.addWidget(self.pencil_btn)
+
+        self.brush_btn = QPushButton()
+        self.brush_btn.setIcon(load_icon("pen", ICON_COLOR_DARK))
+        self.brush_btn.setFixedSize(24, 24)
+        self.brush_btn.setCheckable(True)
+        self.brush_btn.setStyleSheet(get_btn_css())
+        self.brush_btn.clicked.connect(lambda: self._set_edit_mode('brush'))
+        set_tooltip(self.brush_btn, "Brush: Paint notes on/off as you drag")
+        controls.addWidget(self.brush_btn)
+
+        controls.addSpacing(10)
+
         # Zoom buttons
-        zoom_out_btn = QPushButton("-")
+        zoom_out_btn = QPushButton()
+        zoom_out_btn.setIcon(load_icon("zoom-out", ICON_COLOR_DARK))
         zoom_out_btn.setFixedSize(24, 24)
         zoom_out_btn.setStyleSheet(get_btn_css())
         zoom_out_btn.clicked.connect(self._zoom_out)
         set_tooltip(zoom_out_btn, "Zoom out (smaller cells)")
         controls.addWidget(zoom_out_btn)
 
-        zoom_in_btn = QPushButton("+")
+        zoom_in_btn = QPushButton()
+        zoom_in_btn.setIcon(load_icon("zoom-in", ICON_COLOR_DARK))
         zoom_in_btn.setFixedSize(24, 24)
         zoom_in_btn.setStyleSheet(get_btn_css())
         zoom_in_btn.clicked.connect(self._zoom_in)
@@ -4722,6 +4747,11 @@ class ChimeEditorDialog(DraggableDialog):
         controls.addWidget(zoom_in_btn)
 
         controls.addStretch()
+
+        # Help hint
+        help_hint = QLabel("Left-click: add  |  Right-click: remove")
+        help_hint.setStyleSheet("color: rgba(255,255,255,0.5); font-size: 10px;")
+        controls.addWidget(help_hint)
 
         # Save button
         self.save_btn = QPushButton("Save Custom")
@@ -4837,16 +4867,24 @@ class ChimeEditorDialog(DraggableDialog):
             self._set_zoom(new_size)
 
     def _set_zoom(self, cell_size):
-        """Set the cell size and recreate widgets."""
+        """Set the cell size and update widgets."""
         self._cell_size = cell_size
         S.CHIME_EDITOR_ZOOM = cell_size
-        # Update widget sizes
+        # Update widget sizes and font sizes
         self.piano.cell_size = cell_size
         self.piano.setFixedSize(50, self.SEMITONE_RANGE * cell_size + 18)
         self.piano.update()
         self.grid.cell_size = cell_size
         self.grid._update_size()
         self.grid.update()
+
+    def _set_edit_mode(self, mode):
+        """Set the edit mode (pencil or brush)."""
+        self._edit_mode = mode
+        self.grid.set_edit_mode(mode)
+        # Update button states
+        self.pencil_btn.setChecked(mode == 'pencil')
+        self.brush_btn.setChecked(mode == 'brush')
 
     def keyPressEvent(self, e):
         """Handle keyboard input for playing/highlighting notes."""
@@ -5232,7 +5270,9 @@ class ChimePianoWidget(QWidget):
         hover_brighten = QColor(255, 255, 255, 40)
 
         painter.fillRect(self.rect(), bg_color)
-        painter.setFont(QFont("Menlo", 7))
+        # Scale font with cell size (7 at size 12, scales proportionally)
+        font_size = max(5, int(self.cell_size * 7 / 12))
+        painter.setFont(QFont("Menlo", font_size))
 
         for row in range(self.semitone_range):
             semitone = self.semitone_min + (self.semitone_range - 1 - row)
@@ -5292,12 +5332,20 @@ class ChimeGridWidget(QWidget):
         self._playable_max = semitone_min + semitone_range - 1  # Max playable semitone
         self._last_used_beat = -1  # Last beat with notes (-1 = none)
         self._hover_cell = None  # (beat, semitone) under mouse
+        self._edit_mode = 'pencil'  # 'pencil' or 'brush'
+        self._dragging = False  # Is mouse being dragged
+        self._drag_start_cell = None  # Cell where drag started
+        self._drag_action = None  # 'add' or 'remove' during brush drag
 
         # Pattern: list of lists, each inner list is semitones for that beat
         self._pattern = [[] for _ in range(num_beats)]
         self.setMouseTracking(True)  # Enable hover tracking
         self.setCursor(Qt.CursorShape.ArrowCursor)  # Use arrow cursor
         self._update_size()
+
+    def set_edit_mode(self, mode):
+        """Set the edit mode ('pencil' or 'brush')."""
+        self._edit_mode = mode
 
     def set_highlighted(self, semitones):
         """Set which semitones are highlighted (keyboard playing)."""
@@ -5363,33 +5411,101 @@ class ChimeGridWidget(QWidget):
         return (beat, semitone)
 
     def mousePressEvent(self, e):
-        """Toggle cell on click and play note."""
+        """Handle click to add/remove notes based on edit mode."""
         cell = self._cell_at(e.position().toPoint())
-        if cell:
-            beat, semitone = cell
-            if semitone in self._pattern[beat]:
-                self._pattern[beat].remove(semitone)
+        if not cell:
+            return
+
+        beat, semitone = cell
+        is_right_click = e.button() == Qt.MouseButton.RightButton
+
+        if self._edit_mode == 'pencil':
+            # Pencil mode: start drag, will place note at release
+            self._dragging = True
+            self._drag_start_cell = cell
+            if is_right_click:
+                # Right-click in pencil mode: immediately remove
+                if semitone in self._pattern[beat]:
+                    self._pattern[beat].remove(semitone)
+                    self._update_last_used_beat()
+                    self.update()
+                    self.patternChanged.emit(self.get_pattern())
+        else:
+            # Brush mode: paint on/off as we drag
+            self._dragging = True
+            if is_right_click:
+                # Right-click: remove mode
+                self._drag_action = 'remove'
+                if semitone in self._pattern[beat]:
+                    self._pattern[beat].remove(semitone)
             else:
-                self._pattern[beat].append(semitone)
-                self._pattern[beat].sort()
-                # Play the note
-                self.noteClicked.emit(semitone)
+                # Left-click: add mode
+                self._drag_action = 'add'
+                if semitone not in self._pattern[beat]:
+                    self._pattern[beat].append(semitone)
+                    self._pattern[beat].sort()
+                    self.noteClicked.emit(semitone)
             self._update_last_used_beat()
             self.update()
             self.patternChanged.emit(self.get_pattern())
 
     def mouseMoveEvent(self, e):
-        """Track hover position for highlighting."""
+        """Track hover and handle drag painting."""
         cell = self._cell_at(e.position().toPoint())
+
+        # Update hover
         if cell != self._hover_cell:
             self._hover_cell = cell
             self.update()
+
+        # Handle drag in brush mode
+        if self._dragging and self._edit_mode == 'brush' and cell:
+            beat, semitone = cell
+            if self._drag_action == 'add':
+                if semitone not in self._pattern[beat]:
+                    self._pattern[beat].append(semitone)
+                    self._pattern[beat].sort()
+                    self.noteClicked.emit(semitone)
+                    self._update_last_used_beat()
+                    self.update()
+                    self.patternChanged.emit(self.get_pattern())
+            elif self._drag_action == 'remove':
+                if semitone in self._pattern[beat]:
+                    self._pattern[beat].remove(semitone)
+                    self._update_last_used_beat()
+                    self.update()
+                    self.patternChanged.emit(self.get_pattern())
+
+    def mouseReleaseEvent(self, e):
+        """Handle release - in pencil mode, place note at release position."""
+        if self._dragging:
+            if self._edit_mode == 'pencil' and e.button() == Qt.MouseButton.LeftButton:
+                cell = self._cell_at(e.position().toPoint())
+                if cell:
+                    beat, semitone = cell
+                    # Toggle the note at release position
+                    if semitone in self._pattern[beat]:
+                        self._pattern[beat].remove(semitone)
+                    else:
+                        self._pattern[beat].append(semitone)
+                        self._pattern[beat].sort()
+                        self.noteClicked.emit(semitone)
+                    self._update_last_used_beat()
+                    self.update()
+                    self.patternChanged.emit(self.get_pattern())
+            self._dragging = False
+            self._drag_start_cell = None
+            self._drag_action = None
 
     def leaveEvent(self, e):
         """Clear hover when mouse leaves."""
         if self._hover_cell is not None:
             self._hover_cell = None
             self.update()
+        # Cancel drag if leaving widget
+        self._dragging = False
+        self._drag_start_cell = None
+        self._drag_action = None
 
     def paintEvent(self, e):
         """Draw the grid and active cells with theme colors."""
@@ -5468,8 +5584,9 @@ class ChimeGridWidget(QWidget):
                 painter.setPen(grid_line)
                 painter.drawRect(x, y, self.cell_size, self.cell_size)
 
-        # Beat numbers at bottom
-        painter.setFont(QFont("Menlo", 8))
+        # Beat numbers at bottom (font scales with cell size)
+        font_size = max(6, int(self.cell_size * 8 / 12))
+        painter.setFont(QFont("Menlo", font_size))
         for beat in range(self.num_beats):
             x = beat * self.cell_size
             # Show every 4th beat number, or all if few beats
