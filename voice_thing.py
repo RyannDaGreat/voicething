@@ -5562,12 +5562,16 @@ class ChimeGridWidget(QWidget):
             # Pencil mode: start drag, will place note at release
             self._dragging = True
             self._drag_start_cell = cell
+            self._pencil_drag_cell = cell  # Track current cell for visual feedback
+            # Play note immediately on mouse down
+            self._last_preview_semitone = semitone
+            self.noteClicked.emit(semitone)
+            self.update()  # Trigger repaint to show active color
             if is_right_click:
                 # Right-click in pencil mode: immediately remove
                 if semitone in self._pattern[beat]:
                     self._pattern[beat].remove(semitone)
                     self._update_last_used_beat()
-                    self.update()
                     self.patternChanged.emit(self.get_pattern())
         else:
             # Brush mode: paint on/off as we drag
@@ -5602,8 +5606,12 @@ class ChimeGridWidget(QWidget):
 
             # In pencil mode, play note preview while dragging (but don't modify pattern)
             if self._edit_mode == 'pencil':
-                # Track last previewed semitone to avoid re-playing same note
-                if not hasattr(self, '_last_preview_semitone') or self._last_preview_semitone != semitone:
+                # Update pencil drag cell for visual feedback
+                if self._pencil_drag_cell != cell:
+                    self._pencil_drag_cell = cell
+                    self.update()
+                # Play note only if semitone changed (not just beat)
+                if self._last_preview_semitone != semitone:
                     self._last_preview_semitone = semitone
                     self.noteClicked.emit(semitone)
 
@@ -5637,7 +5645,7 @@ class ChimeGridWidget(QWidget):
                     else:
                         self._pattern[beat].append(semitone)
                         self._pattern[beat].sort()
-                        self.noteClicked.emit(semitone)
+                        # Don't play again - already played on mouse down/drag
                     self._update_last_used_beat()
                     self.update()
                     self.patternChanged.emit(self.get_pattern())
@@ -5645,6 +5653,8 @@ class ChimeGridWidget(QWidget):
             self._drag_start_cell = None
             self._drag_action = None
             self._last_preview_semitone = None
+            self._pencil_drag_cell = None
+            self.update()
 
     def leaveEvent(self, e):
         """Clear hover when mouse leaves."""
@@ -5656,6 +5666,7 @@ class ChimeGridWidget(QWidget):
         self._drag_start_cell = None
         self._drag_action = None
         self._last_preview_semitone = None
+        self._pencil_drag_cell = None
 
     def paintEvent(self, e):
         """Draw the grid and active cells with theme colors."""
@@ -5721,8 +5732,14 @@ class ChimeGridWidget(QWidget):
                 if is_playing_col:
                     painter.fillRect(x + 1, y + 1, self.cell_size - 2, self.cell_size - 2, playing_col)
 
-                # Hover effect - brighten cell
-                if is_hovered:
+                # Pencil drag cell - show active/accent color (not hover color)
+                is_pencil_dragging = (hasattr(self, '_pencil_drag_cell') and
+                                     self._pencil_drag_cell == (beat, semitone))
+                if is_pencil_dragging and not is_active:
+                    # Draw the active/accent color to show where note will be placed
+                    painter.fillRect(x + 1, y + 1, self.cell_size - 2, self.cell_size - 2, active)
+                # Hover effect - brighten cell (only when not pencil dragging this cell)
+                elif is_hovered:
                     if is_active:
                         # For active notes, use a lighter version of active color
                         painter.fillRect(x + 1, y + 1, self.cell_size - 2, self.cell_size - 2,
