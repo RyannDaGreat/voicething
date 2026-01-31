@@ -5753,13 +5753,17 @@ class ChimeEditorDialog(DraggableDialog):
     def _add_playing_beat(self, beat_idx, chord):
         """Add a beat to the playing highlights."""
         self.grid.add_playing_beat(beat_idx)
-        # Merge chord notes with any existing piano highlights
-        current = self.piano._highlighted if hasattr(self.piano, '_highlighted') else set()
-        self.piano.set_highlighted(current | set(chord) if chord else current)
+        # Highlight the chord notes on the piano (replacing any previous highlights)
+        # Use _pressed_semitones as base to preserve keyboard-pressed notes
+        base_highlights = self._pressed_semitones.copy() if hasattr(self, '_pressed_semitones') else set()
+        self.piano.set_highlighted(base_highlights | set(chord) if chord else base_highlights)
 
     def _remove_playing_beat(self, beat_idx):
         """Remove a beat from the playing highlights."""
         self.grid.remove_playing_beat(beat_idx)
+        # Clear piano highlights back to just keyboard-pressed notes
+        base_highlights = self._pressed_semitones.copy() if hasattr(self, '_pressed_semitones') else set()
+        self.piano.set_highlighted(base_highlights)
 
     def _save_custom(self):
         """Save current pattern as custom chime, keeping empty beats as pauses."""
