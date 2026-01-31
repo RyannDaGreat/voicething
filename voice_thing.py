@@ -4711,6 +4711,7 @@ class ChimeEditorDialog(DraggableDialog):
         # Edit mode buttons (Pencil vs Brush)
         self.pencil_btn = QPushButton()
         self.pencil_btn.setIcon(load_icon("pencil", ICON_COLOR_DARK))
+        self.pencil_btn.setIconSize(QSize(14, 14))
         self.pencil_btn.setFixedSize(24, 24)
         self.pencil_btn.setCheckable(True)
         self.pencil_btn.setChecked(True)  # Pencil mode is default
@@ -4721,6 +4722,7 @@ class ChimeEditorDialog(DraggableDialog):
 
         self.brush_btn = QPushButton()
         self.brush_btn.setIcon(load_icon("pen", ICON_COLOR_DARK))
+        self.brush_btn.setIconSize(QSize(14, 14))
         self.brush_btn.setFixedSize(24, 24)
         self.brush_btn.setCheckable(True)
         self.brush_btn.setStyleSheet(get_btn_css())
@@ -4733,6 +4735,7 @@ class ChimeEditorDialog(DraggableDialog):
         # Zoom buttons
         zoom_out_btn = QPushButton()
         zoom_out_btn.setIcon(load_icon("zoom-out", ICON_COLOR_DARK))
+        zoom_out_btn.setIconSize(QSize(14, 14))
         zoom_out_btn.setFixedSize(24, 24)
         zoom_out_btn.setStyleSheet(get_btn_css())
         zoom_out_btn.clicked.connect(self._zoom_out)
@@ -4741,6 +4744,7 @@ class ChimeEditorDialog(DraggableDialog):
 
         zoom_in_btn = QPushButton()
         zoom_in_btn.setIcon(load_icon("zoom-in", ICON_COLOR_DARK))
+        zoom_in_btn.setIconSize(QSize(14, 14))
         zoom_in_btn.setFixedSize(24, 24)
         zoom_in_btn.setStyleSheet(get_btn_css())
         zoom_in_btn.clicked.connect(self._zoom_in)
