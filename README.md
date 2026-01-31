@@ -143,6 +143,42 @@ Press `U` to open the Tmux Pane Manager:
 - **Dark/light mode** - toggle terminal preview theme
 - **Zoom controls** - adjust preview font size
 
+### Tmux Pane Manager Keyboard Shortcuts
+
+| Key | Action |
+|-----|--------|
+| `B` | Toggle auto-scroll (scroll to bottom on update) |
+| `S` | Toggle unlimited/limited scrollback |
+| `D` | Toggle dark mode for preview |
+| `+/-` | Zoom in/out |
+
+### Magic Phrases
+
+Magic phrases let you route voice commands to specific tmux panes by saying the phrase at the beginning of your transcription.
+
+**Setting a magic phrase:**
+1. Open the Tmux Pane Manager (`U`)
+2. Click on the "Magic Phrase" column for any pane
+3. Type your phrase (e.g., "chicken", "paper", "terminal")
+4. Press Enter to save
+
+**Using magic phrases:**
+- Say "chicken, run the tests" to send "run the tests" to the pane named "chicken"
+- The magic phrase is stripped from the transcription before sending
+- Each phrase can only be assigned to one pane (duplicates are automatically removed)
+
+**Stale/invalid magic phrases:**
+- After rebooting, panes may no longer exist but their magic phrases remain in settings
+- These appear at the top of the pane list with ❌ Invalid address and "N/A" process
+- To delete a stale phrase: click the phrase, clear it, and press Enter
+- The row will be removed from the list
+
+### Auto-scroll
+
+The `B` button (double chevron ⏬) toggles auto-scroll behavior:
+- **ON** (checked): Preview automatically scrolls to bottom when pane content updates
+- **OFF** (unchecked): Preview preserves your scroll position
+
 This is useful for:
 - **Terminal workflows** - dictate commands or text directly into terminal sessions
 - **Remote sessions** - works even when the terminal isn't the frontmost app

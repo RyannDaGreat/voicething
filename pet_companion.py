@@ -461,6 +461,7 @@ class PetContainer(QWidget):
         self._raise_by = 0  # How much pets are raised above container bottom
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
         self.setMinimumSize(64, 64)
 
     def add_pet(self, pet_type: PetType) -> PetCompanionWidget:
@@ -527,6 +528,35 @@ class PetContainer(QWidget):
     def raise_amount(self) -> int:
         """How many pixels pets are raised above the container's layout baseline."""
         return self._raise_by
+
+    def _pet_at_pos(self, pos) -> Optional[PetCompanionWidget]:
+        """Return the pet widget at the given position, or None."""
+        for pet in self._pets.values():
+            pet_rect = pet.geometry()
+            if pet_rect.contains(pos):
+                return pet
+        return None
+
+    def mousePressEvent(self, event):
+        """Pass through clicks that don't hit a pet."""
+        if self._pet_at_pos(event.pos()) is None:
+            event.ignore()
+            return
+        super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        """Pass through releases that don't hit a pet."""
+        if self._pet_at_pos(event.pos()) is None:
+            event.ignore()
+            return
+        super().mouseReleaseEvent(event)
+
+    def mouseMoveEvent(self, event):
+        """Pass through moves that don't hit a pet."""
+        if self._pet_at_pos(event.pos()) is None:
+            event.ignore()
+            return
+        super().mouseMoveEvent(event)
 
     def set_listening(self, is_listening: bool):
         for pet in self._pets.values():
