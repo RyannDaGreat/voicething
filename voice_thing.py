@@ -371,6 +371,7 @@ DEFAULTS = dict(
     TMUX_PREVIEW_ANSI_COLORS=True,  # Enable ANSI color rendering
     TMUX_PREVIEW_FONT_SIZE=10,  # Terminal preview font size
     TMUX_UNLIMITED_SCROLL=False,  # Show full scrollback (slow) vs limited (fast)
+    TMUX_AUTO_SCROLL=True,  # Auto-scroll to bottom on update (False = preserve position)
     TMUX_PHRASES_AS_CONTEXT=True,  # Include tmux phrases in context words
     TMUX_ANNOUNCE_PANE=False,  # Announce pane names via TTS when sending
     AUTO_COPY=True,   # Copy transcription to clipboard before paste
@@ -2552,6 +2553,18 @@ class TmuxSelectionDialog(DraggableDialog):
         set_tooltip(self.scroll_btn, "S  Toggle unlimited scrollback\n\nOFF = 50 lines (fast)\nON = full history (slower)")
         btn_row.addWidget(self.scroll_btn)
 
+        # Auto-scroll toggle - scroll to bottom on update vs preserve position
+        self._auto_scroll = S.TMUX_AUTO_SCROLL
+        self.autoscroll_btn = QPushButton("B")
+        self.autoscroll_btn.setIcon(load_icon("scroll-down", ICON_COLOR_DARK))
+        self.autoscroll_btn.setIconSize(QSize(16, 16))
+        self.autoscroll_btn.setStyleSheet(get_btn_css())
+        self.autoscroll_btn.setCheckable(True)
+        self.autoscroll_btn.setChecked(self._auto_scroll)
+        self.autoscroll_btn.clicked.connect(self._on_autoscroll_toggle)
+        set_tooltip(self.autoscroll_btn, "B  Toggle auto-scroll to bottom\n\nON = scroll to bottom on update\nOFF = preserve scroll position")
+        btn_row.addWidget(self.autoscroll_btn)
+
         # Font size increase (zoom in)
         self.font_plus_btn = QPushButton("I")
         self.font_plus_btn.setIcon(load_icon("zoom-in", ICON_COLOR_DARK))
@@ -2850,9 +2863,15 @@ done
             return
         self._last_preview_html = html
         sb = self.preview.verticalScrollBar()
-        scroll_pos = sb.value()
-        self.preview.setHtml(html)
-        sb.setValue(scroll_pos)
+        if self._auto_scroll:
+            # Auto-scroll to bottom after update
+            self.preview.setHtml(html)
+            sb.setValue(sb.maximum())
+        else:
+            # Preserve scroll position
+            scroll_pos = sb.value()
+            self.preview.setHtml(html)
+            sb.setValue(scroll_pos)
 
     def _start_polling(self):
         """Start the background polling thread."""
@@ -2963,6 +2982,8 @@ done
             self._decrease_font_size()
         elif e.key() == Qt.Key.Key_S:
             self.scroll_btn.click()
+        elif e.key() == Qt.Key.Key_B:
+            self.autoscroll_btn.click()
         elif e.key() == Qt.Key.Key_M:
             self._toggle_maximize()
         elif e.key() == Qt.Key.Key_F:
@@ -3035,6 +3056,11 @@ done
         # Restart poll thread with new scroll setting
         self._stop_polling()
         self._start_polling()
+
+    def _on_autoscroll_toggle(self, checked=None):
+        """Toggle auto-scroll to bottom behavior."""
+        self._auto_scroll = self.autoscroll_btn.isChecked()
+        S.set('TMUX_AUTO_SCROLL', self._auto_scroll)
 
     def _increase_font_size(self):
         """Increase preview font size."""
