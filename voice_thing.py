@@ -4590,7 +4590,7 @@ class PrefsDialog(DraggableDialog):
         settings_box.addWidget(make_section("Recordings and Transcriptions Folders"))
 
         # Recordings folder (audio + text, can be temp)
-        rec_label = QLabel("Audio Recordings:")
+        rec_label = QLabel("Audio and Text Recordings:")
         rec_label.setStyleSheet(f"QLabel {{ color: {TEXT_SECONDARY}; font-size: 10px; }}")
         settings_box.addWidget(rec_label)
         folder_row = QHBoxLayout()
@@ -4610,7 +4610,14 @@ class PrefsDialog(DraggableDialog):
         select_folder_btn.setToolTip("Choose a folder for recordings")
         select_folder_btn.clicked.connect(self._select_recordings_folder)
         folder_row.addWidget(select_folder_btn)
-        revert_folder_btn = QPushButton()
+        open_folder_btn = QPushButton(" ")
+        open_folder_btn.setIcon(load_icon("folder-open", color=ICON_COLOR_DARK))
+        open_folder_btn.setFixedSize(28, 28)
+        open_folder_btn.setStyleSheet(get_btn_css())
+        open_folder_btn.setToolTip("Open recordings folder in Finder")
+        open_folder_btn.clicked.connect(self._open_recordings_folder)
+        folder_row.addWidget(open_folder_btn)
+        revert_folder_btn = QPushButton(" ")
         revert_folder_btn.setIcon(load_icon("reset", color=ICON_COLOR_DARK))
         revert_folder_btn.setFixedSize(28, 28)
         revert_folder_btn.setStyleSheet(get_btn_css())
@@ -4641,7 +4648,14 @@ class PrefsDialog(DraggableDialog):
         select_trans_btn.setToolTip("Choose a folder for transcription archive")
         select_trans_btn.clicked.connect(self._select_transcriptions_folder)
         trans_row.addWidget(select_trans_btn)
-        revert_trans_btn = QPushButton()
+        open_trans_btn = QPushButton(" ")
+        open_trans_btn.setIcon(load_icon("folder-open", color=ICON_COLOR_DARK))
+        open_trans_btn.setFixedSize(28, 28)
+        open_trans_btn.setStyleSheet(get_btn_css())
+        open_trans_btn.setToolTip("Open transcriptions folder in Finder")
+        open_trans_btn.clicked.connect(self._open_transcriptions_folder)
+        trans_row.addWidget(open_trans_btn)
+        revert_trans_btn = QPushButton(" ")
         revert_trans_btn.setIcon(load_icon("reset", color=ICON_COLOR_DARK))
         revert_trans_btn.setFixedSize(28, 28)
         revert_trans_btn.setStyleSheet(get_btn_css())
@@ -5004,6 +5018,16 @@ class PrefsDialog(DraggableDialog):
         """Revert transcriptions folder to default."""
         S.set('TRANSCRIPTIONS_DIR', DEFAULT_TRANSCRIPTIONS_DIR)
         self.trans_folder_label.setText(DEFAULT_TRANSCRIPTIONS_DIR)
+
+    def _open_recordings_folder(self):
+        """Open recordings folder in Finder."""
+        os.makedirs(S.RECORDINGS_DIR, exist_ok=True)
+        rp.open_file_with_default_application(S.RECORDINGS_DIR)
+
+    def _open_transcriptions_folder(self):
+        """Open transcriptions folder in Finder."""
+        os.makedirs(S.TRANSCRIPTIONS_DIR, exist_ok=True)
+        rp.open_file_with_default_application(S.TRANSCRIPTIONS_DIR)
 
     def _open_settings_folder(self):
         rp.open_file_with_default_application(_VOICETHING_DIR)
