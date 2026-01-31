@@ -351,6 +351,9 @@ DEFAULTS = dict(
     CHIME_AUDIO_SETTINGS={
         '_default': {'reverb': 0.4, 'chorus': 0.3},  # Fallback for themes without settings
     },
+    # Custom chime patterns keyed by chime name
+    # Format: {chime_name: {'pattern': [[semitones], ...], 'duration': float}}
+    CUSTOM_CHIMES={},
     RECORDINGS_DIR=DEFAULT_RECORDINGS_DIR,  # Folder for audio recordings and transcripts
     ALWAYS_ON_TOP=True,  # Keep window above other windows
     SPEAK_BACK_VOICE='say',  # TTS backend: 'say', 'supertonic', or 'kitten'
@@ -1230,6 +1233,7 @@ ACTIONS = [
     ("wake_word", "J", "ear", "Toggle wake word detection", None),
     ("auto_enter", "N", "enter", "Toggle auto-enter after paste", None),
     ("tmux", "U", "tmux", "Open tmux pane manager", None),
+    ("chime_editor", "I", "music", "Open chime editor", None),
     ("model", "M", "mic", "Change Whisper model", None),
     ("prefs", "P", "settings", "Preferences", None),
     ("help", "?", "book", "Show help", "Help"),
@@ -4560,6 +4564,320 @@ class PrefsDialog(DraggableDialog):
             super().keyPressEvent(e)
 
 
+class ChimeEditorDialog(DraggableDialog):
+    """Floating dialog for editing chime patterns on a grid."""
+    window_name = "chime_editor"
+
+    # Grid dimensions
+    MAX_BEATS = 8  # X-axis: number of beats
+    SEMITONE_RANGE = 36  # Y-axis: -12 to +24 semitones from A4
+    SEMITONE_MIN = -12
+    SEMITONE_MAX = 24
+    CELL_SIZE = 18  # Pixel size of each grid cell
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._current_chime = 'demo'
+        self._pattern = []  # List of lists: [[semitones for beat 0], [beat 1], ...]
+        self._duration = 0.1  # Seconds per beat
+        self._recent_chimes = []  # Ordered by most recent play
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(15, 15, 15, 15)
+        layout.setSpacing(8)
+
+        # Title row
+        title_row = QHBoxLayout()
+        title_row.setSpacing(6)
+
+        # Close button (red)
+        close_btn = TrafficLightButton("rgb(255, 95, 87)", "rgb(255, 120, 110)", "macos-close")
+        close_btn.clicked.connect(self.close)
+        title_row.addWidget(close_btn)
+
+        title_row.addWidget(make_title("Chime Editor"), 1)
+
+        # Spacer
+        spacer = QWidget()
+        spacer.setFixedWidth(14)
+        title_row.addWidget(spacer)
+        layout.addLayout(title_row)
+
+        # Main content: grid on left, chime list on right
+        self.splitter = QSplitter(Qt.Orientation.Horizontal)
+
+        # Left side: grid editor
+        grid_container = QWidget()
+        grid_layout = QVBoxLayout(grid_container)
+        grid_layout.setContentsMargins(0, 0, 0, 0)
+        grid_layout.setSpacing(4)
+
+        # Current chime label
+        self.chime_label = QLabel("demo")
+        self.chime_label.setStyleSheet(f"color: {TEXT_PRIMARY}; font-size: 14px; font-weight: bold;")
+        grid_layout.addWidget(self.chime_label)
+
+        # Grid widget
+        self.grid = ChimeGridWidget(self.MAX_BEATS, self.SEMITONE_RANGE, self.CELL_SIZE)
+        self.grid.patternChanged.connect(self._on_pattern_changed)
+        grid_layout.addWidget(self.grid)
+
+        # Controls row: play button, duration knob
+        controls = QHBoxLayout()
+        controls.setSpacing(8)
+
+        # Play button
+        self.play_btn = QPushButton("Play")
+        self.play_btn.setIcon(load_icon("play", ICON_COLOR_DARK))
+        self.play_btn.setStyleSheet(get_btn_css())
+        self.play_btn.clicked.connect(self._play_current)
+        controls.addWidget(self.play_btn)
+
+        # Duration knob
+        self.duration_knob = RotaryKnob("Beat ms", min_val=20, max_val=500,
+                                        value=int(self._duration * 1000),
+                                        fmt="{:.0f}", size=36)
+        self.duration_knob.valueChanged.connect(self._on_duration_changed)
+        controls.addWidget(self.duration_knob)
+
+        # Save button
+        self.save_btn = QPushButton("Save")
+        self.save_btn.setIcon(load_icon("save", ICON_COLOR_DARK))
+        self.save_btn.setStyleSheet(get_btn_css())
+        self.save_btn.clicked.connect(self._save_custom)
+        controls.addWidget(self.save_btn)
+
+        controls.addStretch()
+        grid_layout.addLayout(controls)
+
+        self.splitter.addWidget(grid_container)
+
+        # Right side: chime list
+        list_container = QWidget()
+        list_layout = QVBoxLayout(list_container)
+        list_layout.setContentsMargins(0, 0, 0, 0)
+        list_layout.setSpacing(4)
+
+        list_label = QLabel("Chimes (recent first)")
+        list_label.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 11px;")
+        list_layout.addWidget(list_label)
+
+        self.chime_list = QListWidget()
+        self.chime_list.setStyleSheet(
+            f"QListWidget {{ {PANEL_BG_FLAT_CSS} color: {TEXT_PRIMARY}; "
+            f"border: 1px solid {BORDER_COLOR}; font-size: 11px; }}"
+            f"QListWidget::item {{ padding: 4px; }}"
+            f"QListWidget::item:selected {{ background: rgba({STYLE.accent.red()},{STYLE.accent.green()},{STYLE.accent.blue()},0.4); }}"
+            f"QListWidget::item:hover {{ background: rgba({STYLE.accent.red()},{STYLE.accent.green()},{STYLE.accent.blue()},0.2); }}"
+            + SCROLLBAR_CSS
+        )
+        self.chime_list.itemClicked.connect(self._on_chime_selected)
+        list_layout.addWidget(self.chime_list, 1)
+
+        self.splitter.addWidget(list_container)
+        self.splitter.setSizes([450, 150])
+        layout.addWidget(self.splitter, 1)
+
+        self.setMinimumSize(650, 450)
+        self._populate_chime_list()
+        self._load_chime('demo')
+
+    def _populate_chime_list(self):
+        """Populate chime list, ordering by recent plays."""
+        self.chime_list.clear()
+        theme = CHIME_THEMES.get(S.CHIME_THEME, CHIME_THEMES['default'])
+        all_chimes = list(theme.keys())
+
+        # Get recent plays from chime log
+        log = load_chime_log_from_file()
+        recent_order = []
+        seen = set()
+        for entry in reversed(log[-100:]):  # Last 100 entries
+            name = entry.get('name', '')
+            if name and name not in seen and name in all_chimes:
+                recent_order.append(name)
+                seen.add(name)
+
+        # Add remaining chimes not in recent
+        for name in all_chimes:
+            if name not in seen:
+                recent_order.append(name)
+
+        # Populate list
+        for name in recent_order:
+            item = QListWidgetItem(name)
+            item.setData(Qt.ItemDataRole.UserRole, name)
+            self.chime_list.addItem(item)
+
+    def _on_chime_selected(self, item):
+        """Load selected chime into grid."""
+        name = item.data(Qt.ItemDataRole.UserRole)
+        self._load_chime(name)
+
+    def _load_chime(self, name):
+        """Load a chime pattern into the grid."""
+        self._current_chime = name
+        self.chime_label.setText(name)
+
+        # Check for custom pattern first
+        if name in S.CUSTOM_CHIMES:
+            custom = S.CUSTOM_CHIMES[name]
+            self._pattern = [list(beat) for beat in custom.get('pattern', [])]
+            self._duration = custom.get('duration', 0.1)
+        else:
+            # Load from theme
+            theme = CHIME_THEMES.get(S.CHIME_THEME, CHIME_THEMES['default'])
+            if name in theme:
+                chords, duration = theme[name]
+                self._pattern = [list(chord) for chord in chords]
+                self._duration = duration
+            else:
+                self._pattern = []
+                self._duration = 0.1
+
+        # Update grid
+        self.grid.set_pattern(self._pattern, self.SEMITONE_MIN)
+        self.duration_knob.setValue(int(self._duration * 1000), emit=False)
+
+    def _on_pattern_changed(self, pattern):
+        """Handle grid pattern change."""
+        self._pattern = pattern
+
+    def _on_duration_changed(self, value):
+        """Handle duration knob change."""
+        self._duration = value / 1000.0  # Convert ms to seconds
+
+    def _play_current(self):
+        """Play the current pattern."""
+        if not self._pattern:
+            return
+        # Convert pattern to chords tuple
+        chords = tuple(self._pattern)
+        chime(*chords, t=self._duration, name=f"editor:{self._current_chime}")
+
+    def _save_custom(self):
+        """Save current pattern as custom chime."""
+        if not self._pattern:
+            return
+        S.CUSTOM_CHIMES[self._current_chime] = {
+            'pattern': [list(beat) for beat in self._pattern],
+            'duration': self._duration
+        }
+        # Refresh the list to show custom indicator
+        self._populate_chime_list()
+
+
+class ChimeGridWidget(QWidget):
+    """Grid widget for editing chime note patterns."""
+    patternChanged = pyqtSignal(list)  # Emits pattern when changed
+
+    def __init__(self, max_beats, semitone_range, cell_size, parent=None):
+        super().__init__(parent)
+        self.max_beats = max_beats
+        self.semitone_range = semitone_range
+        self.cell_size = cell_size
+        self.semitone_min = -12
+
+        # Pattern: list of lists, each inner list is semitones for that beat
+        self._pattern = [[] for _ in range(max_beats)]
+
+        # Fixed size based on grid dimensions
+        self.setFixedSize(
+            max_beats * cell_size + 40,  # +40 for Y-axis labels
+            semitone_range * cell_size + 20  # +20 for X-axis labels
+        )
+        self.setMouseTracking(True)
+
+    def set_pattern(self, pattern, semitone_min=-12):
+        """Set the pattern to display."""
+        self.semitone_min = semitone_min
+        self._pattern = [[] for _ in range(self.max_beats)]
+        for i, beat in enumerate(pattern):
+            if i < self.max_beats:
+                self._pattern[i] = list(beat)
+        self.update()
+
+    def get_pattern(self):
+        """Get the current pattern (filtered to non-empty beats)."""
+        return [beat for beat in self._pattern if beat]
+
+    def _cell_at(self, pos):
+        """Get (beat, semitone) at position, or None if outside grid."""
+        x, y = pos.x() - 35, pos.y() - 5
+        if x < 0 or y < 0:
+            return None
+        beat = x // self.cell_size
+        row = y // self.cell_size
+        if beat >= self.max_beats or row >= self.semitone_range:
+            return None
+        semitone = self.semitone_min + (self.semitone_range - 1 - row)
+        return (beat, semitone)
+
+    def mousePressEvent(self, e):
+        """Toggle cell on click."""
+        cell = self._cell_at(e.position().toPoint())
+        if cell:
+            beat, semitone = cell
+            if semitone in self._pattern[beat]:
+                self._pattern[beat].remove(semitone)
+            else:
+                self._pattern[beat].append(semitone)
+                self._pattern[beat].sort()
+            self.update()
+            self.patternChanged.emit(self.get_pattern())
+
+    def paintEvent(self, e):
+        """Draw the grid and active cells."""
+        from PyQt6.QtGui import QPainter, QFont
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        # Background
+        painter.fillRect(self.rect(), QColor(30, 30, 35))
+
+        # Draw grid
+        grid_x, grid_y = 35, 5
+        accent = STYLE.accent
+
+        # Y-axis labels (semitones)
+        painter.setFont(QFont("Menlo", 8))
+        for row in range(self.semitone_range):
+            semitone = self.semitone_min + (self.semitone_range - 1 - row)
+            y = grid_y + row * self.cell_size
+            # Label every 6 semitones
+            if semitone % 6 == 0:
+                painter.setPen(QColor(TEXT_SECONDARY))
+                painter.drawText(2, y + self.cell_size - 4, f"{semitone:+d}")
+
+        # X-axis labels (beats)
+        for beat in range(self.max_beats):
+            x = grid_x + beat * self.cell_size
+            painter.setPen(QColor(TEXT_SECONDARY))
+            painter.drawText(x + 4, grid_y + self.semitone_range * self.cell_size + 14, str(beat + 1))
+
+        # Grid cells
+        for beat in range(self.max_beats):
+            for row in range(self.semitone_range):
+                semitone = self.semitone_min + (self.semitone_range - 1 - row)
+                x = grid_x + beat * self.cell_size
+                y = grid_y + row * self.cell_size
+
+                # Cell background
+                is_active = semitone in self._pattern[beat]
+                if is_active:
+                    painter.fillRect(x + 1, y + 1, self.cell_size - 2, self.cell_size - 2, accent)
+                else:
+                    # Highlight octave lines
+                    if semitone % 12 == 0:
+                        painter.fillRect(x + 1, y + 1, self.cell_size - 2, self.cell_size - 2, QColor(45, 45, 55))
+                    else:
+                        painter.fillRect(x + 1, y + 1, self.cell_size - 2, self.cell_size - 2, QColor(40, 40, 45))
+
+                # Cell border
+                painter.setPen(QColor(60, 60, 70))
+                painter.drawRect(x, y, self.cell_size, self.cell_size)
+
+
 class PermissionDialog(DraggableDialog):
     """Dialog explaining accessibility permission requirements."""
     window_name = "permission"
@@ -6440,6 +6758,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         elif no_mods and key == Qt.Key.Key_J: self.toggle_wake_word()
         elif no_mods and key == Qt.Key.Key_N: self.toggle_auto_enter()
         elif no_mods and key == Qt.Key.Key_U: self.show_tmux_selection()
+        elif no_mods and key == Qt.Key.Key_I: self.show_chime_editor()
         elif no_mods and key == Qt.Key.Key_E: self.toggle_small_mode()
         elif no_mods and key == Qt.Key.Key_G: self._toggle_maximize()
         elif no_mods and key == Qt.Key.Key_B: self._toggle_blue_mode()
@@ -6843,6 +7162,21 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         self._tmux_dialog.finished.connect(self._on_tmux_dialog_closed)
         self._tmux_dialog.show()  # Non-modal
 
+    def show_chime_editor(self):
+        """Show chime editor window (non-modal)."""
+        if not hasattr(self, '_chime_editor') or self._chime_editor is None:
+            self._chime_editor = ChimeEditorDialog(self)
+            self._chime_editor.finished.connect(self._on_chime_editor_closed)
+            self._chime_editor.center_on_parent()
+        self._chime_editor.show()
+        self._chime_editor.raise_()
+        self._chime_editor.activateWindow()
+
+    def _on_chime_editor_closed(self, result):
+        """Handle chime editor closed - save settings."""
+        self._save_settings()
+        self._chime_editor = None
+
     def _on_tmux_dialog_closed(self, result):
         """Handle tmux dialog closed - save settings and refocus main."""
         if self._tmux_dialog is not None:
@@ -7060,7 +7394,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
                     'SPEAK_BACK_VOICE', 'TTS_SAY', 'TTS_SUPERTONIC', 'TTS_KITTEN',
                     'SPEAK_BACK_APPEND_INSTRUCTION', 'SPEAK_BACK_TMUX_ONLY', 'SPEAK_BACK_INSTRUCTION_TEMPLATE',
                     'WAKEWORD_ENGINE', 'WAKEWORD_OPENWAKEWORD', 'WAKEWORD_MACOS',
-                    'RESTORE_WINDOW_GEOMETRY', 'WINDOW_GEOMETRY']:
+                    'RESTORE_WINDOW_GEOMETRY', 'WINDOW_GEOMETRY', 'CUSTOM_CHIMES', 'CHIME_AUDIO_SETTINGS']:
             if key in data:
                 S[key] = data[key]
         # SIMPLE_MODE needs toggle pattern (handle both on->off and off->on)
