@@ -4645,6 +4645,11 @@ class ChimeEditorDialog(DraggableDialog):
         self._cell_size = S.CHIME_EDITOR_ZOOM  # Use saved zoom setting
         self._edit_mode = 'pencil'  # 'pencil' or 'brush'
 
+        # Undo/redo stacks - each entry is (chime_name, pattern, duration, num_beats)
+        self._undo_stack = []
+        self._redo_stack = []
+        self._max_undo = 50  # Max undo history
+
         # Register callback for real-time chime log updates
         self._chime_callback = self._on_chime_played
         _chime_log_callbacks.append(self._chime_callback)
@@ -4678,6 +4683,27 @@ class ChimeEditorDialog(DraggableDialog):
         self.play_btn.clicked.connect(self._play_current)
         set_tooltip(self.play_btn, "Play current pattern (Spacebar)")
         controls.addWidget(self.play_btn)
+
+        # Undo/Redo buttons
+        self.undo_btn = QPushButton("⌘Z")
+        self.undo_btn.setIcon(load_icon("reset", ICON_COLOR_DARK))
+        self.undo_btn.setIconSize(QSize(14, 14))
+        self.undo_btn.setStyleSheet(get_btn_css())
+        self.undo_btn.clicked.connect(self._undo)
+        self.undo_btn.setEnabled(False)
+        set_tooltip(self.undo_btn, "Undo (⌘Z)")
+        controls.addWidget(self.undo_btn)
+
+        self.redo_btn = QPushButton("⌘Y")
+        self.redo_btn.setIcon(load_icon("refresh", ICON_COLOR_DARK))
+        self.redo_btn.setIconSize(QSize(14, 14))
+        self.redo_btn.setStyleSheet(get_btn_css())
+        self.redo_btn.clicked.connect(self._redo)
+        self.redo_btn.setEnabled(False)
+        set_tooltip(self.redo_btn, "Redo (⌘Y)")
+        controls.addWidget(self.redo_btn)
+
+        controls.addSpacing(6)
 
         # Duration knob - shows ms value in label
         initial_ms = int(self._duration * 1000)
@@ -4887,6 +4913,86 @@ class ChimeEditorDialog(DraggableDialog):
         self.pencil_btn.setChecked(mode == 'pencil')
         self.brush_btn.setChecked(mode == 'brush')
 
+    def _get_state(self):
+        """Get current state for undo/redo."""
+        return (
+            self._current_chime,
+            [list(beat) for beat in self._pattern],
+            self._duration,
+            self._num_beats
+        )
+
+    def _push_undo(self):
+        """Push current state to undo stack."""
+        state = self._get_state()
+        # Don't push if identical to top of stack
+        if self._undo_stack and self._undo_stack[-1] == state:
+            return
+        self._undo_stack.append(state)
+        if len(self._undo_stack) > self._max_undo:
+            self._undo_stack.pop(0)
+        # Clear redo stack on new action
+        self._redo_stack.clear()
+        self._update_undo_redo_buttons()
+
+    def _restore_state(self, state):
+        """Restore editor state from undo/redo."""
+        chime_name, pattern, duration, num_beats = state
+
+        # Update num_beats first if changed
+        if num_beats != self._num_beats:
+            self._num_beats = num_beats
+            self.beats_slider.blockSignals(True)
+            self.beats_slider.setValue(num_beats)
+            self.beats_slider.blockSignals(False)
+            self.beats_num_label.setText(str(num_beats))
+            self.grid.set_num_beats(num_beats)
+
+        # Update duration
+        if duration != self._duration:
+            self._duration = duration
+            ms = int(duration * 1000)
+            self.duration_knob.setValue(ms, emit=False)
+            self.duration_knob.setLabel(f"{ms}ms")
+
+        # Update pattern
+        self._pattern = [list(beat) for beat in pattern]
+        while len(self._pattern) < self._num_beats:
+            self._pattern.append([])
+        self.grid.set_pattern(self._pattern)
+
+        # Update chime selection if changed
+        if chime_name != self._current_chime:
+            self._current_chime = chime_name
+            self._select_chime_in_list(chime_name)
+
+    def _undo(self):
+        """Undo last action."""
+        if not self._undo_stack:
+            return
+        # Push current state to redo stack
+        self._redo_stack.append(self._get_state())
+        # Pop and restore from undo stack
+        state = self._undo_stack.pop()
+        self._restore_state(state)
+        self._update_undo_redo_buttons()
+
+    def _redo(self):
+        """Redo last undone action."""
+        if not self._redo_stack:
+            return
+        # Push current state to undo stack
+        self._undo_stack.append(self._get_state())
+        # Pop and restore from redo stack
+        state = self._redo_stack.pop()
+        self._restore_state(state)
+        self._update_undo_redo_buttons()
+
+    def _update_undo_redo_buttons(self):
+        """Update enabled state of undo/redo buttons."""
+        self.undo_btn.setEnabled(len(self._undo_stack) > 0)
+        self.redo_btn.setEnabled(len(self._redo_stack) > 0)
+
     def keyPressEvent(self, e):
         """Handle keyboard input for playing/highlighting notes."""
         if e.isAutoRepeat():
@@ -4902,7 +5008,13 @@ class ChimeEditorDialog(DraggableDialog):
 
         # Command key shortcuts
         if is_cmd:
-            if key == Qt.Key.Key_P:
+            if key == Qt.Key.Key_Z:
+                self._undo()
+                return
+            elif key == Qt.Key.Key_Y:
+                self._redo()
+                return
+            elif key == Qt.Key.Key_P:
                 self._set_edit_mode('pencil')
                 return
             elif key == Qt.Key.Key_B:
@@ -5037,7 +5149,8 @@ class ChimeEditorDialog(DraggableDialog):
         item = self.chime_list.item(row)
         if item:
             name = item.data(Qt.ItemDataRole.UserRole)
-            if name:
+            if name and name != self._current_chime:
+                self._push_undo()
                 self._load_chime(name)
                 self._play_current()  # Preview chime on selection
 
@@ -5073,15 +5186,18 @@ class ChimeEditorDialog(DraggableDialog):
 
     def _on_pattern_changed(self, pattern):
         """Handle grid pattern change."""
+        self._push_undo()
         self._pattern = pattern
 
     def _on_duration_changed(self, value):
         """Handle duration knob change."""
+        self._push_undo()
         self._duration = value / 1000.0
         self.duration_knob.setLabel(f"{int(value)}ms")
 
     def _on_beats_changed(self, value):
         """Handle beat count slider change."""
+        self._push_undo()
         self._num_beats = value
         self.beats_num_label.setText(str(value))
         # Resize pattern
