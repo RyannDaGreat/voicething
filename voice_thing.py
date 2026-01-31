@@ -8361,11 +8361,10 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
 
     def show_prefs(self):
         """Show preferences dialog (non-modal). Settings apply live, Cancel reverts."""
-        # If already open, just raise to top
+        # Close existing prefs dialog if open
         if hasattr(self, '_prefs_dialog') and self._prefs_dialog is not None:
-            self._prefs_dialog.raise_()
-            self._prefs_dialog.activateWindow()
-            return
+            self._prefs_dialog.close()
+            self._prefs_dialog = None
 
         self._open_prefs_dialog()
 
