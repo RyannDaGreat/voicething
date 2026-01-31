@@ -4695,9 +4695,9 @@ class ChimeEditorDialog(DraggableDialog):
         controls.addWidget(beats_label)
 
         self.beats_slider = QSlider(Qt.Orientation.Horizontal)
-        self.beats_slider.setRange(4, 32)
+        self.beats_slider.setRange(4, 64)
         self.beats_slider.setValue(self._num_beats)
-        self.beats_slider.setFixedWidth(80)
+        self.beats_slider.setFixedWidth(100)
         self.beats_slider.valueChanged.connect(self._on_beats_changed)
         controls.addWidget(self.beats_slider)
 
