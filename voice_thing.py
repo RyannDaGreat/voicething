@@ -3033,8 +3033,8 @@ done
         self._unlimited_scroll = self.scroll_btn.isChecked()
         S.set('TMUX_UNLIMITED_SCROLL', self._unlimited_scroll)
         # Restart poll thread with new scroll setting
-        self._stop_poll()
-        self._start_poll()
+        self._stop_polling()
+        self._start_polling()
 
     def _increase_font_size(self):
         """Increase preview font size."""
