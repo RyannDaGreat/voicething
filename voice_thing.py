@@ -71,6 +71,7 @@ from pet_companion import PetCompanionWidget, PetContainer, PetType, ALL_PET_TYP
 from piano import PianoWidget
 
 APP_NAME = "VoiceThing"
+MAIN_WINDOW = None  # Set in main()
 
 # Directories and paths
 _VOICETHING_DIR       = os.path.dirname(__file__)
@@ -1232,7 +1233,18 @@ def chime(*chords, t=0.15, gap=0.0, name=None, **kwargs):
 
 
 def play_chime(name):
-    """Play a named chime from the current theme."""
+    """Play a named chime, checking custom chimes first, then theme."""
+    # Check for custom chime first
+    if name in S.CUSTOM_CHIMES:
+        custom = S.CUSTOM_CHIMES[name]
+        pattern = custom.get('pattern', [])
+        t = custom.get('duration', 0.1)
+        # Convert pattern (list of lists of semitones) to chords
+        chords = [list(beat) for beat in pattern if beat]  # Skip empty beats
+        if chords:
+            chime(*chords, t=t, name=name)
+        return
+    # Fall back to theme
     theme = CHIME_THEMES.get(S.CHIME_THEME, CHIME_THEMES['default'])
     if name not in theme:
         return
@@ -1715,6 +1727,54 @@ class OptionsDialog(DraggableDialog):
             super().keyPressEvent(e)
 
 
+class ConfirmDialog(DraggableDialog):
+    """Simple confirmation dialog with OK/Cancel. Returns True if confirmed."""
+
+    def __init__(self, title, message, parent=None):
+        super().__init__(parent)
+        self.confirmed = False
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(DIALOG_MARGIN, DIALOG_MARGIN, DIALOG_MARGIN, DIALOG_MARGIN)
+        layout.setSpacing(12)
+
+        layout.addWidget(make_title(title))
+
+        msg_label = QLabel(message)
+        msg_label.setStyleSheet(f"color: {TEXT_PRIMARY}; font-size: 12px;")
+        msg_label.setWordWrap(True)
+        layout.addWidget(msg_label)
+
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(8)
+
+        cancel_btn = QPushButton("Esc  Cancel")
+        cancel_btn.setStyleSheet(get_btn_css())
+        cancel_btn.clicked.connect(self.reject)
+        btn_row.addWidget(cancel_btn)
+
+        ok_btn = QPushButton("Enter  OK")
+        ok_btn.setStyleSheet(get_btn_css())
+        ok_btn.clicked.connect(self._confirm)
+        btn_row.addWidget(ok_btn)
+
+        layout.addLayout(btn_row)
+        self.setMinimumWidth(250)
+
+    def _confirm(self):
+        self.confirmed = True
+        self.accept()
+
+    def keyPressEvent(self, e):
+        key = e.key()
+        if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            self._confirm()
+        elif key == Qt.Key.Key_Escape:
+            self.reject()
+        else:
+            super().keyPressEvent(e)
+
+
 class HelpDialog(DraggableDialog):
     """Help dialog with about info and keymap."""
     window_name = "help"
@@ -1859,7 +1919,7 @@ class ModelDialog(OptionsDialog):
 
 
 class TranscriptionActionsDialog(DraggableDialog):
-    """Dialog with actions for a transcription: Copy, Tmux, Play, Re-transcribe, LLM."""
+    """Dialog with actions for a transcription: Copy, Tmux, Play, Re-transcribe, LLM, Open files."""
 
     # Action: (key, icon, label, description)
     ACTIONS = [
@@ -1868,9 +1928,12 @@ class TranscriptionActionsDialog(DraggableDialog):
         ('P', 'play', 'Play Audio', 'Play the original audio recording'),
         ('R', 'refresh', 'Re-transcribe', 'Re-transcribe with current model'),
         ('L', 'robot', 'Run LLM', 'Process with LLM (de-ramble)'),
+        ('A', 'file-audio', 'Open Audio File', 'Open audio file in Finder'),
+        ('O', 'file-text', 'Open Transcript', 'Open transcription text file in Finder'),
+        ('H', 'eye-off', 'Hide', 'Remove transcription from list'),
     ]
 
-    def __init__(self, has_audio=True, parent=None):
+    def __init__(self, has_audio=True, has_transcript=True, parent=None):
         super().__init__(parent)
         self.selected_action = None
         self._key_map = {}
@@ -1882,9 +1945,11 @@ class TranscriptionActionsDialog(DraggableDialog):
         layout.addWidget(make_title("Actions"))
 
         for key, icon_name, label, desc in self.ACTIONS:
-            # Disable Play if no audio
+            # Disable options that require files that don't exist
             enabled = True
-            if icon_name == 'play' and not has_audio:
+            if icon_name in ('play', 'refresh', 'file-audio') and not has_audio:
+                enabled = False
+            if icon_name == 'file-text' and not has_transcript:
                 enabled = False
 
             btn = QPushButton()
@@ -4165,9 +4230,12 @@ class PrefsDialog(DraggableDialog):
         title_row.addWidget(QWidget())  # Spacer for balance
         layout.addLayout(title_row)
 
-        # Main content: Theme | Settings
-        content = QHBoxLayout()
+        # Main content: Theme | Settings (wrapped in scroll area for small monitors)
+        content_widget = QWidget()
+        content_widget.setStyleSheet("QWidget { background: transparent; }")
+        content = QHBoxLayout(content_widget)
         content.setSpacing(15)
+        content.setContentsMargins(0, 0, 0, 0)
 
         # Left side: Notification Chime Instrument + Theme
         theme_box = QVBoxLayout()
@@ -4713,7 +4781,7 @@ class PrefsDialog(DraggableDialog):
             pet_grid.addWidget(pet_widget)
         settings_box.addLayout(pet_grid)
 
-        # Window section
+        # Window section - both checkboxes on same row
         settings_box.addWidget(make_section("Window"))
         window_row = QHBoxLayout()
         window_row.setSpacing(8)
@@ -4724,7 +4792,7 @@ class PrefsDialog(DraggableDialog):
         self.always_on_top_checkbox.stateChanged.connect(self._on_always_on_top_changed)
         window_row.addWidget(self.always_on_top_checkbox)
         # Show override notice when in blue mode (tmux fullscreen)
-        self.blue_mode_label = QLabel("(overridden: fullscreen)")
+        self.blue_mode_label = QLabel("(overridden)")
         self.blue_mode_label.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 10px; font-style: italic;")
         main_window = self.parent()
         if main_window and hasattr(main_window, '_blue_mode_override') and main_window._blue_mode_override:
@@ -4732,25 +4800,47 @@ class PrefsDialog(DraggableDialog):
         else:
             self.blue_mode_label.hide()
         window_row.addWidget(self.blue_mode_label)
-        window_row.addStretch()
-        settings_box.addLayout(window_row)
-
-        restore_geom_row = QHBoxLayout()
-        restore_geom_row.setSpacing(8)
-        self.restore_geom_checkbox = QCheckBox("Restore Window Positions")
+        self.restore_geom_checkbox = QCheckBox("Restore Positions")
         self.restore_geom_checkbox.setChecked(S.RESTORE_WINDOW_GEOMETRY)
         self.restore_geom_checkbox.setStyleSheet(get_checkbox_css())
         self.restore_geom_checkbox.setToolTip(
             "Remember and restore window positions and sizes on startup.\n"
             "Applies to main window and dialogs (Preferences, Tmux, Help, etc.)")
         self.restore_geom_checkbox.stateChanged.connect(self._on_restore_geom_changed)
-        restore_geom_row.addWidget(self.restore_geom_checkbox)
-        restore_geom_row.addStretch()
-        settings_box.addLayout(restore_geom_row)
+        window_row.addWidget(self.restore_geom_checkbox)
+        window_row.addStretch()
+        settings_box.addLayout(window_row)
+
+        # Logs section - clear console and transcriptions
+        settings_box.addWidget(make_section("Logs"))
+        logs_row = QHBoxLayout()
+        logs_row.setSpacing(8)
+        clear_console_btn = QPushButton("Clear Console")
+        clear_console_btn.setStyleSheet(get_btn_css())
+        clear_console_btn.setToolTip("Clear the console output")
+        clear_console_btn.clicked.connect(self._clear_console)
+        logs_row.addWidget(clear_console_btn)
+        clear_trans_btn = QPushButton("Clear Transcriptions")
+        clear_trans_btn.setStyleSheet(get_btn_css())
+        clear_trans_btn.setToolTip("Remove all transcriptions from the list")
+        clear_trans_btn.clicked.connect(self._clear_transcriptions)
+        logs_row.addWidget(clear_trans_btn)
+        logs_row.addStretch()
+        settings_box.addLayout(logs_row)
 
         settings_box.addStretch()
         content.addLayout(settings_box)
-        layout.addLayout(content)
+
+        # Wrap entire content in scroll area for small monitors (vertical only, no horizontal scroll)
+        self.content_scroll = QScrollArea()
+        self.content_scroll.setWidget(content_widget)
+        self.content_scroll.setWidgetResizable(True)
+        self.content_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.content_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.content_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.content_scroll.setStyleSheet("QScrollArea { background: transparent; }" + SCROLLBAR_CSS)
+        self.content_widget = content_widget
+        layout.addWidget(self.content_scroll, 1)  # stretch=1 so it takes available space
 
         # Bottom action buttons row (3 equally spaced)
         action_row = QHBoxLayout()
@@ -4790,7 +4880,7 @@ class PrefsDialog(DraggableDialog):
         ok_btn.clicked.connect(self.accept)
         btn_row.addWidget(ok_btn)
         layout.addLayout(btn_row)
-        self.setMinimumWidth(600)  # Wide enough for two-column layout
+        self.setMinimumWidth(400)  # Compact two-column layout
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setFocus()  # Don't focus textboxes - allow number keys for themes
 
@@ -4836,6 +4926,26 @@ class PrefsDialog(DraggableDialog):
 
     def _on_restore_geom_changed(self, state):
         S.set('RESTORE_WINDOW_GEOMETRY', state == Qt.CheckState.Checked.value)
+
+    def _clear_transcriptions(self):
+        """Clear all transcriptions from the list with confirmation."""
+        dialog = ConfirmDialog(
+            "Clear Transcriptions",
+            "Are you sure you want to remove all transcriptions from the list?",
+            parent=self
+        )
+        if dialog.exec() == QDialog.DialogCode.Accepted and dialog.confirmed:
+            MAIN_WINDOW.transcriptions_panel.clear()
+
+    def _clear_console(self):
+        """Clear the console output with confirmation."""
+        dialog = ConfirmDialog(
+            "Clear Console",
+            "Are you sure you want to clear the console output?",
+            parent=self
+        )
+        if dialog.exec() == QDialog.DialogCode.Accepted and dialog.confirmed:
+            MAIN_WINDOW.output_panel.clear()
 
     def _on_auto_copy_pref_changed(self, state):
         S.set('AUTO_COPY', state == Qt.CheckState.Checked.value)
@@ -5074,6 +5184,13 @@ class PrefsDialog(DraggableDialog):
         else:
             super().keyPressEvent(e)
 
+    def resizeEvent(self, e):
+        """Sync content widget width to viewport to prevent horizontal overflow."""
+        super().resizeEvent(e)
+        # Make content_widget match viewport width (no horizontal scroll)
+        viewport_width = self.content_scroll.viewport().width()
+        self.content_widget.setFixedWidth(viewport_width)
+
 
 class PinchZoomScrollArea(QScrollArea):
     """Scroll area that supports pinch-to-zoom gestures on macOS."""
@@ -5180,7 +5297,8 @@ class ChimeEditorDialog(DraggableDialog):
         self.maximize_btn.setToolTip("Maximize (G)")
         self.maximize_btn.clicked.connect(self._toggle_maximize)
         title_row.addWidget(self.maximize_btn)
-        title_row.addWidget(make_title("Chime Editor"), 1)
+        self.title_label = make_title(f"Chime Editor: {S.CHIME_THEME}")
+        title_row.addWidget(self.title_label, 1)
         title_row.addWidget(QWidget())  # Spacer
         layout.addLayout(title_row)
 
@@ -5217,10 +5335,10 @@ class ChimeEditorDialog(DraggableDialog):
 
         controls.addSpacing(6)
 
-        # Duration knob - shows ms value in label
+        # Duration knob - shows ms value in label (exponential for finer control at low values)
         initial_ms = int(self._duration * 1000)
         self.duration_knob = RotaryKnob(f"{initial_ms}ms", min_val=20, max_val=500,
-                                        value=initial_ms, fmt="{:.0f}", size=32)
+                                        value=initial_ms, fmt="{:.0f}", size=32, exponential=True)
         self.duration_knob.valueChanged.connect(self._on_duration_changed)
         set_tooltip(self.duration_knob, "Duration per beat in milliseconds")
         controls.addWidget(self.duration_knob)
@@ -5278,24 +5396,15 @@ class ChimeEditorDialog(DraggableDialog):
         controls.addStretch()
 
         # Help hint
-        help_hint = QLabel("Left-click: add  |  Right-click: remove")
+        help_hint = QLabel("Left-click: add  |  Right-click: remove  |  Auto-saves")
         help_hint.setStyleSheet("color: rgba(255,255,255,0.5); font-size: 10px;")
         controls.addWidget(help_hint)
-
-        # Save button with keyboard shortcut
-        self.save_btn = QPushButton("⌘S Save")
-        self.save_btn.setIcon(load_icon("save", ICON_COLOR_DARK))
-        self.save_btn.setStyleSheet(get_btn_css())
-        self.save_btn.clicked.connect(self._save_custom)
-        set_tooltip(self.save_btn, "Save as custom pattern (⌘S)")
-        controls.addWidget(self.save_btn)
 
         # Revert button
         self.revert_btn = QPushButton("Revert")
         self.revert_btn.setIcon(load_icon("refresh", ICON_COLOR_DARK))
         self.revert_btn.setStyleSheet(get_btn_css())
         self.revert_btn.clicked.connect(self._revert_to_original)
-        set_tooltip(self.revert_btn, "Revert to original theme pattern (discard custom)")
         controls.addWidget(self.revert_btn)
 
         layout.addLayout(controls)
@@ -5331,6 +5440,9 @@ class ChimeEditorDialog(DraggableDialog):
         self.grid = ChimeGridWidget(self._num_beats, self.SEMITONE_RANGE, self._cell_size, self.SEMITONE_MIN)
         self.grid.patternChanged.connect(self._on_pattern_changed)
         self.grid.noteClicked.connect(self._play_note)
+        self.grid.strokeStarted.connect(self._on_stroke_started)
+        self.grid.strokeEnded.connect(self._on_stroke_ended)
+        self._in_stroke = False  # Track if we're in a brush stroke
         scroll_layout.addWidget(self.grid)
 
         scroll_layout.addStretch()
@@ -5522,9 +5634,6 @@ class ChimeEditorDialog(DraggableDialog):
             elif key == Qt.Key.Key_B:
                 self._set_edit_mode('brush')
                 return
-            elif key == Qt.Key.Key_S:
-                self._save_custom()
-                return
             elif key == Qt.Key.Key_Plus or key == Qt.Key.Key_Equal:
                 self._zoom_in()
                 return
@@ -5687,18 +5796,51 @@ class ChimeEditorDialog(DraggableDialog):
         self.grid.set_pattern(self._pattern)
         self.duration_knob.setValue(int(self._duration * 1000), emit=False)
         self._update_beats_knob_min()
+        self._update_revert_button()
+
+    def _update_revert_button(self):
+        """Update revert button enabled state and tooltip based on whether custom exists."""
+        has_custom = self._current_chime in S.CUSTOM_CHIMES
+        self.revert_btn.setEnabled(has_custom)
+        if has_custom:
+            set_tooltip(self.revert_btn,
+                f"Revert '{self._current_chime}' to original {S.CHIME_THEME} theme pattern, discarding your custom edits")
+        else:
+            set_tooltip(self.revert_btn,
+                f"No custom edits to revert - '{self._current_chime}' is using the original {S.CHIME_THEME} theme pattern")
+
+    def _on_stroke_started(self):
+        """Called when a brush stroke begins - push undo state once."""
+        self._in_stroke = True
+        self._push_undo()
+
+    def _on_stroke_ended(self):
+        """Called when a brush stroke ends."""
+        self._in_stroke = False
 
     def _on_pattern_changed(self, pattern):
         """Handle grid pattern change."""
-        self._push_undo()
+        # Only push undo if not in a stroke (stroke start already pushed)
+        if not self._in_stroke:
+            self._push_undo()
         self._pattern = pattern
         self._update_beats_knob_min()
+        self._auto_save()
 
     def _on_duration_changed(self, value):
         """Handle duration knob change."""
         self._push_undo()
         self._duration = value / 1000.0
         self.duration_knob.setLabel(f"{int(value)}ms")
+        self._auto_save()
+
+    def _auto_save(self):
+        """Auto-save current pattern to custom chimes."""
+        S.CUSTOM_CHIMES[self._current_chime] = {
+            'pattern': [list(beat) for beat in self._pattern],
+            'duration': self._duration
+        }
+        self._update_revert_button()
 
     def _on_beats_changed(self, value):
         """Handle beat count knob change."""
@@ -5823,6 +5965,7 @@ class ChimeEditorDialog(DraggableDialog):
         self.duration_knob.setValue(int(self._duration * 1000), emit=False)
         self._populate_chime_list()
         self._select_chime_in_list(name)
+        self._update_revert_button()
 
 
 class ChimePianoWidget(QWidget):
@@ -5979,6 +6122,8 @@ class ChimeGridWidget(QWidget):
     """Grid widget for editing chime note patterns."""
     patternChanged = pyqtSignal(list)  # Emits pattern when changed
     noteClicked = pyqtSignal(int)  # Emits semitone when note clicked
+    strokeStarted = pyqtSignal()  # Emits when a brush stroke begins
+    strokeEnded = pyqtSignal()  # Emits when a brush stroke ends
 
     def __init__(self, num_beats, semitone_range, cell_size, semitone_min, parent=None):
         super().__init__(parent)
@@ -6090,6 +6235,9 @@ class ChimeGridWidget(QWidget):
         beat, semitone = cell
         is_right_click = e.button() == Qt.MouseButton.RightButton
 
+        # Signal stroke start for undo batching
+        self.strokeStarted.emit()
+
         if self._edit_mode == 'pencil':
             # Pencil mode: start drag, will place note at release
             self._dragging = True
@@ -6187,6 +6335,8 @@ class ChimeGridWidget(QWidget):
             self._last_preview_semitone = None
             self._pencil_drag_cell = None
             self.update()
+            # Signal stroke end for undo batching
+            self.strokeEnded.emit()
 
     def leaveEvent(self, e):
         """Clear hover when mouse leaves."""
@@ -6459,7 +6609,17 @@ class TranscriptionRow(QFrame):
         # Set initial HTML (unhighlighted)
         self._set_diff_highlight(False)
 
-        # Hamburger menu button (replaces copy + deramble buttons)
+        # Robot button for quick LLM de-ramble (left of hamburger)
+        robot_btn = QPushButton()
+        robot_btn.setFixedSize(ICON_BTN_SIZE_SMALL, ICON_BTN_SIZE_SMALL)
+        robot_btn.setIconSize(QSize(ICON_SIZE, ICON_SIZE))
+        robot_btn.setToolTip("Run LLM de-ramble (L)")
+        robot_btn.clicked.connect(lambda: self.deramble_clicked.emit(self.text))
+        robot_btn.icon_name = "robot"
+        layout.addWidget(robot_btn, 0, Qt.AlignmentFlag.AlignTop)
+        self._buttons.append(robot_btn)
+
+        # Hamburger menu button (for all actions)
         menu_btn = QPushButton()
         menu_btn.setFixedSize(ICON_BTN_SIZE_SMALL, ICON_BTN_SIZE_SMALL)
         menu_btn.setIconSize(QSize(ICON_SIZE, ICON_SIZE))
@@ -6576,13 +6736,17 @@ class TranscriptionItem(QFrame):
     tmux_clicked = pyqtSignal(str, str)  # (pane_id, text) - send to tmux pane
     play_clicked = pyqtSignal(str)  # audio_path
     retranscribe_clicked = pyqtSignal(str)  # audio_path
+    open_audio_clicked = pyqtSignal(str)  # audio_path - open with default app
+    open_transcript_clicked = pyqtSignal(str)  # transcript_path - open with default app
+    hide_clicked = pyqtSignal(int)  # index - hide/remove this transcription
 
-    def __init__(self, raw_text, processed_text, index, audio_path=None, parent=None):
+    def __init__(self, raw_text, processed_text, index, audio_path=None, transcript_path=None, parent=None):
         super().__init__(parent)
         self.index = index
         self.raw_text = raw_text
         self.processed_text = processed_text
         self.audio_path = audio_path
+        self.transcript_path = transcript_path
         self.diff_rows = []  # Rows that need coordinated highlighting
         self.first_row = None
 
@@ -6592,11 +6756,15 @@ class TranscriptionItem(QFrame):
 
         if processed_text:
             raw_row = TranscriptionRow(raw_text, dimmed=True, other_text=processed_text, is_raw=True)
+            raw_row.clicked.connect(self.copy_clicked.emit)
+            raw_row.deramble_clicked.connect(lambda _: self.deramble_clicked.emit(self.index, self.raw_text))
             raw_row.menu_clicked.connect(lambda: self._show_actions_menu(raw_text))
             raw_row.hover_changed.connect(self._on_hover_changed)
             layout.addWidget(raw_row)
 
             proc_row = TranscriptionRow(processed_text, dimmed=False, other_text=raw_text, is_raw=False)
+            proc_row.clicked.connect(self.copy_clicked.emit)
+            proc_row.deramble_clicked.connect(lambda _: self.deramble_clicked.emit(self.index, self.raw_text))
             proc_row.menu_clicked.connect(lambda: self._show_actions_menu(processed_text))
             proc_row.hover_changed.connect(self._on_hover_changed)
             layout.addWidget(proc_row)
@@ -6605,6 +6773,8 @@ class TranscriptionItem(QFrame):
             self.first_row = raw_row
         else:
             row = TranscriptionRow(raw_text, dimmed=False, show_deramble=False)
+            row.clicked.connect(self.copy_clicked.emit)
+            row.deramble_clicked.connect(lambda _: self.deramble_clicked.emit(self.index, self.raw_text))
             row.menu_clicked.connect(lambda: self._show_actions_menu(raw_text))
             layout.addWidget(row)
             self.first_row = row
@@ -6613,7 +6783,11 @@ class TranscriptionItem(QFrame):
 
     def _show_actions_menu(self, text):
         """Show the actions menu for this transcription."""
-        dialog = TranscriptionActionsDialog(has_audio=bool(self.audio_path), parent=self.window())
+        dialog = TranscriptionActionsDialog(
+            has_audio=bool(self.audio_path),
+            has_transcript=bool(self.transcript_path),
+            parent=self.window()
+        )
         if dialog.exec() == QDialog.DialogCode.Accepted and dialog.selected_action:
             action = dialog.selected_action
             if action == 'C':
@@ -6626,6 +6800,12 @@ class TranscriptionItem(QFrame):
                 self.retranscribe_clicked.emit(self.audio_path)
             elif action == 'L':
                 self.deramble_clicked.emit(self.index, self.raw_text)
+            elif action == 'A' and self.audio_path:
+                self.open_audio_clicked.emit(self.audio_path)
+            elif action == 'O' and self.transcript_path:
+                self.open_transcript_clicked.emit(self.transcript_path)
+            elif action == 'H':
+                self.hide_clicked.emit(self.index)
 
     def _show_tmux_selector(self, text):
         """Show tmux pane selector and send text to selected pane."""
@@ -6659,6 +6839,9 @@ class TranscriptionList(QScrollArea):
     tmux_requested = pyqtSignal(str, str)  # (pane_id, text) - send to tmux pane
     play_requested = pyqtSignal(str)  # audio_path
     retranscribe_requested = pyqtSignal(str)  # audio_path
+    open_audio_requested = pyqtSignal(str)  # audio_path - open with default app
+    open_transcript_requested = pyqtSignal(str)  # transcript_path - open with default app
+    hide_requested = pyqtSignal(int)  # index - hide/remove transcription
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -6695,11 +6878,14 @@ class TranscriptionList(QScrollArea):
         item.tmux_clicked.connect(self.tmux_requested.emit)
         item.play_clicked.connect(self.play_requested.emit)
         item.retranscribe_clicked.connect(self.retranscribe_requested.emit)
+        item.open_audio_clicked.connect(self.open_audio_requested.emit)
+        item.open_transcript_clicked.connect(self.open_transcript_requested.emit)
+        item.hide_clicked.connect(self._hide_item)
 
-    def add_transcription(self, raw_text, processed_text, audio_path=None):
+    def add_transcription(self, raw_text, processed_text, audio_path=None, transcript_path=None):
         index = self.item_count
         self.item_count += 1
-        item = TranscriptionItem(raw_text, processed_text, index, audio_path=audio_path)
+        item = TranscriptionItem(raw_text, processed_text, index, audio_path=audio_path, transcript_path=transcript_path)
         self._connect_item_signals(item)
         # Insert before the stretch
         self._layout.insertWidget(self._layout.count() - 1, item)
@@ -6707,17 +6893,19 @@ class TranscriptionList(QScrollArea):
         QTimer.singleShot(10, lambda: self.verticalScrollBar().setValue(
             self.verticalScrollBar().maximum()))
 
-    def update_transcription(self, index, raw_text, processed_text, audio_path=None):
+    def update_transcription(self, index, raw_text, processed_text, audio_path=None, transcript_path=None):
         """Replace transcription at index with updated raw+processed version."""
         # Find the widget at this index (widgets are in order, stretch is last)
         if index < self._layout.count() - 1:
             old_item = self._layout.takeAt(index)
             if old_item and old_item.widget():
-                # Preserve audio_path from old item if not provided
+                # Preserve paths from old item if not provided
                 if audio_path is None:
                     audio_path = getattr(old_item.widget(), 'audio_path', None)
+                if transcript_path is None:
+                    transcript_path = getattr(old_item.widget(), 'transcript_path', None)
                 old_item.widget().deleteLater()
-            new_item = TranscriptionItem(raw_text, processed_text, index, audio_path=audio_path)
+            new_item = TranscriptionItem(raw_text, processed_text, index, audio_path=audio_path, transcript_path=transcript_path)
             self._connect_item_signals(new_item)
             self._layout.insertWidget(index, new_item)
             # Scroll to bottom after update
@@ -6730,6 +6918,17 @@ class TranscriptionList(QScrollArea):
             if item.widget():
                 item.widget().deleteLater()
         self.item_count = 0
+
+    def _hide_item(self, index):
+        """Hide/remove transcription at given index."""
+        # Find the widget with matching index
+        for i in range(self._layout.count() - 1):  # Skip the stretch
+            item = self._layout.itemAt(i)
+            if item and item.widget() and getattr(item.widget(), 'index', -1) == index:
+                taken = self._layout.takeAt(i)
+                if taken and taken.widget():
+                    taken.widget().deleteLater()
+                break
 
 
 class Mini7Segment(QWidget):
@@ -6803,7 +7002,7 @@ class RotaryKnob(QWidget):
     valueChanged = pyqtSignal(float)
 
     def __init__(self, label, min_val=0.0, max_val=1.0, value=0.5, fmt="{:.0%}",
-                 size=36, color=None, parent=None):
+                 size=36, color=None, exponential=False, parent=None):
         """
         Args:
             label: Text label shown below knob
@@ -6813,6 +7012,7 @@ class RotaryKnob(QWidget):
             fmt: Format string for value display (e.g. "{:.0%}", "{:+d}", "{:.1f}")
             size: Knob diameter in pixels (default 36)
             color: Accent color (defaults to theme accent)
+            exponential: Use exponential/logarithmic scaling (finer control at low values)
         """
         super().__init__(parent)
         self._label = label
@@ -6822,6 +7022,7 @@ class RotaryKnob(QWidget):
         self._fmt = fmt
         self._size = size
         self._color = color
+        self._exponential = exponential
         self._dragging = False
         self._drag_start_y = 0
         self._drag_start_val = 0
@@ -6840,6 +7041,28 @@ class RotaryKnob(QWidget):
             if emit:
                 self.valueChanged.emit(val)
 
+    def _value_to_ratio(self, val):
+        """Convert value to 0-1 ratio, using exponential scaling if enabled."""
+        if self._max <= self._min:
+            return 0
+        if self._exponential:
+            # Exponential: ratio = log(val/min) / log(max/min)
+            # This gives finer control at lower values
+            if val <= self._min:
+                return 0
+            return math.log(val / self._min) / math.log(self._max / self._min)
+        else:
+            return (val - self._min) / (self._max - self._min)
+
+    def _ratio_to_value(self, ratio):
+        """Convert 0-1 ratio to value, using exponential scaling if enabled."""
+        ratio = max(0, min(1, ratio))
+        if self._exponential:
+            # Exponential: val = min * (max/min)^ratio
+            return self._min * math.pow(self._max / self._min, ratio)
+        else:
+            return self._min + ratio * (self._max - self._min)
+
     def setColor(self, color):
         self._color = color
         self.update()
@@ -6857,7 +7080,7 @@ class RotaryKnob(QWidget):
         w, h = self.width(), self.height()
         cx, cy = w // 2, self._size // 2 + 2
         r = self._size // 2 - 2
-        ratio = (self._value - self._min) / (self._max - self._min) if self._max > self._min else 0
+        ratio = self._value_to_ratio(self._value)
         accent = self._color or QColor(STYLE.accent_css)
 
         # Get theme-specific knob style
@@ -7088,14 +7311,16 @@ class RotaryKnob(QWidget):
         if event.button() == Qt.MouseButton.LeftButton:
             self._dragging = True
             self._drag_start_y = event.pos().y()
-            self._drag_start_val = self._value
+            self._drag_start_ratio = self._value_to_ratio(self._value)
             self.setCursor(Qt.CursorShape.ClosedHandCursor)
 
     def mouseMoveEvent(self, event):
         if self._dragging:
             dy = self._drag_start_y - event.pos().y()
-            sensitivity = (self._max - self._min) / 100  # Full range over 100px drag
-            new_val = self._drag_start_val + dy * sensitivity
+            # Work in ratio space (0-1) for consistent feel with exponential
+            ratio_sensitivity = 1.0 / 100  # Full range over 100px drag
+            new_ratio = self._drag_start_ratio + dy * ratio_sensitivity
+            new_val = self._ratio_to_value(new_ratio)
             self.setValue(new_val)
 
     def mouseReleaseEvent(self, event):
@@ -7105,11 +7330,14 @@ class RotaryKnob(QWidget):
 
     def wheelEvent(self, event):
         delta = event.angleDelta().y()
-        step = (self._max - self._min) / 50  # 50 steps for full range
+        # Work in ratio space for consistent feel with exponential
+        ratio_step = 1.0 / 50  # 50 steps for full range
+        current_ratio = self._value_to_ratio(self._value)
         if delta > 0:
-            self.setValue(self._value + step)
+            new_val = self._ratio_to_value(current_ratio + ratio_step)
         else:
-            self.setValue(self._value - step)
+            new_val = self._ratio_to_value(current_ratio - ratio_step)
+        self.setValue(new_val)
 
 
 class TimerWidget(QWidget):
@@ -7573,7 +7801,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
     toggle_signal = pyqtSignal()
     focus_signal = pyqtSignal()
     paste_signal = pyqtSignal(str)
-    add_transcription_signal = pyqtSignal(str, str, str)  # (raw_text, processed_text, audio_path)
+    add_transcription_signal = pyqtSignal(str, str, str, str)  # (raw_text, processed_text, audio_path, transcript_path)
     update_transcription_signal = pyqtSignal(int, str, str)  # (index, raw_text, processed_text)
     permission_error_signal = pyqtSignal()
     wake_word_signal = pyqtSignal(object)  # pre_buffer numpy array
@@ -7826,6 +8054,8 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         self.transcriptions_panel.tmux_requested.connect(self._send_to_tmux_pane)
         self.transcriptions_panel.play_requested.connect(self._play_audio_file)
         self.transcriptions_panel.retranscribe_requested.connect(self._retranscribe_audio_file)
+        self.transcriptions_panel.open_audio_requested.connect(self._open_audio_file)
+        self.transcriptions_panel.open_transcript_requested.connect(self._open_transcript_file)
         self.tab_stack.addWidget(self.output_panel)
         self.tab_stack.addWidget(self.transcriptions_panel)
 
@@ -7989,12 +8219,12 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
             btn.setDown(True)
             QTimer.singleShot(100, lambda: btn.setDown(False))
 
-    def _add_transcription(self, raw_text, processed_text, audio_path):
-        self.transcriptions.append((raw_text, processed_text, audio_path))
-        self.transcriptions_panel.add_transcription(raw_text, processed_text, audio_path)
+    def _add_transcription(self, raw_text, processed_text, audio_path, transcript_path):
+        self.transcriptions.append((raw_text, processed_text, audio_path, transcript_path))
+        self.transcriptions_panel.add_transcription(raw_text, processed_text, audio_path, transcript_path)
         self._switch_tab(1)
         # Update retranscribe button enabled state
-        self.retranscribe_btn.setEnabled(audio_path is not None)
+        self.retranscribe_btn.setEnabled(bool(audio_path))
 
     def _update_transcription(self, index, raw_text, processed_text):
         # Preserve audio_path from existing transcription
@@ -8040,6 +8270,28 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         """Retranscribe a specific audio file."""
         if audio_path and os.path.exists(audio_path):
             self._transcribe_file(audio_path)
+        else:
+            play_chime('delete')
+
+    def _open_audio_file(self, audio_path):
+        """Open an audio file with the default application."""
+        if audio_path and os.path.exists(audio_path):
+            try:
+                subprocess.run(['open', audio_path], check=True)
+                play_chime('copy')
+            except Exception:
+                play_chime('delete')
+        else:
+            play_chime('delete')
+
+    def _open_transcript_file(self, transcript_path):
+        """Open a transcript file with the default application."""
+        if transcript_path and os.path.exists(transcript_path):
+            try:
+                subprocess.run(['open', transcript_path], check=True)
+                play_chime('copy')
+            except Exception:
+                play_chime('delete')
         else:
             play_chime('delete')
 
@@ -9112,7 +9364,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         if S.LLM_ENABLED:
             # Show raw immediately, paste after LLM finishes
             index = len(self.transcriptions)
-            self.add_transcription_signal.emit(raw_text, "", audio_path or "")
+            self.add_transcription_signal.emit(raw_text, "", audio_path or "", archive_txt_path or "")
 
             def run_llm_and_update():
                 processed = self._run_llm(raw_text)
@@ -9127,7 +9379,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
             save_text(archive_txt_path, raw_text)  # Also save to permanent archive
             self.last_transcription = raw_text
             self.paste_signal.emit(raw_text)
-            self.add_transcription_signal.emit(raw_text, "", audio_path or "")
+            self.add_transcription_signal.emit(raw_text, "", audio_path or "", archive_txt_path or "")
 
     def _transcribe(self, audio):
         try:
@@ -9195,7 +9447,9 @@ def main():
         UI_FONT = QFontDatabase.applicationFontFamilies(font_id)[0]
 
     app.setStyleSheet(f"QToolTip {{ background: #333; color: white; border: 1px solid #555; border-radius: 4px; font-family: {UI_FONT}; }}")
-    window = VoiceThingWindow()
+    global MAIN_WINDOW
+    MAIN_WINDOW = VoiceThingWindow()
+    window = MAIN_WINDOW  # Keep local reference for compatibility
 
     tap_state = [0.0, 0, 0.0, False]  # [last_release_time, tap_count, current_press_time, pre_cancel_played]
     pressed = set()

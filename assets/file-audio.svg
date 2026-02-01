@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24">
+  <!-- Audio file icon (music note on document) -->
+  <path fill="#ffffff" d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm4 18H6V4h7v5h5v11z"/>
+  <!-- Music note -->
+  <path fill="#ffffff" d="M15 11v5.5c0 1.38-1.12 2.5-2.5 2.5S10 17.88 10 16.5s1.12-2.5 2.5-2.5c.57 0 1.08.19 1.5.51V11h1z"/>
+</svg>
