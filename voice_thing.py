@@ -4221,11 +4221,16 @@ class PrefsDialog(DraggableDialog):
         layout.setContentsMargins(DIALOG_MARGIN, DIALOG_MARGIN, DIALOG_MARGIN, DIALOG_MARGIN)
         layout.setSpacing(12)
 
-        # Title row with close button
+        # Title row with traffic light buttons
         title_row = QHBoxLayout()
         title_row.setSpacing(6)
         close_btn = make_traffic_light_close(self.accept)
         title_row.addWidget(close_btn)
+        # Green maximize button
+        self.maximize_btn = TrafficLightButton("rgb(52, 199, 89)", "rgb(80, 220, 110)", "macos-fullscreen")
+        self.maximize_btn.setToolTip("Maximize (G)")
+        self.maximize_btn.clicked.connect(self._toggle_maximize)
+        title_row.addWidget(self.maximize_btn)
         title_row.addWidget(make_title("Preferences"), 1)
         title_row.addWidget(QWidget())  # Spacer for balance
         layout.addLayout(title_row)
@@ -5181,6 +5186,8 @@ class PrefsDialog(DraggableDialog):
             idx = key - Qt.Key.Key_1
             if idx < self.chime_theme_combo.count():
                 self.chime_theme_combo.setCurrentIndex(idx)
+        elif key == Qt.Key.Key_G:
+            self._toggle_maximize()
         else:
             super().keyPressEvent(e)
 
