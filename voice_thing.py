@@ -1409,7 +1409,7 @@ ACTIONS = [
     ("sound", "S", "volume", "Toggle sound effects", None),
     ("auto_hide", "H", "eye", "Toggle auto-minimize", None),
     ("llm", "R", "robot", "Toggle LLM post-processing", None),
-    ("wake_word", "J", "ear", "Toggle wake word detection", None),
+    ("wake_word", "J", "ear", "Toggle wake word detection (disable to save battery)", None),
     ("auto_enter", "N", "enter", "Toggle auto-enter after paste", None),
     ("tmux", "U", "tmux", "Open tmux pane manager", None),
     ("chime_editor", "I", "music", "Open chime editor", None),
@@ -3938,9 +3938,10 @@ class TTSSettingsWidget(QWidget):
 class WakeWordSettingsWidget(QWidget):
     """Wake word settings with per-engine configuration."""
 
-    # Engine changed signal (for parent to respond)
+    # Signals for parent to respond
     engine_changed = pyqtSignal(str)
     settings_changed = pyqtSignal()  # Generic signal when any setting changes
+    enabled_changed = pyqtSignal(bool)  # Emits when enabled checkbox toggled
 
     # Engine options
     ENGINES = [
@@ -3957,6 +3958,24 @@ class WakeWordSettingsWidget(QWidget):
 
     def _build_ui(self):
         self._layout.addWidget(make_section("Wake Word"))
+
+        # Enable checkbox (battery saver - wake word detection uses battery)
+        enable_row = QHBoxLayout()
+        enable_row.setSpacing(8)
+        enable_label = QLabel("Detection:")
+        enable_label.setStyleSheet(get_pref_label_css())
+        set_tooltip(enable_label,
+            "Enable or disable wake word detection.\n\n"
+            "Wake word detection constantly listens for trigger phrases,\n"
+            "which uses significant battery on laptops.\n\n"
+            "Disable when not needed to save battery.")
+        enable_row.addWidget(enable_label)
+        self._enable_checkbox = QCheckBox("Enable wake word detection")
+        self._enable_checkbox.setChecked(S.WAKE_WORD_ENABLED)
+        self._enable_checkbox.setStyleSheet(get_checkbox_css(12))
+        self._enable_checkbox.stateChanged.connect(self._on_enabled_changed)
+        enable_row.addWidget(self._enable_checkbox, 1)
+        self._layout.addLayout(enable_row)
 
         # Engine selector
         engine_row = QHBoxLayout()
@@ -4168,6 +4187,18 @@ class WakeWordSettingsWidget(QWidget):
             "Regular wake words can still stop recording.\n\n"
             "The first phrase in your transcription determines\n"
             "which pane receives the text.")
+
+    def _on_enabled_changed(self, state):
+        """Handle enable checkbox toggle."""
+        enabled = state == Qt.CheckState.Checked.value
+        S.set('WAKE_WORD_ENABLED', enabled)
+        self.enabled_changed.emit(enabled)
+
+    def set_enabled_state(self, enabled):
+        """Update checkbox state from external change (e.g., toolbar button)."""
+        self._enable_checkbox.blockSignals(True)
+        self._enable_checkbox.setChecked(enabled)
+        self._enable_checkbox.blockSignals(False)
 
     def get_current_display_name(self) -> str:
         """Get display name for current wake word (for tooltip etc)."""
@@ -4445,6 +4476,7 @@ class PrefsDialog(DraggableDialog):
         self.wake_word_widget = WakeWordSettingsWidget()
         self.wake_word_widget.engine_changed.connect(self._on_wake_word_engine_changed)
         self.wake_word_widget.settings_changed.connect(self._on_wake_word_settings_changed)
+        self.wake_word_widget.enabled_changed.connect(self._on_wake_word_enabled_changed)
         settings_box.addWidget(self.wake_word_widget)
 
         # Paste Behavior section (separate from wake word)
@@ -4914,6 +4946,11 @@ class PrefsDialog(DraggableDialog):
     def _on_wake_word_settings_changed(self):
         """Handle any wake word setting change - restart listener if active."""
         # Emit the engine change signal to trigger restart
+        self.wake_word_changed.emit(S.WAKEWORD_ENGINE)
+
+    def _on_wake_word_enabled_changed(self, enabled):
+        """Handle wake word enabled toggle from checkbox."""
+        # The WakeWordSettingsWidget already called S.set(), just emit signal
         self.wake_word_changed.emit(S.WAKEWORD_ENGINE)
 
     def _on_enter_changed(self, state):
@@ -7957,7 +7994,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         self.llm_btn.setCheckable(True)
         self.llm_btn.setEnabled(True)
         self.wake_word_btn = make_btn("J", "ear", self.toggle_wake_word)
-        self.wake_word_btn.setToolTip(f"Toggle wake word ({self._get_wake_word_display()})")
+        self.wake_word_btn.setToolTip(f"Toggle wake word ({self._get_wake_word_display()}) - disable to save battery")
         self.wake_word_btn.setCheckable(True)
         self.wake_word_btn.setEnabled(True)
         self.enter_btn = make_btn("N", "enter", self.toggle_auto_enter)
@@ -8754,6 +8791,9 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
     def _on_wake_word_enabled_changed(self, enabled):
         self.wake_word_btn.setChecked(enabled)
         self._update_checkable_btn_icon(self.wake_word_btn)
+        # Update prefs dialog checkbox if open
+        if hasattr(self, '_prefs_dialog') and self._prefs_dialog:
+            self._prefs_dialog.wake_word_widget.set_enabled_state(enabled)
         if enabled:
             self._start_wake_word_listener()
             play_chime('record_start')

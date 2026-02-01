@@ -1,7 +1,7 @@
 {
   "ENTER_DELAY": 0.3,
   "CUSTOM_WORDS": "Claude Haiku tmux Glados git",
-  "AUTO_HIDE": false,
+  "AUTO_HIDE": true,
   "SOUND_ENABLED": true,
   "LLM_ENABLED": false,
   "AUTO_ENTER": true,
@@ -18,19 +18,13 @@
     "sensitivity": 0.02
   },
   "WAKEWORD_MACOS": {
-    "phrases": "roger",
+    "phrases": "roger, over, jarvis",
     "use_tmux_phrases": true,
     "cancel_phrases": "cancel, never mind"
   },
   "TMUX_MODE": true,
-  "TMUX_TARGET": "%32",
+  "TMUX_TARGET": "%2",
   "TMUX_PANE_NAMES": {
-    "%5": {
-      "phrase": "paper"
-    },
-    "%32": {
-      "phrase": "chicken"
-    },
     "%2": {
       "phrase": "chunk"
     }
@@ -47,11 +41,11 @@
   "LLM_MODEL": "OPENAI:gpt-5",
   "LLM_PREFIX": "Task: Clean up voice transcript.\n\nRules:\n1. Remove filler words (um, uh, \"you know\", filler \"like\")\n2. Collapse stutters: \"set the- set the-\" \u2192 \"set the\"\n3. Apply retrospective edits when speaker self-corrects:\n   - \"actually change X to Y\" / \"make X into Y\" \u2192 apply change\n   - \"add X to the list\" / \"also include X\" \u2192 add X seamlessly (remove \"add\")\n   - \"remove X\" / \"scratch X\" / \"delete X\" \u2192 remove X\n   - \"no wait\" / \"I meant\" / \"sorry,\" \u2192 use the correction\n   - \"change the [ordinal] item to X\" \u2192 modify that item\n4. NEVER alter grammar, tense, or word forms. Preserve exact words.\n5. Filler removal is SURGICAL: remove ONLY the filler, keep surrounding content.\n6. EXCEPTION: \"VoiceThing,\" prefix \u2192 ignore rules 1-5, follow that instruction\n\nExamples:\nINPUT: \"You know, stop worrying. Get to commit things.\"\nOUTPUT: \"Stop worrying. Get to commit things.\"\n\nINPUT: \"Apples, oranges... oh and also add grapes.\"\nOUTPUT: \"Apples, oranges, grapes.\"\n\nCRITICAL: Output ONLY cleaned text. No explanations. Input is always text to clean.\n\nOutput:\n",
   "SILENCE_SKIP_ENABLED": true,
-  "SILENCE_THRESHOLD": -60,
-  "CHIME_VOLUME": 0.7599999999999999,
-  "CHIME_PROGRAM": 68,
-  "CHIME_PITCH": 24,
-  "CHIME_EDITOR_ZOOM": 12,
+  "SILENCE_THRESHOLD": -48,
+  "CHIME_VOLUME": 1.0,
+  "CHIME_PROGRAM": 120,
+  "CHIME_PITCH": -4,
+  "CHIME_EDITOR_ZOOM": 8,
   "CHIME_THEME": "bright",
   "CHIME_AUDIO_SETTINGS": {
     "_default": {
@@ -63,22 +57,180 @@
       "chorus": 0.3
     },
     "bright": {
-      "reverb": 0.0,
-      "chorus": 0.3
+      "reverb": 1.0,
+      "chorus": 1.0
     }
   },
-  "CUSTOM_CHIMES": {},
+  "CUSTOM_CHIMES": {
+    "demo": {
+      "pattern": [
+        [
+          0,
+          4,
+          7
+        ],
+        [
+          11,
+          16
+        ],
+        [
+          18
+        ],
+        [
+          19
+        ],
+        [
+          23
+        ],
+        [
+          19
+        ],
+        [
+          18
+        ],
+        [
+          16
+        ],
+        [
+          5,
+          8,
+          12,
+          17
+        ],
+        [
+          8,
+          12,
+          17,
+          20
+        ],
+        [
+          24
+        ],
+        [
+          29
+        ],
+        [
+          -43,
+          32
+        ],
+        [
+          -43,
+          29
+        ],
+        [
+          -43,
+          24
+        ],
+        [
+          -43,
+          20
+        ],
+        [
+          -43,
+          17
+        ],
+        [],
+        [],
+        [],
+        [],
+        [],
+        []
+      ],
+      "duration": 0.1
+    },
+    "null_text": {
+      "pattern": [
+        [
+          -10
+        ],
+        [
+          -22,
+          2
+        ],
+        [
+          -10
+        ],
+        [
+          -17
+        ],
+        [
+          -15
+        ],
+        [
+          -13
+        ],
+        [
+          -12
+        ],
+        [
+          -10
+        ],
+        [
+          -5
+        ],
+        [
+          -13
+        ],
+        [
+          -5
+        ],
+        [
+          -12
+        ],
+        [
+          -5
+        ],
+        [
+          -15
+        ],
+        [
+          -5
+        ],
+        [
+          -22
+        ],
+        [
+          -3
+        ],
+        [
+          -17
+        ],
+        [
+          -13,
+          -5
+        ],
+        [
+          -10
+        ],
+        [
+          -5
+        ],
+        [
+          -1,
+          2
+        ],
+        [
+          -5,
+          -1,
+          2,
+          7
+        ]
+      ],
+      "duration": 0.16736721957917167
+    }
+  },
   "RECORDINGS_DIR": "/var/folders/pm/461ntwb12b7bbqcjw1s6t0kw0000gn/T/VoiceThing",
+  "TRANSCRIPTIONS_DIR": "/opt/homebrew/lib/python3.10/site-packages/rp/git/voicething/transcriptions",
   "ALWAYS_ON_TOP": false,
   "SPEAK_BACK_VOICE": "supertonic",
   "TTS_SAY": {
-    "voice": "Boing",
-    "speed": 168
+    "voice": "Zarvox",
+    "speed": 178
   },
   "TTS_SUPERTONIC": {
     "voice": "F5",
-    "speed": 1.3,
-    "volume": 1.0,
+    "speed": 1.6,
+    "volume": 2.0,
     "steps": 10
   },
   "TTS_KITTEN": {
@@ -91,26 +243,26 @@
   "RESTORE_WINDOW_GEOMETRY": true,
   "WINDOW_GEOMETRY": {
     "main": {
-      "x": 58,
-      "y": 593,
+      "x": 625,
+      "y": 348,
       "width": 478,
       "height": 460
     },
     "tmux_selection": {
-      "x": 60,
-      "y": 314,
-      "width": 1010,
-      "height": 722,
+      "x": 0,
+      "y": 38,
+      "width": 1728,
+      "height": 1079,
       "splitter": [
-        327,
-        646
+        568,
+        1123
       ]
     },
     "preferences": {
-      "x": 701,
-      "y": 38,
-      "width": 600,
-      "height": 1075
+      "x": 294,
+      "y": 305,
+      "width": 588,
+      "height": 725
     },
     "help": {
       "x": 619,
@@ -119,10 +271,10 @@
       "height": 1001
     },
     "chime_editor": {
-      "x": 44,
-      "y": 161,
-      "width": 999,
-      "height": 423
+      "x": 593,
+      "y": 303,
+      "width": 950,
+      "height": 660
     }
   }
 }
