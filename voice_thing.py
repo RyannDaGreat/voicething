@@ -105,27 +105,27 @@ BTN_PADDING_H = 8  # Horizontal padding inside button layouts
 BTN_PADDING_V = 4  # Vertical padding inside button layouts
 
 # Chime event descriptions - tooltips for the chime editor
-# Note: record_start/stop are for main button, start_rec/stop_rec are for D-key quick workflow
+# Note: wake_word_start/stop are for J/K wake word toggle, start_rec/stop_rec are for D-key quick workflow
 CHIME_DESCRIPTIONS = {
-    'demo':           "Preview sound for this theme",
-    'focus':          "Window gains focus",
-    'unfocus':        "Window loses focus",
-    'copy':           "Text copied to clipboard",
-    'delete':         "Transcription deleted",
-    'enter':          "Text sent (Enter key)",
-    'cancel':         "Recording cancelled",
-    'pre_cancel':     "About to cancel (warning)",
-    'record_start':   "Recording started (main button)",
-    'record_stop':    "Recording stopped (main button)",
-    'loading_start':  "Processing started",
-    'loading_done':   "Processing complete",
-    'start_rec':      "D-key: recording started (quick sequence)",
-    'stop_rec':       "D-key: recording stopped (quick sequence)",
-    'transcribe':     "D-key: transcription in progress",
-    'null_text':      "Empty transcription result",
-    'llm_start':      "LLM processing started",
-    'llm_done':       "LLM processing complete",
-    'tmux_send':      "Text sent to tmux pane",
+    'demo':             "Preview: Click any chime name to hear this sound",
+    'focus':            "Window Focus: VoiceThing window becomes active (clicked or switched to)",
+    'unfocus':          "Window Blur: VoiceThing window loses focus (another app becomes active)",
+    'copy':             "Copy: Text copied to clipboard (click transcription or press C in menu)",
+    'delete':           "Delete: Transcription removed from history (press D in menu)",
+    'enter':            "Send: Text typed into active app (press Enter or E in menu)",
+    'cancel':           "Cancel: Recording aborted (held Option too long after starting)",
+    'pre_cancel':       "Cancel Warning: About to cancel if you keep holding Option",
+    'wake_word_start':  "Wake Word On: Wake word detection enabled (J key or toolbar button)",
+    'wake_word_stop':   "Wake Word Off: Wake word detection disabled (K key or toolbar button)",
+    'loading_start':    "Processing: Whisper model is transcribing your audio",
+    'loading_done':     "Done: Transcription complete and ready",
+    'start_rec':        "D-Key Record: Started recording via D key quick workflow",
+    'stop_rec':         "D-Key Stop: Stopped recording via D key (transcription follows)",
+    'transcribe':       "D-Key Transcribe: Whisper processing after D-key recording",
+    'null_text':        "Empty Result: Whisper returned no text (silence or noise)",
+    'llm_start':        "LLM Processing: Sending transcription to language model (L key)",
+    'llm_done':         "LLM Complete: Language model finished processing",
+    'tmux_send':        "Tmux Send: Text sent to tmux pane (T key in menu)",
 }
 
 # Chime themes - each theme defines sounds for various events
@@ -144,8 +144,8 @@ CHIME_THEMES = {
         'enter':          (([-10], [-14], [-10]), 0.05),# Low do-ba-do
         'cancel':         (([3, -1],), 0.06),           # C+G# minor cancel
         'pre_cancel':     (([-9, -13],), 0.06),         # C+G# octave lower
-        'record_start':   (([0, 4, 7, 11],), 0.15),     # Amaj7
-        'record_stop':    (([-12, -8, -5, 0],), 0.15),  # Amaj low
+        'wake_word_start':   (([0, 4, 7, 11],), 0.15),     # Amaj7
+        'wake_word_stop':    (([-12, -8, -5, 0],), 0.15),  # Amaj low
         'loading_start':  (([5], [12]), 0.1),           # D→A5 loading
         'loading_done':   (([5, 9, 12], [17]), 0.15),   # D+F#+A→B5 done
         'start_rec':      (([2, 6], [9, 14]), 0.08),    # B+Eb→F#+B5
@@ -167,8 +167,8 @@ CHIME_THEMES = {
         'enter':          (([5],), 0.04),               # D5 (4th up)
         'cancel':         (([-7],), 0.05),              # D4 (5th down)
         'pre_cancel':     (([-19],), 0.05),             # D3 octave lower
-        'record_start':   (([0, 12],), 0.12),           # A4+A5 octave
-        'record_stop':    (([-12, 0],), 0.12),          # A3+A4 octave
+        'wake_word_start':   (([0, 12],), 0.12),           # A4+A5 octave
+        'wake_word_stop':    (([-12, 0],), 0.12),          # A3+A4 octave
         'loading_start':  (([2],), 0.08),               # B4 single
         'loading_done':   (([7, 12],), 0.1),            # E5+A5
         'start_rec':      (([0],), 0.05),               # A4 single
@@ -190,8 +190,8 @@ CHIME_THEMES = {
         'enter':          (([-12], [-9]), 0.05),        # A3→C4 arpeggio
         'cancel':         (([6, 0],), 0.06),            # Eb+A tritone resolve
         'pre_cancel':     (([-6, -12],), 0.06),         # Eb+A octave lower
-        'record_start':   (([0, 3, 6, 10],), 0.15),     # Am7b5 (blues!)
-        'record_stop':    (([-12, -9, -5, -2],), 0.15), # Am7 low
+        'wake_word_start':   (([0, 3, 6, 10],), 0.15),     # Am7b5 (blues!)
+        'wake_word_stop':    (([-12, -9, -5, -2],), 0.15), # Am7 low
         'loading_start':  (([3], [6]), 0.1),            # C→Eb chromatic
         'loading_done':   (([7, 10, 15],), 0.12),       # E+G+C (C maj)
         'start_rec':      (([0, 3],), 0.08),            # A+C minor 3rd
@@ -214,8 +214,8 @@ CHIME_THEMES = {
         'enter':          (([-14, -7, 0],), 0.08),      # G3+D4+A4 wide arp
         'cancel':         (([-7, 2, 9],), 0.08),        # D+B+F# stack
         'pre_cancel':     (([-19, -10, -3],), 0.08),    # D+B+F# octave lower
-        'record_start':   (([-12, 0, 2, 7],), 0.2),     # A3+Asus2
-        'record_stop':    (([-12, -7, -5, 0, 7],), 0.2),# Wide sus4 spread
+        'wake_word_start':   (([-12, 0, 2, 7],), 0.2),     # A3+Asus2
+        'wake_word_stop':    (([-12, -7, -5, 0, 7],), 0.2),# Wide sus4 spread
         'loading_start':  (([0, 5, 9],), 0.12),         # A+D+F# (Dsus2/A)
         'loading_done':   (([2, 7, 9, 14, 21],), 0.18), # Asus2add9+high E
         'start_rec':      (([-12, 0, 2],), 0.1),        # A3+A+B (Asus2 low)
@@ -237,8 +237,8 @@ CHIME_THEMES = {
         'enter':          (([-12], [-9], [-5]), 0.06),  # A3→C4→E4 arp
         'cancel':         (([8, 5, 0],), 0.08),         # F+D+A descend
         'pre_cancel':     (([-4, -7, -12],), 0.08),     # F+D+A octave lower
-        'record_start':   (([0, 3, 7],), 0.18),         # Am triad
-        'record_stop':    (([-12, -9, -5],), 0.18),     # Am low
+        'wake_word_start':   (([0, 3, 7],), 0.18),         # Am triad
+        'wake_word_stop':    (([-12, -9, -5],), 0.18),     # Am low
         'loading_start':  (([5, 8, 12],), 0.12),        # D+F+A (Dm)
         'loading_done':   (([0, 3, 8, 12],), 0.15),     # Am+F (Fmaj7/A)
         'start_rec':      (([0, 3, 8],), 0.1),          # A+C+F (Am add b6)
@@ -260,8 +260,8 @@ CHIME_THEMES = {
         'enter':          (([4], [7], [12]), 0.04),     # C#→E→A arp
         'cancel':         (([-5, -8],), 0.05),          # E4+C#4 (record rhyme)
         'pre_cancel':     (([-17, -20],), 0.05),        # E3+C#3 octave lower
-        'record_start':   (([-5,0,4],[0, 4, 7]), 0.12), # A major
-        'record_stop':    (([-12, -8, -5],[-24]), 0.12),# A major low
+        'wake_word_start':   (([-5,0,4],[0, 4, 7]), 0.12), # A major
+        'wake_word_stop':    (([-12, -8, -5],[-24]), 0.12),# A major low
         'loading_start':  (([0, 7],), 0.08),             # A+E (5th buildup)
         'loading_done':   (([5, 9, 12],), 0.1),        # D+F#+A (resolution)
         'start_rec':      (([-5,0,4],[0, 4, 11],), 0.06),        # A+C#+G# (Amaj7 no5)
@@ -285,8 +285,8 @@ CHIME_THEMES = {
         'enter':          (([-5, -1, 2, 7],), 0.06),    # E+G#+B+E (Emaj w/oct)
         'cancel':         (([6, 10, 13],), 0.06),       # Eb+G+Bb (Eb maj)
         'pre_cancel':     (([-6, -2, 1],), 0.06),       # Eb+G+Bb octave lower
-        'record_start':   (([0, 4, 7, 10, 14],), 0.12), # A9 full
-        'record_stop':    (([-12, -8, -5, -2],), 0.12), # A7 low
+        'wake_word_start':   (([0, 4, 7, 10, 14],), 0.12), # A9 full
+        'wake_word_stop':    (([-12, -8, -5, -2],), 0.12), # A7 low
         'loading_start':  (([2, 5, 9],), 0.1),          # B+D+F# (Bm)
         'loading_done':   (([0, 4, 7, 11],), 0.1),      # Amaj7
         'start_rec':      (([7, 10, 14, 17],), 0.08),   # Em7+D (Em9)
@@ -2675,6 +2675,10 @@ class TmuxSelectionDialog(DraggableDialog):
         self._poll_stop = threading.Event()
         self._poll_thread = None
         self._preview_changed.connect(self._on_preview_changed)
+        # Auto-refresh timer for pane list (every 5 seconds)
+        self._auto_refresh_timer = QTimer(self)
+        self._auto_refresh_timer.timeout.connect(self._auto_refresh_panes)
+        self._last_pane_ids = set()  # Track pane IDs to detect changes
         # Install event filter to catch clicks anywhere and clear preview focus
         self.installEventFilter(self)
 
@@ -2878,8 +2882,8 @@ class TmuxSelectionDialog(DraggableDialog):
         self.refresh_btn.setIcon(load_icon("refresh", ICON_COLOR_DARK))
         self.refresh_btn.setIconSize(QSize(ICON_SIZE, ICON_SIZE))
         self.refresh_btn.setStyleSheet(get_btn_css())
-        self.refresh_btn.clicked.connect(self._refresh_table)
-        set_tooltip(self.refresh_btn, "R  Refresh pane list")
+        self.refresh_btn.clicked.connect(lambda: self._refresh_table(preserve_selection=True))
+        set_tooltip(self.refresh_btn, "R  Refresh pane list (auto-refreshes every 5s)")
         btn_row.addWidget(self.refresh_btn)
 
         btn_row.addStretch()
@@ -2925,8 +2929,9 @@ class TmuxSelectionDialog(DraggableDialog):
         except (subprocess.TimeoutExpired, FileNotFoundError):
             return None
 
-    def _refresh_table(self):
+    def _refresh_table(self, preserve_selection=False):
         """Populate table with tmux panes, showing stale magic phrases at top."""
+        prev_pane_id = self._selected_pane_id if preserve_selection else None
         self.table.blockSignals(True)
         self.table.setRowCount(0)
         live_panes = self._get_tmux_panes_flat()
@@ -2999,15 +3004,87 @@ class TmuxSelectionDialog(DraggableDialog):
         self.table.setColumnWidth(self.COL_PHRASE, 120)
         self.table.blockSignals(False)
 
+        # Try to restore previous selection if requested
+        restored = False
+        if prev_pane_id:
+            for row, pane in enumerate(self._pane_data):
+                if pane['pane_id'] == prev_pane_id:
+                    self.table.selectRow(row)
+                    self._selected_pane_id = prev_pane_id
+                    self._update_preview(prev_pane_id)
+                    restored = True
+                    break
+
         # Select first live row by default (skip stale)
-        first_live_row = len(stale_entries)
-        if first_live_row < len(self._pane_data):
-            self.table.selectRow(first_live_row)
-            self._selected_pane_id = self._pane_data[first_live_row]['pane_id']
-            self._update_preview(self._selected_pane_id)
-        elif self._pane_data:
-            self.table.selectRow(0)
-            self._selected_pane_id = self._pane_data[0]['pane_id']
+        if not restored:
+            first_live_row = len(stale_entries)
+            if first_live_row < len(self._pane_data):
+                self.table.selectRow(first_live_row)
+                self._selected_pane_id = self._pane_data[first_live_row]['pane_id']
+                self._update_preview(self._selected_pane_id)
+            elif self._pane_data:
+                self.table.selectRow(0)
+                self._selected_pane_id = self._pane_data[0]['pane_id']
+
+    def _auto_refresh_panes(self):
+        """Auto-refresh pane list if the set of panes has changed. Preserves selection."""
+        live_panes = self._get_tmux_panes_flat()
+        if live_panes is None:
+            # tmux not running - check if it was running before
+            if self._last_pane_ids:
+                self._last_pane_ids = set()
+                self._refresh_table()
+            return
+
+        current_ids = {p['pane_id'] for p in live_panes}
+        if current_ids == self._last_pane_ids:
+            return  # No change, skip refresh
+
+        # Panes changed - remember selection to restore after refresh
+        prev_selected_pane_id = self._selected_pane_id
+        prev_selected_phrase = None
+        prev_selected_address = None
+        if prev_selected_pane_id:
+            # Get the phrase and address for the previously selected pane
+            for pane in self._pane_data:
+                if pane['pane_id'] == prev_selected_pane_id:
+                    prev_selected_address = pane.get('address')
+                    saved = S.TMUX_PANE_NAMES.get(prev_selected_pane_id, {})
+                    prev_selected_phrase = saved.get('phrase', '')
+                    break
+
+        self._last_pane_ids = current_ids
+        self._refresh_table()
+
+        # Try to restore selection
+        restored = False
+        # First try: match by pane_id (if pane still exists)
+        if prev_selected_pane_id:
+            for row, pane in enumerate(self._pane_data):
+                if pane['pane_id'] == prev_selected_pane_id:
+                    self.table.selectRow(row)
+                    self._selected_pane_id = prev_selected_pane_id
+                    restored = True
+                    break
+
+        # Second try: match by magic phrase (if pane was assigned to new ID)
+        if not restored and prev_selected_phrase:
+            for row, pane in enumerate(self._pane_data):
+                saved = S.TMUX_PANE_NAMES.get(pane['pane_id'], {})
+                if saved.get('phrase') == prev_selected_phrase:
+                    self.table.selectRow(row)
+                    self._selected_pane_id = pane['pane_id']
+                    restored = True
+                    break
+
+        # Third try: match by address (session:window:pane_idx)
+        if not restored and prev_selected_address:
+            for row, pane in enumerate(self._pane_data):
+                if pane.get('address') == prev_selected_address:
+                    self.table.selectRow(row)
+                    self._selected_pane_id = pane['pane_id']
+                    restored = True
+                    break
 
     def _on_cell_clicked(self, row, col):
         """Single-click on Magic Phrase column starts editing."""
@@ -3045,12 +3122,12 @@ class TmuxSelectionDialog(DraggableDialog):
                     del S.TMUX_PANE_NAMES[other_id]
             S.TMUX_PANE_NAMES[pane_id] = {'phrase': phrase}
             # Refresh table to show removed phrases
-            self._refresh_table()
+            self._refresh_table(preserve_selection=True)
             self.magic_phrases_changed.emit()  # Update status bar
         elif pane_id in S.TMUX_PANE_NAMES:
             del S.TMUX_PANE_NAMES[pane_id]
             # Refresh table to remove stale row if deleted
-            self._refresh_table()
+            self._refresh_table(preserve_selection=True)
             self.magic_phrases_changed.emit()  # Update status bar
 
     def eventFilter(self, obj, event):
@@ -3215,10 +3292,14 @@ done
         # print("[tmux-dialog] showEvent called")
         super().showEvent(event)
         self._start_polling()
+        # Start auto-refresh timer (5 seconds)
+        self._last_pane_ids = {p['pane_id'] for p in self._pane_data}
+        self._auto_refresh_timer.start(5000)
 
     def hideEvent(self, event):
         """Stop polling when dialog is hidden."""
         self._stop_polling()
+        self._auto_refresh_timer.stop()
         super().hideEvent(event)
 
     def _accept_selection(self):
@@ -8796,10 +8877,10 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
             self._prefs_dialog.wake_word_widget.set_enabled_state(enabled)
         if enabled:
             self._start_wake_word_listener()
-            play_chime('record_start')
+            play_chime('wake_word_start')
         else:
             self._stop_wake_word_listener()
-            play_chime('record_stop')
+            play_chime('wake_word_stop')
         print(f"Wake word detection {'ON' if enabled else 'OFF'}")
         self._update_status()
 
@@ -8810,6 +8891,13 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
             self._start_wake_word_listener()
         self.wake_word_btn.setToolTip(f"Toggle wake word ({self._get_wake_word_display()})")
         self._update_status()
+
+    def _on_magic_phrases_changed(self):
+        """Handle magic phrase changes - restart macOS wakeword if using tmux phrases."""
+        if S.WAKE_WORD_ENABLED and S.WAKEWORD_ENGINE == 'macos' and listening_for_tmux_panes_as_wakewords():
+            self._stop_wake_word_listener()
+            self._start_wake_word_listener()
+            print("Restarted macOS wakeword engine for new magic phrases")
 
     def _get_wake_word_display(self) -> str:
         """Get display name for current wake word configuration (first phrase only, for tooltip)."""
@@ -8924,6 +9012,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         self._tmux_dialog.center_on_parent()
         self._tmux_dialog.finished.connect(self._on_tmux_dialog_closed)
         self._tmux_dialog.magic_phrases_changed.connect(self._update_status)  # Update status bar when phrases change
+        self._tmux_dialog.magic_phrases_changed.connect(self._on_magic_phrases_changed)  # Restart wakeword if needed
         self._tmux_dialog.show()  # Non-modal
 
     def show_chime_editor(self):
