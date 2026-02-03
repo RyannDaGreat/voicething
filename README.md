@@ -375,8 +375,8 @@ Press **S** to toggle all chimes on/off.
 | enter | Enter key pressed after paste |
 | cancel | Recording cancelled |
 | pre_cancel | Warning before cancel (holding Option too long) |
-| record_start | Recording started |
-| record_stop | Recording stopped |
+| wake_word_start | Wake word detection enabled |
+| wake_word_stop | Wake word detection disabled |
 | transcribe | Transcription complete |
 | null_text | Empty transcription result |
 | llm_start | LLM processing started |
