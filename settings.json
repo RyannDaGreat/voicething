@@ -4,24 +4,29 @@
   "AUTO_HIDE": false,
   "SOUND_ENABLED": true,
   "LLM_ENABLED": false,
-  "AUTO_ENTER": false,
-  "WAKE_WORD_ENABLED": false,
-  "SIMPLE_MODE": true,
+  "AUTO_ENTER": true,
+  "WAKE_WORD_ENABLED": true,
+  "SIMPLE_MODE": false,
   "PET_TYPES": [],
   "WHISPER_MODEL": "large-v3",
   "THEME": "cyberpunk_metal",
-  "WAKEWORD_ENGINE": "openwakeword",
+  "WAKEWORD_ENGINE": "macos",
   "WAKEWORD_OPENWAKEWORD": {
     "model": "computer",
     "sensitivity": 0.2
   },
   "WAKEWORD_MACOS": {
-    "phrases": "hey computer, computer, start recording",
-    "cancel_phrases": "cancel, never mind"
+    "phrases": "hey computer, computer, start recording, jarvis, roger, over",
+    "cancel_phrases": "cancel, never mind",
+    "use_tmux_phrases": true
   },
-  "TMUX_MODE": false,
-  "TMUX_TARGET": "%0",
-  "TMUX_PANE_NAMES": {},
+  "TMUX_MODE": true,
+  "TMUX_TARGET": "%2",
+  "TMUX_PANE_NAMES": {
+    "%2": {
+      "phrase": "derp"
+    }
+  },
   "TMUX_PREVIEW_DARK_MODE": true,
   "TMUX_PREVIEW_ANSI_COLORS": true,
   "TMUX_PREVIEW_FONT_SIZE": 10,
@@ -31,19 +36,23 @@
   "TMUX_ANNOUNCE_PANE": true,
   "AUTO_COPY": true,
   "AUTO_PASTE": true,
-  "LLM_MODEL": "OLLAMA:qwen2.5:7b",
-  "LLM_PREFIX": "Claude Haiku Veo",
+  "LLM_MODEL": "OPENAI:gpt-5-mini",
+  "LLM_PREFIX": "claude haiku tmux pane git veo tmux ",
   "SILENCE_SKIP_ENABLED": false,
   "SILENCE_THRESHOLD": -65,
   "CHIME_VOLUME": 0.5,
   "CHIME_PROGRAM": 127,
-  "CHIME_PITCH": 12,
+  "CHIME_PITCH": 9,
   "CHIME_EDITOR_ZOOM": 12,
   "CHIME_THEME": "bright",
   "CHIME_AUDIO_SETTINGS": {
     "_default": {
       "reverb": 0.4,
       "chorus": 0.3
+    },
+    "bright": {
+      "reverb": 1.0,
+      "chorus": 1.0
     }
   },
   "CUSTOM_CHIMES": {},
@@ -71,16 +80,16 @@
   "RESTORE_WINDOW_GEOMETRY": true,
   "WINDOW_GEOMETRY": {
     "preferences": {
-      "x": 701,
-      "y": 38,
-      "width": 600,
-      "height": 1075
+      "x": 503,
+      "y": 200,
+      "width": 798,
+      "height": 913
     },
     "main": {
-      "x": 74,
-      "y": 262,
-      "width": 671,
-      "height": 770
+      "x": 22,
+      "y": 151,
+      "width": 551,
+      "height": 811
     },
     "chime_editor": {
       "x": 395,
@@ -89,13 +98,13 @@
       "height": 487
     },
     "tmux_selection": {
-      "x": 509,
-      "y": 374,
-      "width": 709,
-      "height": 401,
+      "x": -147,
+      "y": 34,
+      "width": 1728,
+      "height": 1084,
       "splitter": [
-        392,
-        280
+        870,
+        821
       ]
     }
   }
