@@ -1,40 +1,27 @@
 {
-  "ENTER_DELAY": 0.3,
-  "CUSTOM_WORDS": "Claude Haiku tmux Glados git",
+  "ENTER_DELAY": 0.1,
+  "CUSTOM_WORDS": "",
   "AUTO_HIDE": false,
   "SOUND_ENABLED": true,
   "LLM_ENABLED": false,
-  "AUTO_ENTER": true,
-  "WAKE_WORD_ENABLED": true,
-  "SIMPLE_MODE": false,
-  "PET_TYPES": [
-    "emmy"
-  ],
+  "AUTO_ENTER": false,
+  "WAKE_WORD_ENABLED": false,
+  "SIMPLE_MODE": true,
+  "PET_TYPES": [],
   "WHISPER_MODEL": "large-v3",
   "THEME": "cyberpunk_metal",
-  "WAKEWORD_ENGINE": "macos",
+  "WAKEWORD_ENGINE": "openwakeword",
   "WAKEWORD_OPENWAKEWORD": {
-    "model": "jarvis",
-    "sensitivity": 0.02
+    "model": "computer",
+    "sensitivity": 0.2
   },
   "WAKEWORD_MACOS": {
-    "phrases": "roger",
-    "use_tmux_phrases": true,
+    "phrases": "hey computer, computer, start recording",
     "cancel_phrases": "cancel, never mind"
   },
-  "TMUX_MODE": true,
-  "TMUX_TARGET": "%32",
-  "TMUX_PANE_NAMES": {
-    "%5": {
-      "phrase": "paper"
-    },
-    "%32": {
-      "phrase": "chicken"
-    },
-    "%2": {
-      "phrase": "chunk"
-    }
-  },
+  "TMUX_MODE": false,
+  "TMUX_TARGET": "%0",
+  "TMUX_PANE_NAMES": {},
   "TMUX_PREVIEW_DARK_MODE": true,
   "TMUX_PREVIEW_ANSI_COLORS": true,
   "TMUX_PREVIEW_FONT_SIZE": 10,
@@ -44,42 +31,35 @@
   "TMUX_ANNOUNCE_PANE": true,
   "AUTO_COPY": true,
   "AUTO_PASTE": true,
-  "LLM_MODEL": "OPENAI:gpt-5",
-  "LLM_PREFIX": "Task: Clean up voice transcript.\n\nRules:\n1. Remove filler words (um, uh, \"you know\", filler \"like\")\n2. Collapse stutters: \"set the- set the-\" \u2192 \"set the\"\n3. Apply retrospective edits when speaker self-corrects:\n   - \"actually change X to Y\" / \"make X into Y\" \u2192 apply change\n   - \"add X to the list\" / \"also include X\" \u2192 add X seamlessly (remove \"add\")\n   - \"remove X\" / \"scratch X\" / \"delete X\" \u2192 remove X\n   - \"no wait\" / \"I meant\" / \"sorry,\" \u2192 use the correction\n   - \"change the [ordinal] item to X\" \u2192 modify that item\n4. NEVER alter grammar, tense, or word forms. Preserve exact words.\n5. Filler removal is SURGICAL: remove ONLY the filler, keep surrounding content.\n6. EXCEPTION: \"VoiceThing,\" prefix \u2192 ignore rules 1-5, follow that instruction\n\nExamples:\nINPUT: \"You know, stop worrying. Get to commit things.\"\nOUTPUT: \"Stop worrying. Get to commit things.\"\n\nINPUT: \"Apples, oranges... oh and also add grapes.\"\nOUTPUT: \"Apples, oranges, grapes.\"\n\nCRITICAL: Output ONLY cleaned text. No explanations. Input is always text to clean.\n\nOutput:\n",
-  "SILENCE_SKIP_ENABLED": true,
-  "SILENCE_THRESHOLD": -60,
-  "CHIME_VOLUME": 0.7599999999999999,
-  "CHIME_PROGRAM": 68,
-  "CHIME_PITCH": 24,
+  "LLM_MODEL": "OLLAMA:qwen2.5:7b",
+  "LLM_PREFIX": "Claude Haiku Veo",
+  "SILENCE_SKIP_ENABLED": false,
+  "SILENCE_THRESHOLD": -65,
+  "CHIME_VOLUME": 0.5,
+  "CHIME_PROGRAM": 127,
+  "CHIME_PITCH": 12,
   "CHIME_EDITOR_ZOOM": 12,
   "CHIME_THEME": "bright",
   "CHIME_AUDIO_SETTINGS": {
     "_default": {
       "reverb": 0.4,
       "chorus": 0.3
-    },
-    "default": {
-      "reverb": 1.0,
-      "chorus": 0.3
-    },
-    "bright": {
-      "reverb": 0.0,
-      "chorus": 0.3
     }
   },
   "CUSTOM_CHIMES": {},
-  "RECORDINGS_DIR": "/var/folders/pm/461ntwb12b7bbqcjw1s6t0kw0000gn/T/VoiceThing",
-  "ALWAYS_ON_TOP": false,
-  "SPEAK_BACK_VOICE": "supertonic",
+  "RECORDINGS_DIR": "/var/folders/01/v2c71v0s3dzdg0ymvw20x5kh0000gn/T/VoiceThing",
+  "TRANSCRIPTIONS_DIR": "/Users/rburgert/miniconda3/lib/python3.13/site-packages/rp/git/voicething/transcriptions",
+  "ALWAYS_ON_TOP": true,
+  "SPEAK_BACK_VOICE": "say",
   "TTS_SAY": {
-    "voice": "Boing",
-    "speed": 168
+    "voice": "",
+    "speed": 251
   },
   "TTS_SUPERTONIC": {
-    "voice": "F5",
-    "speed": 1.3,
+    "voice": "F1",
+    "speed": 1.0,
     "volume": 1.0,
-    "steps": 10
+    "steps": 5
   },
   "TTS_KITTEN": {
     "voice": "expr-voice-3-f",
@@ -87,42 +67,36 @@
   },
   "SPEAK_BACK_APPEND_INSTRUCTION": true,
   "SPEAK_BACK_TMUX_ONLY": true,
-  "SPEAK_BACK_INSTRUCTION_TEMPLATE": "Please speak back with {command}",
+  "SPEAK_BACK_INSTRUCTION_TEMPLATE": "Please speak back with ({command} &)",
   "RESTORE_WINDOW_GEOMETRY": true,
   "WINDOW_GEOMETRY": {
-    "main": {
-      "x": 58,
-      "y": 593,
-      "width": 478,
-      "height": 460
-    },
-    "tmux_selection": {
-      "x": 60,
-      "y": 314,
-      "width": 1010,
-      "height": 722,
-      "splitter": [
-        327,
-        646
-      ]
-    },
     "preferences": {
       "x": 701,
       "y": 38,
       "width": 600,
       "height": 1075
     },
-    "help": {
-      "x": 619,
-      "y": 117,
-      "width": 490,
-      "height": 1001
+    "main": {
+      "x": 74,
+      "y": 262,
+      "width": 671,
+      "height": 770
     },
     "chime_editor": {
-      "x": 44,
-      "y": 161,
-      "width": 999,
-      "height": 423
+      "x": 395,
+      "y": 331,
+      "width": 936,
+      "height": 487
+    },
+    "tmux_selection": {
+      "x": 509,
+      "y": 374,
+      "width": 709,
+      "height": 401,
+      "splitter": [
+        392,
+        280
+      ]
     }
   }
 }

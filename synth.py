@@ -7,7 +7,36 @@ import fluidsynth
 from pedalboard import Pedalboard, Reverb, Chorus, Compressor, Gain
 
 SAMPLERATE = 44100
-SOUNDFONT_PATH = "/opt/homebrew/Cellar/fluid-synth/2.4.7/share/fluid-synth/sf2/VintageDreamsWaves-v2.sf2"
+
+
+def _find_soundfont():
+    """Find VintageDreamsWaves soundfont in common locations."""
+    import glob
+
+    # Check versioned homebrew paths first (most common)
+    for base in ["/opt/homebrew/Cellar/fluid-synth", "/usr/local/Cellar/fluid-synth"]:
+        if os.path.isdir(base):
+            for version in os.listdir(base):
+                sf_path = os.path.join(base, version, "share/fluid-synth/sf2/VintageDreamsWaves-v2.sf2")
+                if os.path.isfile(sf_path):
+                    return sf_path
+
+    # Fallback to other common locations
+    fallbacks = [
+        "/usr/share/sounds/sf2/VintageDreamsWaves-v2.sf2",
+        "/usr/share/soundfonts/VintageDreamsWaves-v2.sf2",
+        os.path.expanduser("~/.fluidsynth/VintageDreamsWaves-v2.sf2"),
+    ]
+    for path in fallbacks:
+        if os.path.isfile(path):
+            return path
+
+    raise FileNotFoundError(
+        "No soundfont found. Install fluid-synth with: brew install fluid-synth"
+    )
+
+
+SOUNDFONT_PATH = _find_soundfont()
 
 # Instrument presets (bank 0)
 INSTRUMENTS = {
@@ -84,7 +113,8 @@ def _get_synth():
             global _synth, _sfid
             _synth = fluidsynth.Synth(samplerate=float(SAMPLERATE))
             _sfid = _synth.sfload(SOUNDFONT_PATH)
-            _synth.program_select(0, _sfid, 0, INSTRUMENTS['bells'])
+            if _sfid >= 0:
+                _synth.program_select(0, _sfid, 0, INSTRUMENTS['bells'])
         init()
     return _synth, _sfid
 
@@ -99,6 +129,8 @@ def _get_native_synth():
             _native_synth = fluidsynth.Synth(gain=0.5)
             _native_synth.start(driver='coreaudio')
             _native_sfid = _native_synth.sfload(SOUNDFONT_PATH)
+            if _native_sfid < 0:
+                raise RuntimeError(f"Failed to load soundfont: {SOUNDFONT_PATH}")
             _native_synth.program_select(0, _native_sfid, 0, INSTRUMENTS['bells'])
             # Enable built-in reverb/chorus (replaces pedalboard effects)
             _native_synth.setting('synth.reverb.active', 1)
@@ -112,9 +144,12 @@ def _get_native_synth():
 def get_preset_name(program):
     """Get the preset name from the soundfont for a given program number."""
     synth, sfid = _get_synth()
+    if sfid is None or sfid < 0:
+        return f"Preset {program}"
     try:
-        return synth.sfpreset_name(sfid, 0, program)
-    except:
+        name = synth.sfpreset_name(sfid, 0, program)
+        return name if name else f"Preset {program}"
+    except Exception:
         return f"Preset {program}"
 
 
