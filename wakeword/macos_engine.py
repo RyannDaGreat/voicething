@@ -152,7 +152,7 @@ class MacOSWakeWordEngine(WakeWordEngine):
         """Run the macOS event loop in a background thread."""
         try:
             from PyObjCTools import AppHelper
-            AppHelper.runConsoleEventLoop(stopAfterFirstRun=False, installInterrupt=False)
+            AppHelper.runConsoleEventLoop(installInterrupt=False)
         except Exception as e:
             if not self._should_stop.is_set():
                 print(f"[wakeword] macOS event loop error: {e}")
