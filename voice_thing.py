@@ -126,6 +126,10 @@ CHIME_DESCRIPTIONS = {
     'llm_start':        "LLM Processing: Sending transcription to language model (L key)",
     'llm_done':         "LLM Complete: Language model finished processing",
     'tmux_send':        "Tmux Send: Text sent to tmux pane (T key in menu)",
+    'auto_enter_on':    "Auto-Enter On: Auto-enter enabled (N key)",
+    'auto_enter_off':   "Auto-Enter Off: Auto-enter disabled (N key)",
+    'tmux_on':          "Tmux Mode On: Tmux paste mode enabled",
+    'tmux_off':         "Tmux Mode Off: Tmux paste mode disabled",
 }
 
 # Chime themes - each theme defines sounds for various events
@@ -156,6 +160,10 @@ CHIME_THEMES = {
         'llm_done':       (([11, 14, 18],), 0.08),      # G#+B+D#6 LLM done
         # 'tmux_send':      (([-5], [-1, 2, 6], [-10], [-5, 2, 7]), 0.06),  # E4 → G#B D# → B3 → E4 B4 E5
         'tmux_send':      ((), 0),  # Silent
+        'auto_enter_on':  (([4, 7], [11, 16]), 0.08),           # C#+E → G#+C#6 ascending 2-chord
+        'auto_enter_off': (([16, 11], [7, 4]), 0.08),           # C#6+G# → E+C# descending
+        'tmux_on':        (([-3], [4], [7, 12]), 0.07),         # F# → C# → E+A5 ascending 3-chord
+        'tmux_off':       (([12, 7], [4], [-3]), 0.07),         # A5+E → C# → F# descending
     },
     # Minimal: Clean single notes, perfect intervals (octaves, 5ths)
     'minimal': {
@@ -179,6 +187,10 @@ CHIME_THEMES = {
         'llm_done':       (([12, 19],), 0.06),          # A5+E6 octave+5th
         # 'tmux_send':      (([-5], [2], [-10], [7]), 0.04),  # E4 → B4 → B3 → E5
         'tmux_send':      ((), 0),  # Silent
+        'auto_enter_on':  (([-5], [7]), 0.06),                  # E4 → E5 octave leap up
+        'auto_enter_off': (([7], [-5]), 0.06),                  # E5 → E4 octave leap down
+        'tmux_on':        (([-12], [0], [12]), 0.05),           # A3 → A4 → A5 ascending octaves
+        'tmux_off':       (([12], [0], [-12]), 0.05),           # A5 → A4 → A3 descending octaves
     },
     # Blues: A blues scale with blue notes (0, 3, 5, 6, 7, 10)
     'blues': {
@@ -202,6 +214,10 @@ CHIME_THEMES = {
         'llm_done':       (([0, 4, 7, 10],), 0.1),      # A7 blues resolve
         # 'tmux_send':      (([-5], [0, 3, 6], [-9], [-5, 3, 7]), 0.06),  # E4 → A C Eb → C4 → E4 C5 E5
         'tmux_send':      ((), 0),  # Silent
+        'auto_enter_on':  (([3, 7], [10, 15]), 0.08),           # C+E → G+C6 minor walk up
+        'auto_enter_off': (([15, 10], [7, 3]), 0.08),           # C6+G → E+C minor walk down
+        'tmux_on':        (([0, 6], [3, 10], [7, 15]), 0.07),   # A+Eb → C+G → E+C6 tritone ascend
+        'tmux_off':       (([15, 7], [10, 3], [6, 0]), 0.07),   # C6+E → G+C → Eb+A tritone descend
     },
     # Ethereal: Sus2/Sus4 only, wide voicings (0, 2, 5, 7, 9)
     # Rapid sequence: Asus2 → Esus4 → Dsus2 → Asus2/E → Asus2 high
@@ -226,6 +242,10 @@ CHIME_THEMES = {
         'llm_done':       (([2, 9, 14, 21],), 0.1),     # B+F#+B5+E6 (soar)
         # 'tmux_send':      (([-5], [0, 2, 7], [-12], [-5, 2, 9]), 0.06),  # E4 → A B E5 → A3 → E4 B4 F#5
         'tmux_send':      ((), 0),  # Silent
+        'auto_enter_on':  (([2, 9], [7, 14]), 0.1),             # B+F# → E+B5 sus2 rise
+        'auto_enter_off': (([14, 7], [9, 2]), 0.1),             # B5+E → F#+B sus2 fall
+        'tmux_on':        (([-7, 0], [2, 7], [9, 14]), 0.09),   # D+A → B+E → F#+B5 ascending 5ths
+        'tmux_off':       (([14, 9], [7, 2], [0, -7]), 0.09),   # B5+F# → E+B → A+D descending 5ths
     },
     # Melancholy: A natural minor (0, 2, 3, 5, 7, 8, 10)
     'melancholy': {
@@ -249,6 +269,10 @@ CHIME_THEMES = {
         'llm_done':       (([-12, -5, 0, 3],), 0.12),   # Am with low root
         # 'tmux_send':      (([-5], [0, 3, 7], [-12], [-5, 3, 8]), 0.06),  # E4 → A C E5 → A3 → E4 C5 F5
         'tmux_send':      ((), 0),  # Silent
+        'auto_enter_on':  (([3, 8], [7, 12]), 0.1),             # C+F → E+A5 minor 6 rise
+        'auto_enter_off': (([12, 7], [8, 3]), 0.1),             # A5+E → F+C minor 6 fall
+        'tmux_on':        (([-5, 0], [3, 7], [8, 12]), 0.08),   # E+A → C+E → F+A5 ascending minor
+        'tmux_off':       (([12, 8], [7, 3], [0, -5]), 0.08),   # A5+F → E+C → A+E descending minor
     },
     # Bright: A major scale (0, 2, 4, 5, 7, 9, 11)
     'bright': {
@@ -274,6 +298,10 @@ CHIME_THEMES = {
         'llm_done':       (([0, 4, 7],), 0.06),         # A+C#+E (resolution)
         # 'tmux_send':      (([-5], [-1, 2, 6], [-10], [-5, 2, 7]), 0.05),  # E4 → G#B D# → B3 → E4 B4 E5
         'tmux_send':      ((), 0),  # Silent
+        'auto_enter_on':  (([2, 9], [7, 16]), 0.06),            # B+F# → E+C#6 major rise
+        'auto_enter_off': (([16, 7], [9, 2]), 0.06),            # C#6+E → F#+B major fall
+        'tmux_on':        (([-7, 0], [4, 9], [11, 16]), 0.06),  # D+A → C#+F# → G#+C#6 ascending maj
+        'tmux_off':       (([16, 11], [9, 4], [0, -7]), 0.06),  # C#6+G# → F#+C# → A+D descending maj
     },
     # Jazzy: Extended chords, 7ths, 9ths, 13ths
     'jazzy': {
@@ -297,6 +325,10 @@ CHIME_THEMES = {
         'llm_done':       (([0, 4, 7, 11, 14],), 0.1),  # Amaj9
         # 'tmux_send':      (([-5], [-1, 2, 7], [-12], [-5, 2, 10]), 0.05),  # E4 → G# B E5 → A3 → E4 B4 G5
         'tmux_send':      ((), 0),  # Silent
+        'auto_enter_on':  (([5, 10], [9, 14]), 0.07),           # D+G → F#+B5 jazz 2nds rise
+        'auto_enter_off': (([14, 9], [10, 5]), 0.07),           # B5+F# → G+D jazz 2nds fall
+        'tmux_on':        (([-2, 2], [5, 10], [9, 14]), 0.06),  # G+B → D+G → F#+B5 ascending jazz
+        'tmux_off':       (([14, 9], [10, 5], [2, -2]), 0.06),  # B5+F# → G+D → B+G descending jazz
     },
 }
 
@@ -1036,6 +1068,13 @@ def get_checkbox_css(size=11):
 
 
 
+class NoScrollSlider(QSlider):
+    """QSlider that ignores scroll wheel events."""
+
+    def wheelEvent(self, event):
+        event.ignore()
+
+
 def make_slider_row(label_text, tooltip, min_val, max_val, current_val, format_fn, on_change, on_release=None, min_width="35px"):
     """Create a standard slider row with label, slider, and value display.
 
@@ -1059,7 +1098,7 @@ def make_slider_row(label_text, tooltip, min_val, max_val, current_val, format_f
     if tooltip:
         set_tooltip(label, tooltip)
     row.addWidget(label)
-    slider = QSlider(Qt.Orientation.Horizontal)
+    slider = NoScrollSlider(Qt.Orientation.Horizontal)
     slider.setRange(min_val, max_val)
     slider.setValue(current_val)
     slider.setStyleSheet(get_slider_css())
@@ -1342,12 +1381,21 @@ def load_icon(name, color=None):
     return QIcon(pixmap)
 
 
+def _is_menubar_dark():
+    """Check if macOS menu bar is in dark mode."""
+    from AppKit import NSApplication
+    name = NSApplication.sharedApplication().effectiveAppearance().name()
+    return 'Dark' in name
+
+
 def _get_menubar_icon(hue=None):
     """Create menu bar icon from app icon.
 
     Args:
         hue: If None, creates template icon (auto light/dark).
              If float 0-360, recolors entire icon with that hue.
+             In dark mode, hue colors are mixed 50% with white.
+             In light mode, hue colors are mixed 50% with black.
     """
     from PIL import Image
     import colorsys
@@ -1366,9 +1414,15 @@ def _get_menubar_icon(hue=None):
     else:
         # Recolor entire icon with cycling hue
         r, g, b = colorsys.hsv_to_rgb(hue / 360.0, 0.8, 1.0)
-        data[:, :, 0] = int(r * 255)
-        data[:, :, 1] = int(g * 255)
-        data[:, :, 2] = int(b * 255)
+        r, g, b = int(r * 255), int(g * 255), int(b * 255)
+        # Mix with white in dark mode (pastel), black in light mode (deeper)
+        if _is_menubar_dark():
+            r, g, b = (r + 255) // 2, (g + 255) // 2, (b + 255) // 2
+        else:
+            r, g, b = r // 2, g // 2, b // 2
+        data[:, :, 0] = r
+        data[:, :, 1] = g
+        data[:, :, 2] = b
     data[:, :, 3] = alpha
 
     from io import BytesIO
@@ -4123,7 +4177,7 @@ class WakeWordSettingsWidget(QWidget):
             "HIGHER = less sensitive, needs clearer speech (may miss words)\n\n"
             "Try 0.1-0.2 for noisy environments, 0.3-0.5 for quiet rooms.")
         sens_row.addWidget(sens_label)
-        self._sens_slider = QSlider(Qt.Orientation.Horizontal)
+        self._sens_slider = NoScrollSlider(Qt.Orientation.Horizontal)
         self._sens_slider.setRange(1, 100)
         current_sens = S.WAKEWORD_OPENWAKEWORD.get('sensitivity', 0.2)
         self._sens_slider.setValue(int(current_sens * 100))
@@ -4647,7 +4701,7 @@ class PrefsDialog(DraggableDialog):
                                  "0.1s = Usually enough for paste to complete\n"
                                  "0.5-2s = Safe for slow applications")
         delay_row.addWidget(delay_label)
-        self.delay_slider = QSlider(Qt.Orientation.Horizontal)
+        self.delay_slider = NoScrollSlider(Qt.Orientation.Horizontal)
         self.delay_slider.setRange(0, 20)  # 0.0s to 2.0s in 0.1s steps
         self.delay_slider.setValue(int(S.ENTER_DELAY * 10))
         self.delay_slider.setStyleSheet(get_slider_css())
@@ -4688,7 +4742,7 @@ class PrefsDialog(DraggableDialog):
                                   "-40 dB = Normal (skip quiet background noise)\n"
                                   "-20 dB = Aggressive (skip soft speech too)")
         thresh_row.addWidget(thresh_label)
-        self.thresh_slider = QSlider(Qt.Orientation.Horizontal)
+        self.thresh_slider = NoScrollSlider(Qt.Orientation.Horizontal)
         self.thresh_slider.setRange(-100, -10)  # dB range
         self.thresh_slider.setValue(S.SILENCE_THRESHOLD)
         self.thresh_slider.setStyleSheet(get_slider_css())
@@ -7454,15 +7508,7 @@ class RotaryKnob(QWidget):
             self.setCursor(Qt.CursorShape.PointingHandCursor)
 
     def wheelEvent(self, event):
-        delta = event.angleDelta().y()
-        # Work in ratio space for consistent feel with exponential
-        ratio_step = 1.0 / 50  # 50 steps for full range
-        current_ratio = self._value_to_ratio(self._value)
-        if delta > 0:
-            new_val = self._ratio_to_value(current_ratio + ratio_step)
-        else:
-            new_val = self._ratio_to_value(current_ratio - ratio_step)
-        self.setValue(new_val)
+        event.ignore()
 
 
 class TimerWidget(QWidget):
@@ -8846,10 +8892,12 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
     def _on_auto_enter_changed(self, enabled):
         self.enter_btn.setChecked(enabled)
         self._update_checkable_btn_icon(self.enter_btn, "enter" if enabled else "enter-off")
+        play_chime('auto_enter_on' if enabled else 'auto_enter_off')
 
     def _on_tmux_mode_changed(self, enabled):
         self.tmux_btn.setChecked(enabled)
         self._update_checkable_btn_icon(self.tmux_btn)  # Uses icon_name from button ("tmux")
+        play_chime('tmux_on' if enabled else 'tmux_off')
         print(f"Tmux paste mode {'ON' if enabled else 'OFF'}")
 
     def _on_simple_mode_changed(self, enabled):
