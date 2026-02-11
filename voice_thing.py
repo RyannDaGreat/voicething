@@ -298,8 +298,8 @@ CHIME_THEMES = {
         'llm_done':       (([0, 4, 7],), 0.06),         # A+C#+E (resolution)
         # 'tmux_send':      (([-5], [-1, 2, 6], [-10], [-5, 2, 7]), 0.05),  # E4 → G#B D# → B3 → E4 B4 E5
         'tmux_send':      ((), 0),  # Silent
-        'auto_enter_on':  (([2, 9], [7, 16]), 0.06),            # B+F# → E+C#6 major rise
-        'auto_enter_off': (([16, 7], [9, 2]), 0.06),            # C#6+E → F#+B major fall
+        'auto_enter_on':  (([2, 9], [6, 14, 16], [18], [21]), 0.06),  # B+F# → Eb+B5+C#6 → D#6 → F#6
+        'auto_enter_off': (([14, 18], [9, 2]), 0.06),              # B5+D#6 → F#+B fall
         'tmux_on':        (([-7, 0], [4, 9], [11, 16]), 0.06),  # D+A → C#+F# → G#+C#6 ascending maj
         'tmux_off':       (([16, 11], [9, 4], [0, -7]), 0.06),  # C#6+G# → F#+C# → A+D descending maj
     },
