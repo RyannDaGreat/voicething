@@ -995,6 +995,24 @@ def get_combobox_css():
         f"QComboBox::drop-down {{ border: none; }} {TOOLTIP_CSS}"
     )
 
+def _make_styled_listview():
+    """Create a QListView with opaque input_bg/input_text for combobox dropdowns.
+
+    Replacing the default view forces Qt off the native macOS popup path,
+    which ignores stylesheets. A custom QListView is always styled by Qt.
+    """
+    from PyQt6.QtWidgets import QListView
+    bg = STYLE.input_bg
+    text = STYLE.input_text
+    view = QListView()
+    view.setStyleSheet(
+        f"QListView {{ background-color: {bg}; color: {text}; "
+        f"border: 1px solid {BORDER_COLOR}; }}"
+        f"QListView::item:selected {{ background-color: {ACCENT}; color: white; }}"
+        f"QListView::item:hover {{ background-color: {ACCENT}; color: white; }}"
+    )
+    return view
+
 def make_combobox_searchable(combo_box):
     """Make a QComboBox searchable with substring filtering (type to filter).
 
@@ -1004,19 +1022,20 @@ def make_combobox_searchable(combo_box):
     combo_box.setEditable(True)
     combo_box.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
 
+    # Replace the default view to force Qt off the native macOS popup path
+    combo_box.setView(_make_styled_listview())
+
     filter_model = QSortFilterProxyModel(combo_box)
     filter_model.setFilterCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
     filter_model.setSourceModel(combo_box.model())
 
     completer = QCompleter(filter_model, combo_box)
     completer.setCompletionMode(QCompleter.CompletionMode.UnfilteredPopupCompletion)
-    # Style the completer popup (it's a separate top-level widget, not a child of the combobox)
-    bg = STYLE.input_bg
-    text = STYLE.input_text
     completer.popup().setStyleSheet(
-        f"QAbstractItemView {{ background-color: {bg}; color: {text}; "
-        f"selection-background-color: {ACCENT}; selection-color: white; "
+        f"QAbstractItemView {{ background-color: {STYLE.input_bg}; color: {STYLE.input_text}; "
         f"border: 1px solid {BORDER_COLOR}; }}"
+        f"QAbstractItemView::item:selected {{ background-color: {ACCENT}; color: white; }}"
+        f"QAbstractItemView::item:hover {{ background-color: {ACCENT}; color: white; }}"
     )
     combo_box.setCompleter(completer)
 
@@ -1585,10 +1604,11 @@ ACTIONS = [
     ("folder", "F", "folder-open", "Open recordings folder", "Open Recordings Folder"),
     ("sound", "S", "volume", "Toggle sound effects", None),
     ("auto_hide", "H", "eye", "Toggle auto-minimize", None),
-    ("llm", "R", "robot", "Toggle LLM post-processing", None),
+    ("llm", "R", "robot", "Toggle auto LLM post-processing", None),
     ("wake_word", "J", "ear", "Toggle wake word detection (disable to save battery)", None),
     ("auto_enter", "N", "enter", "Toggle auto-enter after paste", None),
     ("tmux", "U", "tmux", "Open tmux pane manager", None),
+    ("tmux_toggle", "⇧U", "tmux", "Toggle tmux mode on/off", None),
     ("chime_editor", "I", "music", "Open chime editor", None),
     ("model", "M", "mic", "Change Whisper model", None),
     ("prefs", "P", "settings", "Preferences", None),
@@ -1983,7 +2003,8 @@ class HelpDialog(DraggableDialog):
             "• ⌘Q to quit\n\n"
             f"Wake word (J): Say a start phrase to begin recording hands-free! "
             f"Say a stop phrase to finish recording.\n\n"
-            "Tmux mode (U): Paste directly into your active tmux pane instead of ⌘V.\n\n"
+            "Tmux mode (⇧U to toggle, U to open pane manager): "
+            "Paste directly into your active tmux pane instead of ⌘V.\n\n"
             "100% keyboard-driven - no mouse needed! (hover buttons to see shortcuts)\n\n"
             "Small mode (E or green button): Compact view with just status and timer - "
             "great for keeping visible while using keyboard shortcuts.\n\n"
@@ -4318,6 +4339,12 @@ class WakeWordSettingsWidget(QWidget):
         enable_row.addWidget(self._enable_checkbox, 1)
         self._layout.addLayout(enable_row)
 
+        # Container for all options (hidden when detection disabled)
+        self._wakeword_options = QWidget()
+        options_layout = QVBoxLayout(self._wakeword_options)
+        options_layout.setContentsMargins(0, 0, 0, 0)
+        options_layout.setSpacing(4)
+
         # Engine selector
         engine_row = QHBoxLayout()
         engine_row.setSpacing(8)
@@ -4344,7 +4371,7 @@ class WakeWordSettingsWidget(QWidget):
         self._engine_combo.setCurrentIndex(idx)
         self._engine_combo.currentIndexChanged.connect(self._on_engine_changed)
         engine_row.addWidget(self._engine_combo, 1)
-        self._layout.addLayout(engine_row)
+        options_layout.addLayout(engine_row)
 
         # === OpenWakeWord settings ===
         self._oww_container = QWidget()
@@ -4395,7 +4422,7 @@ class WakeWordSettingsWidget(QWidget):
         sens_row.addWidget(self._sens_value)
         oww_layout.addLayout(sens_row)
 
-        self._layout.addWidget(self._oww_container)
+        options_layout.addWidget(self._oww_container)
 
         # === macOS Native settings ===
         self._macos_container = QWidget()
@@ -4478,9 +4505,12 @@ class WakeWordSettingsWidget(QWidget):
         info_label.setWordWrap(True)
         macos_layout.addWidget(info_label)
 
-        self._layout.addWidget(self._macos_container)
+        options_layout.addWidget(self._macos_container)
+
+        self._layout.addWidget(self._wakeword_options)
 
         # Initialize visibility
+        self._wakeword_options.setVisible(S.WAKE_WORD_ENABLED)
         self._update_for_engine()
 
     def _get_engine(self):
@@ -4558,6 +4588,7 @@ class WakeWordSettingsWidget(QWidget):
         """Handle enable checkbox toggle."""
         enabled = state == Qt.CheckState.Checked.value
         S.set('WAKE_WORD_ENABLED', enabled)
+        self._wakeword_options.setVisible(enabled)
         self.enabled_changed.emit(enabled)
 
     def set_enabled_state(self, enabled):
@@ -4939,8 +4970,10 @@ class PrefsDialog(DraggableDialog):
         auto_row.addStretch()
         settings_box.addLayout(auto_row)
 
-        # Enter delay slider
-        delay_row = QHBoxLayout()
+        # Enter delay slider (hidden when auto-enter disabled)
+        self._enter_delay_container = QWidget()
+        delay_row = QHBoxLayout(self._enter_delay_container)
+        delay_row.setContentsMargins(0, 0, 0, 0)
         delay_row.setSpacing(8)
         delay_label = QLabel("Enter Delay:")
         delay_label.setStyleSheet(get_pref_label_css())
@@ -4958,7 +4991,8 @@ class PrefsDialog(DraggableDialog):
         self.delay_value = QLabel(f"{S.ENTER_DELAY:.1f}s")
         self.delay_value.setStyleSheet(get_pref_label_css() + " min-width: 35px;")
         delay_row.addWidget(self.delay_value)
-        settings_box.addLayout(delay_row)
+        self._enter_delay_container.setVisible(S.AUTO_ENTER)
+        settings_box.addWidget(self._enter_delay_container)
 
         # Recording section
         settings_box.addWidget(make_section("Recording"))
@@ -4979,8 +5013,10 @@ class PrefsDialog(DraggableDialog):
         silence_row.addWidget(self.silence_checkbox, 1)
         settings_box.addLayout(silence_row)
 
-        # Silence threshold slider (-100 to -10 dB)
-        thresh_row = QHBoxLayout()
+        # Silence threshold slider (hidden when skip silence disabled)
+        self._silence_thresh_container = QWidget()
+        thresh_row = QHBoxLayout(self._silence_thresh_container)
+        thresh_row.setContentsMargins(0, 0, 0, 0)
         thresh_row.setSpacing(8)
         thresh_label = QLabel("Threshold:")
         thresh_label.setStyleSheet(get_pref_label_css())
@@ -4999,7 +5035,8 @@ class PrefsDialog(DraggableDialog):
         self.thresh_value = QLabel(f"{S.SILENCE_THRESHOLD} dB")
         self.thresh_value.setStyleSheet(get_pref_label_css() + " min-width: 45px;")
         thresh_row.addWidget(self.thresh_value)
-        settings_box.addLayout(thresh_row)
+        self._silence_thresh_container.setVisible(S.SILENCE_SKIP_ENABLED)
+        settings_box.addWidget(self._silence_thresh_container)
 
         # Context Words section
         settings_box.addWidget(make_section("Context Words"))
@@ -5064,10 +5101,15 @@ class PrefsDialog(DraggableDialog):
             LLM_MODELS, S.LLM_MODEL, self._on_llm_model_changed
         )
         llm_model_row.addWidget(self.llm_model_combo, 1)
-        self.llm_enabled_checkbox = QCheckBox("Enable")
+        self.llm_enabled_checkbox = QCheckBox("Auto")
         self.llm_enabled_checkbox.setChecked(S.LLM_ENABLED)
         self.llm_enabled_checkbox.setStyleSheet(get_checkbox_css())
-        self.llm_enabled_checkbox.setToolTip("Enable LLM post-processing (R)")
+        set_tooltip(self.llm_enabled_checkbox,
+            "Auto LLM post-processing (R)\n\n"
+            "When checked, transcriptions are automatically\n"
+            "sent through the LLM for cleanup.\n\n"
+            "You can still manually process any transcription\n"
+            "from the dropdown menu in the Transcriptions tab.")
         self.llm_enabled_checkbox.stateChanged.connect(self._on_llm_enabled_changed)
         llm_model_row.addWidget(self.llm_enabled_checkbox)
         settings_box.addLayout(llm_model_row)
@@ -5337,14 +5379,18 @@ class PrefsDialog(DraggableDialog):
         self.wake_word_changed.emit(S.WAKEWORD_ENGINE)
 
     def _on_enter_changed(self, state):
-        S.set('AUTO_ENTER', state == Qt.CheckState.Checked.value)
+        enabled = state == Qt.CheckState.Checked.value
+        S.set('AUTO_ENTER', enabled)
+        self._enter_delay_container.setVisible(enabled)
 
     def _on_delay_changed(self, value):
         S.set('ENTER_DELAY', value / 10.0)
         self.delay_value.setText(f"{S.ENTER_DELAY:.1f}s")
 
     def _on_silence_skip_changed(self, state):
-        S.SILENCE_SKIP_ENABLED = state == Qt.CheckState.Checked.value
+        enabled = state == Qt.CheckState.Checked.value
+        S.SILENCE_SKIP_ENABLED = enabled
+        self._silence_thresh_container.setVisible(enabled)
 
     def _on_always_on_top_changed(self, state):
         S.set('ALWAYS_ON_TOP', state == Qt.CheckState.Checked.value)
@@ -8395,7 +8441,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
             self.enter_btn.setIcon(load_icon("enter", color=ICON_COLOR_LIGHT))
         self.enter_btn.setEnabled(True)
         self.tmux_btn = make_btn("U", "tmux", self.show_tmux_selection)
-        self.tmux_btn.setToolTip("Select tmux pane target")
+        set_tooltip(self.tmux_btn, "U: Open tmux pane manager\n⇧U: Toggle tmux mode on/off")
         self.tmux_btn.setCheckable(True)
         self.tmux_btn.setChecked(S.TMUX_MODE)
         if S.TMUX_MODE:
@@ -8929,6 +8975,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         elif no_mods and key == Qt.Key.Key_R: self.toggle_llm()
         elif no_mods and key == Qt.Key.Key_J: self.toggle_wake_word()
         elif no_mods and key == Qt.Key.Key_N: self.toggle_auto_enter()
+        elif mods == Qt.KeyboardModifier.ShiftModifier and key == Qt.Key.Key_U: self.toggle_tmux_mode()
         elif no_mods and key == Qt.Key.Key_U: self.show_tmux_selection()
         elif no_mods and key == Qt.Key.Key_I: self.show_chime_editor()
         elif no_mods and key == Qt.Key.Key_E: self.toggle_small_mode()
