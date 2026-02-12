@@ -450,6 +450,11 @@ DEFAULTS = dict(
     SPEAK_BACK_APPEND_INSTRUCTION=True,  # Append TTS instruction to transcriptions
     SPEAK_BACK_TMUX_ONLY=False,  # Only append TTS instruction when sending to tmux (not paste)
     SPEAK_BACK_INSTRUCTION_TEMPLATE="Please speak back with ({command} &)",
+    # NTFY remote TTS settings
+    NTFY_ENABLED=False,  # Enable NTFY listener for remote TTS
+    NTFY_TOPIC='',  # Topic to listen on (empty = generate random on first enable)
+    NTFY_INSTRUCTION_TEMPLATE="Please speak back with (python3 -m rp call ntfy_send --- '{message}' ---topic '{topic}' &)",
+    TTS_TEST_PHRASE="Testing 1, 2, 3",  # Phrase spoken by TTS/NTFY test buttons
     # Window geometry settings
     RESTORE_WINDOW_GEOMETRY=True,  # Restore window positions/sizes on startup
     WINDOW_GEOMETRY={},  # window_name -> {x, y, width, height}
@@ -682,6 +687,72 @@ def do_tts(text, block=True):
         _speak()
     else:
         threading.Thread(target=_speak, daemon=True).start()
+
+
+# =============================================================================
+# NTFY Remote TTS Listener
+# =============================================================================
+_ntfy_generation = 0  # Incremented on each start; old threads check this and exit
+
+
+def start_ntfy_listener():
+    """Start the NTFY listener thread. Old threads self-terminate via generation check."""
+    global _ntfy_generation
+    _ntfy_generation += 1  # Invalidates any running thread
+    topic = S.NTFY_TOPIC
+    if not topic:
+        return
+    gen = _ntfy_generation
+    threading.Thread(target=_ntfy_listen_loop, args=(topic, gen), daemon=True).start()
+    print(f"NTFY listener started on topic: {topic}")
+
+
+def stop_ntfy_listener():
+    """Stop the NTFY listener thread by incrementing generation."""
+    global _ntfy_generation
+    _ntfy_generation += 1
+    print("NTFY listener stopped")
+
+
+def _ntfy_listen_loop(topic, gen):
+    """Listen for NTFY messages and speak them via TTS. Reconnects on failure."""
+    import rp
+    start_time = time.time()
+    while gen == _ntfy_generation:
+        try:
+            for msg in rp.ntfy_receive(topic):
+                if gen != _ntfy_generation:
+                    return
+                # Skip cached messages from before we started listening
+                if msg.time < start_time:
+                    continue
+                text = msg.message
+                if text:
+                    print(f"NTFY received: {text}")
+                    do_tts(text, block=True)
+        except Exception as e:
+            if gen != _ntfy_generation:
+                return
+            print(f"NTFY listener error: {e}, reconnecting in 5s...")
+            for _ in range(50):  # 5s in 0.1s chunks, checking generation
+                if gen != _ntfy_generation:
+                    return
+                time.sleep(0.1)
+
+
+def build_ntfy_instruction():
+    """Build the NTFY instruction string for appending to transcriptions."""
+    return S.NTFY_INSTRUCTION_TEMPLATE.format(
+        message="YOUR_MESSAGE_HERE",
+        topic=S.NTFY_TOPIC,
+    )
+
+
+def build_speak_back_instruction():
+    """Build the appropriate TTS instruction (NTFY if enabled, else local TTS command)."""
+    if S.NTFY_ENABLED and S.NTFY_TOPIC:
+        return build_ntfy_instruction()
+    return S.SPEAK_BACK_INSTRUCTION_TEMPLATE.format(command=build_tts_command())
 
 
 # LLM post-processing models for dropdown (curated list for UI)
@@ -1043,9 +1114,14 @@ def get_pref_label_css():
     return f"color: {TEXT_PRIMARY}; font-size: 12px;"
 
 
+def get_icon_btn_css():
+    """Get CSS for compact icon-only buttons (test, dice, copy, etc)."""
+    return get_btn_css().replace("padding: 3px 8px;", "padding: 1px 4px;")
+
+
 def get_small_btn_css():
     """Get CSS for small inline buttons (Edit, etc)."""
-    return get_btn_css().replace("padding: 3px 8px;", "padding: 1px 4px; font-size: 10px;")
+    return get_icon_btn_css() + " font-size: 10px;"
 
 
 def make_edit_button(tooltip="Edit", on_click=None):
@@ -3808,6 +3884,13 @@ class TTSSettingsWidget(QWidget):
         self._backend_combo.setCurrentIndex(idx)
         self._backend_combo.currentIndexChanged.connect(self._on_backend_changed)
         backend_row.addWidget(self._backend_combo, 1)
+        self._test_btn = QPushButton()
+        self._test_btn.setIcon(load_icon("play", color=ICON_COLOR_DARK))
+        self._test_btn.setFixedWidth(ICON_BTN_SIZE)
+        self._test_btn.setStyleSheet(get_icon_btn_css())
+        set_tooltip(self._test_btn, "Speak the test phrase locally using the selected engine.\nChange the phrase via TTS_TEST_PHRASE in settings.json.")
+        self._test_btn.clicked.connect(lambda: self._speak_demo(S.TTS_TEST_PHRASE))
+        backend_row.addWidget(self._test_btn)
         self._layout.addLayout(backend_row)
 
         # Voice selector row (content changes per backend)
@@ -3874,7 +3957,7 @@ class TTSSettingsWidget(QWidget):
         self._copy_btn = QPushButton()
         self._copy_btn.setIcon(load_icon("copy", color=ICON_COLOR_DARK))
         self._copy_btn.setFixedWidth(ICON_BTN_SIZE)
-        self._copy_btn.setStyleSheet(get_btn_css().replace("padding: 3px 8px;", "padding: 1px 4px;"))
+        self._copy_btn.setStyleSheet(get_icon_btn_css())
         self._copy_btn.setToolTip("Copy TTS instruction to clipboard")
         self._copy_btn.clicked.connect(self._copy_tts_instruction)
         append_row.addWidget(self._copy_btn)
@@ -3894,6 +3977,50 @@ class TTSSettingsWidget(QWidget):
         tmux_only_row.addWidget(self._tmux_only_checkbox)
         tmux_only_row.addStretch()
         self._layout.addLayout(tmux_only_row)
+
+        # NTFY remote TTS checkbox
+        ntfy_row = QHBoxLayout()
+        ntfy_row.setSpacing(8)
+        self._ntfy_checkbox = QCheckBox("NTFY remote TTS")
+        self._ntfy_checkbox.setChecked(S.NTFY_ENABLED)
+        self._ntfy_checkbox.setStyleSheet(get_checkbox_css())
+        set_tooltip(self._ntfy_checkbox, "Listen for messages via ntfy.sh and speak them locally.\nWhen enabled, transcriptions tell Claude to reply via NTFY\ninstead of a local TTS command — so speech works even\nwhen you're SSH'd into a remote machine.")
+        self._ntfy_checkbox.stateChanged.connect(self._on_ntfy_changed)
+        ntfy_row.addWidget(self._ntfy_checkbox)
+        ntfy_row.addStretch()
+        self._layout.addLayout(ntfy_row)
+
+        # NTFY topic row (indented, hidden when NTFY disabled)
+        self._ntfy_topic_widget = QWidget()
+        ntfy_topic_layout = QHBoxLayout(self._ntfy_topic_widget)
+        ntfy_topic_layout.setContentsMargins(20, 0, 0, 0)
+        ntfy_topic_layout.setSpacing(8)
+        topic_label = QLabel("Topic:")
+        topic_label.setStyleSheet(get_pref_label_css())
+        ntfy_topic_layout.addWidget(topic_label)
+        self._ntfy_topic_edit = QLineEdit()
+        self._ntfy_topic_edit.setText(S.NTFY_TOPIC)
+        self._ntfy_topic_edit.setPlaceholderText("channel name")
+        self._ntfy_topic_edit.setStyleSheet(get_lineedit_css())
+        set_tooltip(self._ntfy_topic_edit, "ntfy.sh topic (channel name) to listen on.\nMessages sent to this topic will be spoken aloud.\nAnyone who knows this topic can send you TTS messages,\nso use a unique name to keep it private.")
+        self._ntfy_topic_edit.editingFinished.connect(self._on_ntfy_topic_changed)
+        ntfy_topic_layout.addWidget(self._ntfy_topic_edit, 1)
+        self._ntfy_dice_btn = QPushButton()
+        self._ntfy_dice_btn.setIcon(load_icon("dice", color=ICON_COLOR_DARK))
+        self._ntfy_dice_btn.setFixedWidth(ICON_BTN_SIZE)
+        self._ntfy_dice_btn.setStyleSheet(get_icon_btn_css())
+        set_tooltip(self._ntfy_dice_btn, "Randomize topic name (e.g. 'cozy_drone').\nEach random name is unique enough to avoid\ncollisions with other ntfy.sh users.")
+        self._ntfy_dice_btn.clicked.connect(self._on_ntfy_dice)
+        ntfy_topic_layout.addWidget(self._ntfy_dice_btn)
+        self._ntfy_test_btn = QPushButton()
+        self._ntfy_test_btn.setIcon(load_icon("play", color=ICON_COLOR_DARK))
+        self._ntfy_test_btn.setFixedWidth(ICON_BTN_SIZE)
+        self._ntfy_test_btn.setStyleSheet(get_icon_btn_css())
+        set_tooltip(self._ntfy_test_btn, "Send test phrase via NTFY to this topic.\nIf the listener is running, you should hear it\nspoken back — verifying the full round trip.")
+        self._ntfy_test_btn.clicked.connect(self._on_ntfy_test)
+        ntfy_topic_layout.addWidget(self._ntfy_test_btn)
+        self._layout.addWidget(self._ntfy_topic_widget)
+        self._ntfy_topic_widget.setVisible(S.NTFY_ENABLED)
 
         # Announce pane checkbox
         announce_row = QHBoxLayout()
@@ -4058,6 +4185,42 @@ class TTSSettingsWidget(QWidget):
     def _on_announce_changed(self, state):
         S.set('TMUX_ANNOUNCE_PANE', state == Qt.CheckState.Checked.value)
 
+    def _on_ntfy_changed(self, state):
+        enabled = state == Qt.CheckState.Checked.value
+        self._ntfy_topic_widget.setVisible(enabled)
+        if enabled and not S.NTFY_TOPIC:
+            self._on_ntfy_dice()
+        S.set('NTFY_ENABLED', enabled)
+        if enabled:
+            start_ntfy_listener()
+        else:
+            stop_ntfy_listener()
+
+    def _set_ntfy_topic(self, topic):
+        """Update topic in UI and settings, restart listener if active."""
+        self._ntfy_topic_edit.setText(topic)
+        S.set('NTFY_TOPIC', topic)
+        if S.NTFY_ENABLED:
+            start_ntfy_listener()
+
+    def _on_ntfy_topic_changed(self):
+        topic = self._ntfy_topic_edit.text().strip()
+        if topic != S.NTFY_TOPIC:
+            self._set_ntfy_topic(topic)
+
+    def _on_ntfy_dice(self):
+        import rp
+        self._set_ntfy_topic(rp.random_passphrase())
+
+    def _on_ntfy_test(self):
+        topic = S.NTFY_TOPIC
+        if not topic:
+            return
+        def _send():
+            import rp
+            rp.ntfy_send(S.TTS_TEST_PHRASE, topic=topic)
+        threading.Thread(target=_send, daemon=True).start()
+
     def _edit_instruction(self):
         dialog = TTSInstructionDialog(S.SPEAK_BACK_INSTRUCTION_TEMPLATE, self.window())
         dialog.center_on_parent()
@@ -4065,8 +4228,7 @@ class TTSSettingsWidget(QWidget):
             S.set('SPEAK_BACK_INSTRUCTION_TEMPLATE', dialog.get_text())
 
     def _copy_tts_instruction(self):
-        instruction = S.SPEAK_BACK_INSTRUCTION_TEMPLATE.format(command=build_tts_command())
-        QApplication.clipboard().setText(instruction)
+        QApplication.clipboard().setText(build_speak_back_instruction())
         play_chime('copy')
 
 
@@ -5516,7 +5678,7 @@ class ChimeEditorDialog(DraggableDialog):
 
         # Duration knob - shows ms value in label (exponential for finer control at low values)
         initial_ms = int(self._duration * 1000)
-        self.duration_knob = RotaryKnob(f"{initial_ms}ms", min_val=20, max_val=500,
+        self.duration_knob = RotaryKnob(f"{initial_ms}ms", min_val=1, max_val=500,
                                         value=initial_ms, fmt="{:.0f}", size=32, exponential=True)
         self.duration_knob.valueChanged.connect(self._on_duration_changed)
         set_tooltip(self.duration_knob, "Duration per beat in milliseconds")
@@ -8500,10 +8662,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
                 # Append TTS instruction for tmux if enabled
                 tmux_text = text
                 if S.SPEAK_BACK_APPEND_INSTRUCTION:
-                    instruction = S.SPEAK_BACK_INSTRUCTION_TEMPLATE.format(
-                        command=build_tts_command()
-                    )
-                    tmux_text = text + '\n\n' + instruction
+                    tmux_text = text + '\n\n' + build_speak_back_instruction()
                 self._copy_to_clipboard(tmux_text)
                 time.sleep(0.1)
                 play_chime('tmux_send')
@@ -8515,10 +8674,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
             # Append TTS instruction for paste only if enabled and not tmux-only mode
             paste_text = text
             if S.SPEAK_BACK_APPEND_INSTRUCTION and not S.SPEAK_BACK_TMUX_ONLY:
-                instruction = S.SPEAK_BACK_INSTRUCTION_TEMPLATE.format(
-                    command=build_tts_command()
-                )
-                paste_text = text + '\n\n' + instruction
+                paste_text = text + '\n\n' + build_speak_back_instruction()
             self._copy_to_clipboard(paste_text)
             time.sleep(0.1)
             kb = KeyboardController()
@@ -9294,6 +9450,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
                     'TMUX_TARGET', 'TMUX_PANE_NAMES', 'TMUX_PHRASES_AS_CONTEXT', 'TMUX_ANNOUNCE_PANE', 'RECORDINGS_DIR', 'TRANSCRIPTIONS_DIR',
                     'SPEAK_BACK_VOICE', 'TTS_SAY', 'TTS_SUPERTONIC', 'TTS_KITTEN',
                     'SPEAK_BACK_APPEND_INSTRUCTION', 'SPEAK_BACK_TMUX_ONLY', 'SPEAK_BACK_INSTRUCTION_TEMPLATE',
+                    'NTFY_TOPIC', 'NTFY_INSTRUCTION_TEMPLATE', 'TTS_TEST_PHRASE',
                     'WAKEWORD_ENGINE', 'WAKEWORD_OPENWAKEWORD', 'WAKEWORD_MACOS',
                     'RESTORE_WINDOW_GEOMETRY', 'WINDOW_GEOMETRY', 'CUSTOM_CHIMES', 'CHIME_AUDIO_SETTINGS']:
             if key in data:
@@ -9307,6 +9464,10 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         # WAKE_WORD_ENABLED last (needs model loaded)
         if data.get('WAKE_WORD_ENABLED'):
             S.set('WAKE_WORD_ENABLED', True)
+        # NTFY_ENABLED last (needs NTFY_TOPIC loaded first)
+        if data.get('NTFY_ENABLED'):
+            S['NTFY_ENABLED'] = True
+            start_ntfy_listener()
 
     def _save_settings(self):
         """Save settings to JSON file."""
@@ -9713,6 +9874,9 @@ def main():
         window.move((screen.width() - window.width()) // 2, screen.height() // 4)
     window.show()
     window.first_show = False
+
+    # Apply saved reverb/chorus settings to synth (lazy-inits the native synth)
+    apply_audio_settings()
 
     # Load whisper model in background thread (GUI stays responsive)
     def load_model():
