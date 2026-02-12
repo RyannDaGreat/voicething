@@ -20,6 +20,15 @@ _SpeechDelegateClass = None
 _delegate_engine = None  # Reference to current engine for callback
 
 
+def _parse_phrases(raw):
+    """Parse a string or list into a list of stripped phrases."""
+    if raw is None:
+        return []
+    if isinstance(raw, str):
+        return [p.strip() for p in raw.split(',') if p.strip()]
+    return list(raw) if raw else []
+
+
 def _get_delegate_class():
     """Get or create the SpeechDelegate class (only once per process)."""
     global _SpeechDelegateClass
@@ -36,33 +45,32 @@ def _get_delegate_class():
                 phrase = str(command)
                 print(f"[wakeword] macOS recognized: '{phrase}' (recording={_delegate_engine._is_recording})")
 
-                # Check phrase types
                 phrase_lower = phrase.lower()
                 is_tmux_phrase = phrase_lower in _delegate_engine._tmux_phrases_lower
                 is_cancel_phrase = phrase_lower in _delegate_engine._cancel_phrases_lower
+                is_stop_phrase = phrase_lower in _delegate_engine._stop_phrases_lower
+                is_start_phrase = phrase_lower in _delegate_engine._start_phrases_lower
 
                 if _delegate_engine._is_recording:
-                    # Cancel phrases cancel the recording
                     if is_cancel_phrase:
                         print(f"[wakeword] Cancel phrase detected: '{phrase}'")
                         if _delegate_engine.on_cancel:
                             _delegate_engine.on_cancel()
                         return
-                    # Tmux phrases can't stop recording, only regular phrases can
-                    if is_tmux_phrase:
-                        print(f"[wakeword] Ignoring tmux phrase during recording")
+                    if is_stop_phrase:
+                        print(f"[wakeword] Stop phrase detected: '{phrase}'")
+                        if _delegate_engine.on_stop:
+                            _delegate_engine.on_stop()
                         return
-                    if _delegate_engine.on_stop:
-                        _delegate_engine.on_stop()
+                    # Start/tmux phrases are ignored during recording
+                    print(f"[wakeword] Ignoring phrase during recording: '{phrase}'")
                 else:
-                    # Cancel phrases do nothing when not recording
-                    if is_cancel_phrase:
-                        print(f"[wakeword] Ignoring cancel phrase (not recording)")
+                    if is_cancel_phrase or is_stop_phrase:
+                        print(f"[wakeword] Ignoring stop/cancel phrase (not recording)")
                         return
-                    # Store the detected phrase (for tmux routing prefix)
-                    _delegate_engine.last_detected_phrase = phrase if is_tmux_phrase else None
-                    # macOS doesn't have a pre-buffer, pass empty array
-                    _delegate_engine.on_wake(np.array([], dtype=np.float32))
+                    if is_start_phrase or is_tmux_phrase:
+                        _delegate_engine.last_detected_phrase = phrase if is_tmux_phrase else None
+                        _delegate_engine.on_wake(np.array([], dtype=np.float32))
 
         _SpeechDelegateClass = SpeechDelegate
     return _SpeechDelegateClass
@@ -71,16 +79,17 @@ def _get_delegate_class():
 class MacOSWakeWordEngine(WakeWordEngine):
     """Native macOS speech recognition for wake word detection.
 
-    Supports two types of phrases:
-    - Regular phrases: Can start AND stop recording
-    - Tmux phrases: Can ONLY start recording (not stop), and prepend to transcription
+    Supports four types of phrases:
+    - Start phrases: Can only START recording
+    - Stop phrases: Can only STOP recording
+    - Tmux phrases: Can only START recording, and prepend to transcription
+    - Cancel phrases: Cancel recording in progress
     """
 
     name = "macos"
     display_name = "macOS Native"
 
-    # Default phrases if none specified
-    DEFAULT_PHRASES = ["hey computer", "computer", "start recording"]
+    DEFAULT_PHRASES = ["jarvis", "roger"]
 
     def __init__(
         self,
@@ -88,6 +97,7 @@ class MacOSWakeWordEngine(WakeWordEngine):
         on_stop: Optional[StopCallback] = None,
         on_cancel: Optional[CancelCallback] = None,
         phrases: Optional[List[str]] = None,
+        stop_phrases: Optional[List[str]] = None,
         tmux_phrases: Optional[List[str]] = None,
         cancel_phrases: Optional[List[str]] = None,
     ):
@@ -96,41 +106,30 @@ class MacOSWakeWordEngine(WakeWordEngine):
 
         Args:
             on_wake: Callback when wake word detected
-            on_stop: Callback when wake word detected during recording
+            on_stop: Callback when stop phrase detected during recording
             on_cancel: Callback when cancel phrase detected during recording
-            phrases: List of phrases to listen for (comma-separated string also accepted)
-            tmux_phrases: Tmux pane phrases (start only, not stop)
-            cancel_phrases: Phrases that cancel recording (comma-separated string also accepted)
+            phrases: Start phrases (comma-separated string or list)
+            stop_phrases: Stop phrases that end recording (comma-separated string or list)
+            tmux_phrases: Tmux pane phrases (start only, prepend to transcription)
+            cancel_phrases: Phrases that cancel recording (comma-separated string or list)
         """
         super().__init__(on_wake, on_stop, on_cancel)
 
-        # Parse phrases (accept string or list)
-        if phrases is None:
-            self._phrases = self.DEFAULT_PHRASES.copy()
-        elif isinstance(phrases, str):
-            self._phrases = [p.strip() for p in phrases.split(',') if p.strip()]
-            if not self._phrases:
-                self._phrases = self.DEFAULT_PHRASES.copy()
-        else:
-            self._phrases = list(phrases) if phrases else self.DEFAULT_PHRASES.copy()
+        # Parse start phrases
+        self._phrases = _parse_phrases(phrases) or self.DEFAULT_PHRASES.copy()
 
-        # Parse tmux phrases (start only, not stop)
-        if tmux_phrases is None:
-            self._tmux_phrases = []
-        elif isinstance(tmux_phrases, str):
-            self._tmux_phrases = [p.strip() for p in tmux_phrases.split(',') if p.strip()]
-        else:
-            self._tmux_phrases = list(tmux_phrases) if tmux_phrases else []
+        # Parse stop phrases (end recording)
+        self._stop_phrases = _parse_phrases(stop_phrases)
+
+        # Parse tmux phrases (start only)
+        self._tmux_phrases = _parse_phrases(tmux_phrases)
 
         # Parse cancel phrases
-        if cancel_phrases is None:
-            self._cancel_phrases = []
-        elif isinstance(cancel_phrases, str):
-            self._cancel_phrases = [p.strip() for p in cancel_phrases.split(',') if p.strip()]
-        else:
-            self._cancel_phrases = list(cancel_phrases) if cancel_phrases else []
+        self._cancel_phrases = _parse_phrases(cancel_phrases)
 
         # Lowercase sets for quick lookup
+        self._start_phrases_lower = {p.lower() for p in self._phrases}
+        self._stop_phrases_lower = {p.lower() for p in self._stop_phrases}
         self._tmux_phrases_lower = {p.lower() for p in self._tmux_phrases}
         self._cancel_phrases_lower = {p.lower() for p in self._cancel_phrases}
 
@@ -139,7 +138,11 @@ class MacOSWakeWordEngine(WakeWordEngine):
         self._thread = None
         self._is_recording = False
         self._should_stop = threading.Event()
-        self.last_detected_phrase = None  # Stores tmux phrase that triggered wake (for prefix)
+        self.last_detected_phrase = None
+
+    def _all_phrases(self):
+        """Return all phrases the recognizer should listen for."""
+        return self._phrases + self._stop_phrases + self._tmux_phrases + self._cancel_phrases
 
     def _create_delegate(self):
         """Create the Objective-C delegate instance."""
@@ -162,7 +165,6 @@ class MacOSWakeWordEngine(WakeWordEngine):
         if self._running:
             return
 
-        # Always start fresh - not in recording state
         self._is_recording = False
 
         try:
@@ -177,20 +179,17 @@ class MacOSWakeWordEngine(WakeWordEngine):
 
             self._delegate = self._create_delegate()
             self._recognizer.setDelegate_(self._delegate)
-            # Combine regular phrases + tmux phrases + cancel phrases
-            all_phrases = self._phrases + self._tmux_phrases + self._cancel_phrases
-            self._recognizer.setCommands_(all_phrases)
+            self._recognizer.setCommands_(self._all_phrases())
             self._recognizer.setBlocksOtherRecognizers_(True)
-            self._recognizer.setListensInForegroundOnly_(False)  # Listen even when app not focused
+            self._recognizer.setListensInForegroundOnly_(False)
             self._recognizer.startListening()
 
-            # Run event loop in background thread
             self._should_stop.clear()
             self._thread = threading.Thread(target=self._run_event_loop, daemon=True)
             self._thread.start()
 
             self._running = True
-            print(f"[wakeword] macOS listening for: {self._phrases}")
+            print(f"[wakeword] macOS listening — start: {self._phrases}, stop: {self._stop_phrases}")
 
         except ImportError as e:
             raise RuntimeError(f"PyObjC not available: {e}")
@@ -206,23 +205,18 @@ class MacOSWakeWordEngine(WakeWordEngine):
             self._recognizer = None
             self._delegate = None
 
-        # Clear global reference to prevent stale callbacks from firing
-        # after stop() but before a new engine is created
         if _delegate_engine is self:
             _delegate_engine = None
 
         self._should_stop.set()
-        # Don't join thread - it may be blocked in event loop
-
         self._running = False
-        self._is_recording = False  # Reset in case we're stopped mid-recording
+        self._is_recording = False
         print("[wakeword] macOS stopped")
 
     def pause(self) -> None:
         """Pause during recording."""
         self._is_recording = True
         print(f"[wakeword] macOS paused (_is_recording=True)")
-        # macOS recognizer keeps running but we track state
 
     def resume(self) -> None:
         """Resume after recording."""
@@ -234,15 +228,12 @@ class MacOSWakeWordEngine(WakeWordEngine):
         pass
 
     def set_phrases(self, phrases: List[str]) -> None:
-        """Update the phrases to listen for."""
-        if isinstance(phrases, str):
-            self._phrases = [p.strip() for p in phrases.split(',') if p.strip()]
-        else:
-            self._phrases = list(phrases) if phrases else self.DEFAULT_PHRASES.copy()
+        """Update the start phrases to listen for."""
+        self._phrases = _parse_phrases(phrases) or self.DEFAULT_PHRASES.copy()
+        self._start_phrases_lower = {p.lower() for p in self._phrases}
 
-        # Update recognizer if running
         if self._recognizer is not None:
-            self._recognizer.setCommands_(self._phrases)
+            self._recognizer.setCommands_(self._all_phrases())
             print(f"[wakeword] macOS phrases updated: {self._phrases}")
 
     @classmethod

@@ -124,8 +124,9 @@ class BaseStyle:
     knob_tickmarks = False  # Show tick marks around arc
     knob_glow = False  # Glow on value arc
 
-    # Input field background (for QLineEdit, QComboBox, etc.)
-    input_bg = None  # None = use panel_bg_flat_css, or "rgb(...)" for explicit
+    # Input field background (for QLineEdit, QComboBox dropdowns, etc.)
+    input_bg = '#ffffff'
+    input_text = '#000000'
 
     # Chime editor colors
     chime_grid_bg = QColor(30, 30, 35)
