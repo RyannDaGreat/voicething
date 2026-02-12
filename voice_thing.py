@@ -282,7 +282,7 @@ CHIME_THEMES = {
         'copy':           (([12, 16],), 0.04),          # A5+C#6 bright
         'delete':         (([-8, -5],), 0.05),          # C#4+E4
         'enter':          (([4], [7], [12]), 0.04),     # C#→E→A arp
-        'cancel':         (([-5, -8],), 0.05),          # E4+C#4 (record rhyme)
+        'cancel':         (([-48,-36,-24,-8,-5], [-36], [-36], [-36], [-36], [-36], [-36]), 0.02),
         'pre_cancel':     (([-17, -20],), 0.05),        # E3+C#3 octave lower
         'wake_word_start':   (([-5,0,4],[0, 4, 7]), 0.12), # A major
         'wake_word_stop':    (([-12, -8, -5],[-24]), 0.12),# A major low
