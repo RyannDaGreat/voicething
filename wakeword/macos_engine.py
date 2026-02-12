@@ -65,7 +65,7 @@ def _get_delegate_class():
                     # Start/tmux phrases are ignored during recording
                     print(f"[wakeword] Ignoring phrase during recording: '{phrase}'")
                 else:
-                    if is_cancel_phrase or is_stop_phrase:
+                    if (is_cancel_phrase or is_stop_phrase) and not (is_start_phrase or is_tmux_phrase):
                         print(f"[wakeword] Ignoring stop/cancel phrase (not recording)")
                         return
                     if is_start_phrase or is_tmux_phrase:
