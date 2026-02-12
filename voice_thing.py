@@ -464,6 +464,7 @@ DEFAULTS = dict(
     TTS_KITTEN={'voice': DEFAULT_TTS_KITTEN_VOICE, 'speed': DEFAULT_TTS_KITTEN_SPEED},
     SPEAK_BACK_APPEND_INSTRUCTION=True,  # Append TTS instruction to transcriptions
     SPEAK_BACK_TMUX_ONLY=False,  # Only append TTS instruction when sending to tmux (not paste)
+    SPEAK_BACK_WAKE_ONLY=False,  # Only append TTS instruction when recording started by wake word
     SPEAK_BACK_INSTRUCTION_TEMPLATE="Please speak back with ({command} &)",
     # NTFY remote TTS settings
     NTFY_ENABLED=False,  # Enable NTFY listener for remote TTS
@@ -1813,6 +1814,7 @@ class DraggableDialog(DraggableResizableMixin, QDialog):
 
     # Override in subclasses for geometry persistence
     window_name = None
+    _scroll_areas = None  # Subclasses: {'name': QScrollArea} for scroll position save/restore
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -1856,18 +1858,45 @@ class DraggableDialog(DraggableResizableMixin, QDialog):
                       parent.y() + (parent.height() - self.height()) // 2)
 
     def _force_layout_update(self):
-        """Force layout recalculation after geometry restore."""
+        """Force layout recalculation after geometry restore, then restore scroll positions."""
         if self.layout():
             self.layout().invalidate()
             self.layout().activate()
+        self._restore_scroll_positions()
+
+    def _restore_scroll_positions(self):
+        """Restore saved scroll positions for registered scroll areas."""
+        if not self._scroll_areas or not self.window_name:
+            return
+        geom = S.WINDOW_GEOMETRY.get(self.window_name)
+        if not geom or 'scroll' not in geom:
+            return
+        saved = geom['scroll']
+        for name, sa in self._scroll_areas.items():
+            if name not in saved:
+                continue
+            val = saved[name]
+            if isinstance(val, list):
+                sa.verticalScrollBar().setValue(val[0])
+                sa.horizontalScrollBar().setValue(val[1])
+            else:
+                sa.verticalScrollBar().setValue(val)
 
     def _save_geometry(self):
-        """Save window geometry to settings."""
+        """Save window geometry and scroll positions to settings."""
         if self.window_name:
-            S.WINDOW_GEOMETRY[self.window_name] = {
+            geom = {
                 'x': self.x(), 'y': self.y(),
                 'width': self.width(), 'height': self.height()
             }
+            if self._scroll_areas:
+                scroll = {}
+                for name, sa in self._scroll_areas.items():
+                    v = sa.verticalScrollBar().value()
+                    h = sa.horizontalScrollBar().value()
+                    scroll[name] = [v, h] if h else v
+                geom['scroll'] = scroll
+            S.WINDOW_GEOMETRY[self.window_name] = geom
 
     def closeEvent(self, event):
         """Save geometry on close."""
@@ -3560,12 +3589,9 @@ done
 
     def _save_geometry(self):
         """Save window geometry including splitter position."""
+        super()._save_geometry()
         if self.window_name:
-            S.WINDOW_GEOMETRY[self.window_name] = {
-                'x': self.x(), 'y': self.y(),
-                'width': self.width(), 'height': self.height(),
-                'splitter': self.splitter.sizes(),
-            }
+            S.WINDOW_GEOMETRY[self.window_name]['splitter'] = self.splitter.sizes()
 
     def keyPressEvent(self, e):
         # Only forward to preview if it's actually focused
@@ -4056,6 +4082,16 @@ class TTSSettingsWidget(QWidget):
         tmux_only_row.addStretch()
         tts_sub.addLayout(tmux_only_row)
 
+        # Only on wake word checkbox (indented)
+        wake_only_row = indented_row(level=1)
+        self._wake_only_checkbox = make_checkbox("Only on wake word",
+            S.SPEAK_BACK_WAKE_ONLY,
+            "Only append when recording was started by wake word\n(skip when using keyboard shortcut).",
+            self._on_wake_only_changed)
+        wake_only_row.addWidget(self._wake_only_checkbox)
+        wake_only_row.addStretch()
+        tts_sub.addLayout(wake_only_row)
+
         # NTFY remote TTS checkbox (indented)
         ntfy_row = indented_row(level=1)
         self._ntfy_checkbox = make_checkbox("NTFY remote TTS",
@@ -4256,6 +4292,9 @@ class TTSSettingsWidget(QWidget):
 
     def _on_tmux_only_changed(self, state):
         S.set('SPEAK_BACK_TMUX_ONLY', state == Qt.CheckState.Checked.value)
+
+    def _on_wake_only_changed(self, state):
+        S.set('SPEAK_BACK_WAKE_ONLY', state == Qt.CheckState.Checked.value)
 
     def _on_announce_changed(self, state):
         S.set('TMUX_ANNOUNCE_PANE', state == Qt.CheckState.Checked.value)
@@ -5286,6 +5325,7 @@ class PrefsDialog(DraggableDialog):
         self.content_scroll.setStyleSheet("QScrollArea { background: transparent; }" + SCROLLBAR_CSS)
         self.content_widget = content_widget
         layout.addWidget(self.content_scroll, 1)  # stretch=1 so it takes available space
+        self._scroll_areas = {'content': self.content_scroll}
 
         # Bottom action buttons row (3 equally spaced)
         action_row = QHBoxLayout()
@@ -5915,6 +5955,7 @@ class ChimeEditorDialog(DraggableDialog):
         scroll_layout.addStretch()
         self.scroll.setWidget(scroll_content)
         main_content.addWidget(self.scroll, 1)
+        self._scroll_areas = {'grid': self.scroll}
 
         # Chime list on right side - use theme colors
         self.chime_list = QListWidget()
@@ -8293,6 +8334,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         # Non-settings instance state
         self.wake_word_engine = None  # Wake word engine instance (from wakeword module)
         self._tmux_wake_prefix = None  # Tmux phrase that triggered recording (for prefix)
+        self._recording_from_wake_word = False  # True when current recording was started by wake word
         self._tmux_dialog = None  # Reference to open TmuxSelectionDialog (if any)
         self._blue_mode_override = False  # True when tmux fullscreen forces always-on-top
 
@@ -8536,7 +8578,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         self.add_transcription_signal.connect(self._add_transcription)
         self.update_transcription_signal.connect(self._update_transcription)
         self.permission_error_signal.connect(self._on_permission_error)
-        self.wake_word_signal.connect(lambda buf: self.start_recording(pre_buffer=buf))
+        self.wake_word_signal.connect(self._start_recording_from_wake_word)
         self.finish_signal.connect(self._finish)
         self.stop_signal.connect(self.stop_recording)
         self.cancel_signal.connect(self.cancel_recording)
@@ -8803,7 +8845,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
                 # Magic phrase matched - route to that tmux pane (skip ⌘V)
                 # Uses tmux_paste_text() which pipes via stdin, no system clipboard needed
                 tmux_text = text
-                if S.SPEAK_BACK_APPEND_INSTRUCTION:
+                if S.SPEAK_BACK_APPEND_INSTRUCTION and not (S.SPEAK_BACK_WAKE_ONLY and not self._recording_from_wake_word):
                     tmux_text = text + '\n\n' + build_speak_back_instruction()
                 play_chime('tmux_send')
                 self._do_tmux_paste_to_target(pane_id, tmux_text)
@@ -8813,7 +8855,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         if S.AUTO_PASTE and not tmux_routed:
             # Append TTS instruction for paste only if enabled and not tmux-only mode
             paste_text = text
-            if S.SPEAK_BACK_APPEND_INSTRUCTION and not S.SPEAK_BACK_TMUX_ONLY:
+            if S.SPEAK_BACK_APPEND_INSTRUCTION and not S.SPEAK_BACK_TMUX_ONLY and not (S.SPEAK_BACK_WAKE_ONLY and not self._recording_from_wake_word):
                 paste_text = text + '\n\n' + build_speak_back_instruction()
             self._copy_to_clipboard(paste_text)
             time.sleep(0.1)
@@ -9109,6 +9151,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
 
     def toggle_recording(self):
         if self.state == "idle":
+            self._recording_from_wake_word = False
             self.start_recording()
         elif self.state == "recording":
             self.stop_recording()
@@ -9607,7 +9650,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
             'TMUX_PHRASES_AS_CONTEXT', 'TMUX_ANNOUNCE_PANE',
             # TTS / speak-back
             'SPEAK_BACK_VOICE', 'TTS_SAY', 'TTS_SUPERTONIC', 'TTS_KITTEN',
-            'SPEAK_BACK_APPEND_INSTRUCTION', 'SPEAK_BACK_TMUX_ONLY',
+            'SPEAK_BACK_APPEND_INSTRUCTION', 'SPEAK_BACK_TMUX_ONLY', 'SPEAK_BACK_WAKE_ONLY',
             'SPEAK_BACK_INSTRUCTION_TEMPLATE', 'TTS_TEST_PHRASE',
             # NTFY (topic before enabled, so listener has topic when it starts)
             'NTFY_TOPIC', 'NTFY_INSTRUCTION_TEMPLATE',
@@ -9775,6 +9818,11 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
             raise
         finally:
             self.finish_signal.emit()
+
+    def _start_recording_from_wake_word(self, pre_buffer):
+        """Start recording triggered by wake word detection."""
+        self._recording_from_wake_word = True
+        self.start_recording(pre_buffer=pre_buffer)
 
     def start_recording(self, pre_buffer=None):
         """Start recording audio. Optional pre_buffer is prepended to recording."""
