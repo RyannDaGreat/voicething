@@ -8717,9 +8717,12 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         self._do_tmux_paste_to_target(target, text)
 
     def _do_tmux_paste_to_target(self, target, text):
-        """Send text to a specific tmux target (pane_id or session:window.pane)."""
+        """Send text to a specific tmux target using paste-buffer for proper bracketed paste."""
         try:
-            subprocess.run(['tmux', 'send-keys', '-t', target, '-l', text], check=True)
+            # Use load-buffer + paste-buffer instead of send-keys -l
+            # This respects bracketed paste mode so apps treat it as a single paste
+            subprocess.run(['tmux', 'load-buffer', '-'], input=text.encode(), check=True)
+            subprocess.run(['tmux', 'paste-buffer', '-t', target, '-d', '-p'], check=True)
             if S.AUTO_ENTER:
                 time.sleep(S.ENTER_DELAY)
                 play_chime('enter')
@@ -8733,7 +8736,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
             if S.TMUX_ANNOUNCE_PANE:
                 self._speak_announcement(f"Sent to {phrase}")
         except subprocess.CalledProcessError as e:
-            print(f"tmux send-keys failed: {e}")
+            print(f"tmux paste-buffer failed: {e}")
         except FileNotFoundError:
             print("tmux not found - is tmux installed and running?")
 
@@ -8753,14 +8756,14 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         )
 
         if needs_pause:
-            self._stop_wake_word_listener()
+            self._pause_wake_word_listener()
 
         def speak_and_resume():
             do_tts(text, block=True)
             if needs_pause:
                 # Resume wake word on main thread after TTS finishes
                 # Extra 500ms to ensure audio fully stops before listening again
-                QTimer.singleShot(500, self._start_wake_word_listener)
+                QTimer.singleShot(500, self._resume_wake_word_listener)
 
         threading.Thread(target=speak_and_resume, daemon=True).start()
 
