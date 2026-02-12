@@ -164,6 +164,7 @@ CHIME_THEMES = {
         'auto_enter_off': (([16, 11], [7, 4]), 0.08),           # C#6+G# → E+C# descending
         'tmux_on':        (([-3], [4], [7, 12]), 0.07),         # F# → C# → E+A5 ascending 3-chord
         'tmux_off':       (([12, 7], [4], [-3]), 0.07),         # A5+E → C# → F# descending
+        'boot':           (([0], [4], [7], [12], [0, 4, 7, 12]), 0.08),  # A→C#→E→A5→Amaj chord
     },
     # Minimal: Clean single notes, perfect intervals (octaves, 5ths)
     'minimal': {
@@ -191,6 +192,7 @@ CHIME_THEMES = {
         'auto_enter_off': (([7], [-5]), 0.06),                  # E5 → E4 octave leap down
         'tmux_on':        (([-12], [0], [12]), 0.05),           # A3 → A4 → A5 ascending octaves
         'tmux_off':       (([12], [0], [-12]), 0.05),           # A5 → A4 → A3 descending octaves
+        'boot':           (([0], [7], [12], [0, 7, 12]), 0.06), # A→E→A5→power chord
     },
     # Blues: A blues scale with blue notes (0, 3, 5, 6, 7, 10)
     'blues': {
@@ -218,6 +220,7 @@ CHIME_THEMES = {
         'auto_enter_off': (([15, 10], [7, 3]), 0.08),           # C6+G → E+C minor walk down
         'tmux_on':        (([0, 6], [3, 10], [7, 15]), 0.07),   # A+Eb → C+G → E+C6 tritone ascend
         'tmux_off':       (([15, 7], [10, 3], [6, 0]), 0.07),   # C6+E → G+C → Eb+A tritone descend
+        'boot':           (([0, 3], [6], [7, 10], [0, 3, 7, 10]), 0.1),  # Am→Eb→E+G→Am7 blues
     },
     # Ethereal: Sus2/Sus4 only, wide voicings (0, 2, 5, 7, 9)
     # Rapid sequence: Asus2 → Esus4 → Dsus2 → Asus2/E → Asus2 high
@@ -246,6 +249,7 @@ CHIME_THEMES = {
         'auto_enter_off': (([14, 7], [9, 2]), 0.1),             # B5+E → F#+B sus2 fall
         'tmux_on':        (([-7, 0], [2, 7], [9, 14]), 0.09),   # D+A → B+E → F#+B5 ascending 5ths
         'tmux_off':       (([14, 9], [7, 2], [0, -7]), 0.09),   # B5+F# → E+B → A+D descending 5ths
+        'boot':           (([0, 2], [7], [9, 14], [0, 2, 7, 14]), 0.12), # Asus2→E→F#+B5→Asus2 spread
     },
     # Melancholy: A natural minor (0, 2, 3, 5, 7, 8, 10)
     'melancholy': {
@@ -273,6 +277,7 @@ CHIME_THEMES = {
         'auto_enter_off': (([12, 7], [8, 3]), 0.1),             # A5+E → F+C minor 6 fall
         'tmux_on':        (([-5, 0], [3, 7], [8, 12]), 0.08),   # E+A → C+E → F+A5 ascending minor
         'tmux_off':       (([12, 8], [7, 3], [0, -5]), 0.08),   # A5+F → E+C → A+E descending minor
+        'boot':           (([0, 3], [5], [7], [8, 12], [0, 3, 7]), 0.12), # Am→D→E→F+A5→Am triad
     },
     # Bright: A major scale (0, 2, 4, 5, 7, 9, 11)
     'bright': {
@@ -302,6 +307,7 @@ CHIME_THEMES = {
         'auto_enter_off': (([14, 18], [9, 2]), 0.06),              # B5+D#6 → F#+B fall
         'tmux_on':        (([-7, 0], [4, 9], [11, 16]), 0.06),  # D+A → C#+F# → G#+C#6 ascending maj
         'tmux_off':       (([16, 11], [9, 4], [0, -7]), 0.06),  # C#6+G# → F#+C# → A+D descending maj
+        'boot':           (([0], [4], [7], [11], [16], [0, 4, 7, 11, 16]), 0.06),  # A→C#→E→G#→C#6→Amaj9
     },
     # Jazzy: Extended chords, 7ths, 9ths, 13ths
     'jazzy': {
@@ -329,6 +335,7 @@ CHIME_THEMES = {
         'auto_enter_off': (([14, 9], [10, 5]), 0.07),           # B5+F# → G+D jazz 2nds fall
         'tmux_on':        (([-2, 2], [5, 10], [9, 14]), 0.06),  # G+B → D+G → F#+B5 ascending jazz
         'tmux_off':       (([14, 9], [10, 5], [2, -2]), 0.06),  # B5+F# → G+D → B+G descending jazz
+        'boot':           (([0, 4], [7, 10], [14], [0, 4, 7, 10, 14]), 0.08),  # A9 arpeggio → full voicing
     },
 }
 
@@ -988,10 +995,10 @@ def get_combobox_css():
     bg = STYLE.input_bg
     text = STYLE.input_text
     return (
-        f"QComboBox {{ background-color: {bg}; color: {text}; border: 1px solid {BORDER_COLOR}; padding: 4px 8px; }}"
-        f"QComboBox QAbstractItemView {{ background-color: {bg}; color: {text}; selection-background-color: {ACCENT}; selection-color: white; }}"
-        f"QComboBox QAbstractItemView::item:hover {{ background: {ACCENT}; color: white; }}"
-        f"QComboBox QLineEdit {{ background-color: {bg}; color: {text}; padding: 0px; margin: 0px; border: none; }}"
+        f"QComboBox {{ background-color: {bg}; color: {text}; border: 1px solid {BORDER_COLOR}; padding: 4px 8px; }} "
+        f"QComboBox QAbstractItemView {{ background-color: {bg}; color: {text}; selection-background-color: {ACCENT}; selection-color: white; }} "
+        f"QComboBox QAbstractItemView::item:hover {{ background: {ACCENT}; color: white; }} "
+        f"QComboBox QLineEdit {{ background-color: {bg}; color: {text}; padding: 0px; margin: 0px; border: none; }} "
         f"QComboBox::drop-down {{ border: none; }} {TOOLTIP_CSS}"
     )
 
@@ -1007,8 +1014,8 @@ def _make_styled_listview():
     view = QListView()
     view.setStyleSheet(
         f"QListView {{ background-color: {bg}; color: {text}; "
-        f"border: 1px solid {BORDER_COLOR}; }}"
-        f"QListView::item:selected {{ background-color: {ACCENT}; color: white; }}"
+        f"border: 1px solid {BORDER_COLOR}; }} "
+        f"QListView::item:selected {{ background-color: {ACCENT}; color: white; }} "
         f"QListView::item:hover {{ background-color: {ACCENT}; color: white; }}"
     )
     return view
@@ -1033,8 +1040,8 @@ def make_combobox_searchable(combo_box):
     completer.setCompletionMode(QCompleter.CompletionMode.UnfilteredPopupCompletion)
     completer.popup().setStyleSheet(
         f"QAbstractItemView {{ background-color: {STYLE.input_bg}; color: {STYLE.input_text}; "
-        f"border: 1px solid {BORDER_COLOR}; }}"
-        f"QAbstractItemView::item:selected {{ background-color: {ACCENT}; color: white; }}"
+        f"border: 1px solid {BORDER_COLOR}; }} "
+        f"QAbstractItemView::item:selected {{ background-color: {ACCENT}; color: white; }} "
         f"QAbstractItemView::item:hover {{ background-color: {ACCENT}; color: white; }}"
     )
     combo_box.setCompleter(completer)
@@ -1358,6 +1365,7 @@ _chime_log = []
 _CHIME_DEBUG = True  # Set to False to disable logging
 CHIME_LOG_FILE = os.path.join(DEFAULT_RECORDINGS_DIR, "chime_log.jsonl")  # Uses default, not configurable
 _chime_log_callbacks = []  # Callbacks to notify when chime is logged (for real-time UI updates)
+_chimes_enabled = False  # Set to True after boot completes and MIDI settings are applied
 
 def _log_chime_to_file(entry):
     """Append chime entry to persistent log file (JSONL format)."""
@@ -1383,7 +1391,7 @@ def get_chime_audio_params():
 
 def chime(*chords, t=0.15, gap=0.0, name=None, **kwargs):
     """Play chime using native FluidSynth audio (non-blocking, layerable)."""
-    if not S.SOUND_ENABLED or S.CHIME_VOLUME <= 0:
+    if not _chimes_enabled or not S.SOUND_ENABLED or S.CHIME_VOLUME <= 0:
         return
     params = get_chime_audio_params()
     # Log if debug enabled
@@ -1815,37 +1823,43 @@ class DraggableDialog(DraggableResizableMixin, QDialog):
 
     def center_on_parent(self):
         """Center on parent, or restore saved geometry if enabled."""
-        self.adjustSize()
-
         parent = self.parent()
         # If parent is in blue mode (fullscreen), make dialog appear on fullscreen space
         if parent and getattr(parent, '_blue_mode_override', False):
-            # Get reference to the tmux dialog which owns the fullscreen
             tmux_dialog = getattr(parent, '_tmux_dialog', None)
             if tmux_dialog and tmux_dialog.isVisible():
-                # Position on the same screen as tmux dialog (fullscreen)
                 screen = tmux_dialog.screen()
                 if screen:
+                    self.adjustSize()
                     sg = screen.availableGeometry()
-                    # Set window flags to stay on top and be visible over fullscreen
                     flags = self.windowFlags() | Qt.WindowType.WindowStaysOnTopHint
                     self.setWindowFlags(flags)
                     self.move(sg.x() + (sg.width() - self.width()) // 2,
                               sg.y() + (sg.height() - self.height()) // 2)
                     return
 
-        # Try to restore saved geometry
+        # Try to restore saved geometry (skip adjustSize — use saved size directly)
         if self.window_name and S.RESTORE_WINDOW_GEOMETRY:
             geom = S.WINDOW_GEOMETRY.get(self.window_name)
             if geom:
-                self.move(geom['x'], geom['y'])
                 if 'width' in geom and 'height' in geom:
                     self.resize(geom['width'], geom['height'])
+                self.move(geom['x'], geom['y'])
+                # Force layout recalculation for the restored size
+                QTimer.singleShot(0, self._force_layout_update)
                 return
+
         # Fall back to centering on parent
+        self.adjustSize()
         if parent:
             self.move(parent.x() + (parent.width() - self.width()) // 2,
                       parent.y() + (parent.height() - self.height()) // 2)
+
+    def _force_layout_update(self):
+        """Force layout recalculation after geometry restore."""
+        if self.layout():
+            self.layout().invalidate()
+            self.layout().activate()
 
     def _save_geometry(self):
         """Save window geometry to settings."""
@@ -2926,10 +2940,10 @@ class TmuxSelectionDialog(DraggableDialog):
         accent_css = STYLE.accent_css
         self.table.setStyleSheet(
             f"QTableWidget {{ {PANEL_BG_FLAT_CSS} color: {TEXT_PRIMARY}; "
-            f"border: 1px solid {BORDER_COLOR}; font-family: Menlo, monospace; font-size: 11px; }}"
-            f"QTableWidget::item {{ padding: 1px 4px; color: {TEXT_PRIMARY}; }}"
-            f"QTableWidget::item:hover {{ background: rgba({STYLE.accent.red()},{STYLE.accent.green()},{STYLE.accent.blue()},0.25); }}"
-            f"QTableWidget::item:selected {{ background: rgba({STYLE.accent.red()},{STYLE.accent.green()},{STYLE.accent.blue()},0.5); color: {TEXT_PRIMARY}; }}"
+            f"border: 1px solid {BORDER_COLOR}; font-family: Menlo, monospace; font-size: 11px; }} "
+            f"QTableWidget::item {{ padding: 1px 4px; color: {TEXT_PRIMARY}; }} "
+            f"QTableWidget::item:hover {{ background: rgba({STYLE.accent.red()},{STYLE.accent.green()},{STYLE.accent.blue()},0.25); }} "
+            f"QTableWidget::item:selected {{ background: rgba({STYLE.accent.red()},{STYLE.accent.green()},{STYLE.accent.blue()},0.5); color: {TEXT_PRIMARY}; }} "
             f"QHeaderView::section {{ background: {BORDER_COLOR}; color: {TEXT_PRIMARY}; padding: 2px 4px; "
             f"border: 1px solid {BORDER_COLOR}; font-weight: bold; }}"
             + SCROLLBAR_CSS
@@ -5943,9 +5957,9 @@ class ChimeEditorDialog(DraggableDialog):
             f"QListWidget {{ background: rgb({list_bg.red()},{list_bg.green()},{list_bg.blue()}); "
             f"color: {TEXT_PRIMARY}; "
             f"border: 1px solid rgb({list_border.red()},{list_border.green()},{list_border.blue()}); "
-            f"font-size: 11px; }}"
-            f"QListWidget::item {{ padding: 4px 6px; }}"
-            f"QListWidget::item:selected {{ background: {STYLE.accent_css}; color: #000; }}"
+            f"font-size: 11px; }} "
+            f"QListWidget::item {{ padding: 4px 6px; }} "
+            f"QListWidget::item:selected {{ background: {STYLE.accent_css}; color: #000; }} "
             f"QListWidget::item:hover {{ background: rgba({STYLE.accent.red()},{STYLE.accent.green()},{STYLE.accent.blue()},0.2); }}"
             + SCROLLBAR_CSS
         )
@@ -7062,8 +7076,8 @@ class TranscriptionRow(QFrame):
     @staticmethod
     def _btn_style():
         return (
-            f"QPushButton {{ background: {STYLE.transcription_row_btn_bg}; border: none; border-radius: 4px; }}"
-            f"QPushButton:hover {{ background: {STYLE.transcription_row_btn_hover}; }}"
+            f"QPushButton {{ background: {STYLE.transcription_row_btn_bg}; border: none; border-radius: 4px; }} "
+            f"QPushButton:hover {{ background: {STYLE.transcription_row_btn_hover}; }} "
             f"QPushButton:pressed {{ background: {STYLE.transcription_row_btn_pressed}; }}"
         )
 
@@ -10062,6 +10076,12 @@ def main():
 
     # Apply saved reverb/chorus settings to synth (lazy-inits the native synth)
     apply_audio_settings()
+
+    # Now that MIDI settings are applied, enable chimes and play boot chime
+    global _chimes_enabled
+    _chimes_enabled = True
+    if S.SOUND_ENABLED:
+        threading.Thread(target=lambda: play_chime('boot'), daemon=True).start()
 
     # Load whisper model in background thread (GUI stays responsive)
     def load_model():
