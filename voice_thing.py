@@ -536,7 +536,7 @@ def make_checkbox(text, checked, tooltip=None, on_change=None, css_size=11):
     cb.setChecked(checked)
     cb.setStyleSheet(get_checkbox_css(css_size))
     if tooltip:
-        cb.setToolTip(tooltip)
+        set_tooltip(cb, tooltip)
     if on_change:
         cb.stateChanged.connect(on_change)
     return cb
@@ -4023,11 +4023,10 @@ class TTSSettingsWidget(QWidget):
         # Append instruction checkbox + edit button
         append_row = QHBoxLayout()
         append_row.setSpacing(8)
-        self._append_checkbox = QCheckBox("Append TTS instruction")
-        self._append_checkbox.setChecked(S.SPEAK_BACK_APPEND_INSTRUCTION)
-        self._append_checkbox.setStyleSheet(get_checkbox_css())
-        self._append_checkbox.setToolTip("Appends TTS command to transcriptions for Claude to speak.")
-        self._append_checkbox.stateChanged.connect(self._on_append_changed)
+        self._append_checkbox = make_checkbox("Append TTS instruction",
+            S.SPEAK_BACK_APPEND_INSTRUCTION,
+            "Appends TTS command to transcriptions for Claude to speak.",
+            self._on_append_changed)
         append_row.addWidget(self._append_checkbox)
         self._edit_btn = make_edit_button("Edit the instruction template", self._edit_instruction)
         append_row.addWidget(self._edit_btn)
@@ -4049,22 +4048,20 @@ class TTSSettingsWidget(QWidget):
 
         # Only for tmux checkbox (indented)
         tmux_only_row = indented_row(level=1)
-        self._tmux_only_checkbox = QCheckBox("Only for tmux")
-        self._tmux_only_checkbox.setChecked(S.SPEAK_BACK_TMUX_ONLY)
-        self._tmux_only_checkbox.setStyleSheet(get_checkbox_css())
-        self._tmux_only_checkbox.setToolTip("Only append when sending to tmux panes.")
-        self._tmux_only_checkbox.stateChanged.connect(self._on_tmux_only_changed)
+        self._tmux_only_checkbox = make_checkbox("Only for tmux",
+            S.SPEAK_BACK_TMUX_ONLY,
+            "Only append when sending to tmux panes.",
+            self._on_tmux_only_changed)
         tmux_only_row.addWidget(self._tmux_only_checkbox)
         tmux_only_row.addStretch()
         tts_sub.addLayout(tmux_only_row)
 
         # NTFY remote TTS checkbox (indented)
         ntfy_row = indented_row(level=1)
-        self._ntfy_checkbox = QCheckBox("NTFY remote TTS")
-        self._ntfy_checkbox.setChecked(S.NTFY_ENABLED)
-        self._ntfy_checkbox.setStyleSheet(get_checkbox_css())
-        set_tooltip(self._ntfy_checkbox, "Listen for messages via ntfy.sh and speak them locally.\nWhen enabled, transcriptions tell Claude to reply via NTFY\ninstead of a local TTS command — so speech works even\nwhen you're SSH'd into a remote machine.")
-        self._ntfy_checkbox.stateChanged.connect(self._on_ntfy_changed)
+        self._ntfy_checkbox = make_checkbox("NTFY remote TTS",
+            S.NTFY_ENABLED,
+            "Listen for messages via ntfy.sh and speak them locally.\nWhen enabled, transcriptions tell Claude to reply via NTFY\ninstead of a local TTS command — so speech works even\nwhen you're SSH'd into a remote machine.",
+            self._on_ntfy_changed)
         ntfy_row.addWidget(self._ntfy_checkbox)
         ntfy_row.addStretch()
         tts_sub.addLayout(ntfy_row)
@@ -4104,11 +4101,10 @@ class TTSSettingsWidget(QWidget):
         # Announce pane checkbox
         announce_row = QHBoxLayout()
         announce_row.setSpacing(8)
-        self._announce_checkbox = QCheckBox("Announce tmux pane")
-        self._announce_checkbox.setChecked(S.TMUX_ANNOUNCE_PANE)
-        self._announce_checkbox.setStyleSheet(get_checkbox_css())
-        set_tooltip(self._announce_checkbox, "Speak which pane(s) received the message.")
-        self._announce_checkbox.stateChanged.connect(self._on_announce_changed)
+        self._announce_checkbox = make_checkbox("Announce tmux pane",
+            S.TMUX_ANNOUNCE_PANE,
+            "Speak which pane(s) received the message.",
+            self._on_announce_changed)
         announce_row.addWidget(self._announce_checkbox)
         announce_row.addStretch()
         self._layout.addLayout(announce_row)
@@ -4346,10 +4342,8 @@ class WakeWordSettingsWidget(QWidget):
             "which uses significant battery on laptops.\n\n"
             "Disable when not needed to save battery.")
         enable_row.addWidget(enable_label)
-        self._enable_checkbox = QCheckBox("Enable wake word detection")
-        self._enable_checkbox.setChecked(S.WAKE_WORD_ENABLED)
-        self._enable_checkbox.setStyleSheet(get_checkbox_css(12))
-        self._enable_checkbox.stateChanged.connect(self._on_enabled_changed)
+        self._enable_checkbox = make_checkbox("Enable wake word detection",
+            S.WAKE_WORD_ENABLED, on_change=self._on_enabled_changed, css_size=12)
         enable_row.addWidget(self._enable_checkbox, 1)
         self._layout.addLayout(enable_row)
 
@@ -4466,11 +4460,10 @@ class WakeWordSettingsWidget(QWidget):
         # +Tmux Phrases checkbox (indented, only applies to start phrases)
         tmux_row = indented_row(level=1)
         checked = S.WAKEWORD_MACOS.get('use_tmux_phrases', False)
-        self._tmux_phrases_checkbox = QCheckBox(get_tmux_phrases_checkbox_label(checked))
-        self._tmux_phrases_checkbox.setStyleSheet(get_checkbox_css())
-        self._tmux_phrases_checkbox.setChecked(checked)
+        self._tmux_phrases_checkbox = make_checkbox(
+            get_tmux_phrases_checkbox_label(checked), checked,
+            on_change=self._on_tmux_phrases_changed)
         self._update_tmux_phrases_tooltip()
-        self._tmux_phrases_checkbox.stateChanged.connect(self._on_tmux_phrases_changed)
         tmux_row.addWidget(self._tmux_phrases_checkbox)
         tmux_row.addStretch()
         macos_layout.addLayout(tmux_row)
@@ -4912,12 +4905,10 @@ class PrefsDialog(DraggableDialog):
         if copy_icon:
             copy_icon_label.setPixmap(copy_icon.pixmap(ICON_SIZE_SMALL, ICON_SIZE_SMALL))
         auto_row.addWidget(copy_icon_label)
-        self.copy_checkbox = QCheckBox("Copy to clipboard")
-        self.copy_checkbox.setChecked(S.AUTO_COPY)
-        self.copy_checkbox.setStyleSheet(get_checkbox_css())
-        self.copy_checkbox.setToolTip("Copy transcription to clipboard after recording.\n\n"
-                                       "Other paste options require this to be enabled.")
-        self.copy_checkbox.stateChanged.connect(self._on_auto_copy_pref_changed)
+        self.copy_checkbox = make_checkbox("Copy to clipboard", S.AUTO_COPY,
+            "Copy transcription to clipboard after recording.\n\n"
+            "Other paste options require this to be enabled.",
+            self._on_auto_copy_pref_changed)
         auto_row.addWidget(self.copy_checkbox)
 
         # ⌘V Paste
@@ -4927,23 +4918,18 @@ class PrefsDialog(DraggableDialog):
             paste_icon_label.setPixmap(paste_icon.pixmap(ICON_SIZE_SMALL, ICON_SIZE_SMALL))
         auto_row.addWidget(paste_icon_label)
         self._paste_icon_labels.append(paste_icon_label)
-        self.paste_checkbox = QCheckBox("⌘V paste")
-        self.paste_checkbox.setChecked(S.AUTO_PASTE)
-        self.paste_checkbox.setStyleSheet(get_checkbox_css())
-        self.paste_checkbox.setToolTip("Automatically paste transcription via ⌘V.\n\n"
-                                        "Requires 'Copy to clipboard' to be enabled.")
-        self.paste_checkbox.stateChanged.connect(self._on_auto_paste_pref_changed)
+        self.paste_checkbox = make_checkbox("⌘V paste", S.AUTO_PASTE,
+            "Automatically paste transcription via ⌘V.\n\n"
+            "Requires 'Copy to clipboard' to be enabled.",
+            self._on_auto_paste_pref_changed)
         auto_row.addWidget(self.paste_checkbox)
 
         # Restore clipboard
-        self.restore_clip_checkbox = QCheckBox("Restore clipboard")
-        self.restore_clip_checkbox.setChecked(S.RESTORE_CLIPBOARD)
-        self.restore_clip_checkbox.setStyleSheet(get_checkbox_css())
-        self.restore_clip_checkbox.setToolTip("Restore your original clipboard contents after pasting.\n\n"
-                                               "Without this, pasting a transcription replaces\n"
-                                               "whatever was on your clipboard. With this enabled,\n"
-                                               "your clipboard is saved before and restored after.")
-        self.restore_clip_checkbox.stateChanged.connect(
+        self.restore_clip_checkbox = make_checkbox("Restore clipboard", S.RESTORE_CLIPBOARD,
+            "Restore your original clipboard contents after pasting.\n\n"
+            "Without this, pasting a transcription replaces\n"
+            "whatever was on your clipboard. With this enabled,\n"
+            "your clipboard is saved before and restored after.",
             lambda state: S.set('RESTORE_CLIPBOARD', state == Qt.CheckState.Checked.value))
         auto_row.addWidget(self.restore_clip_checkbox)
 
@@ -4954,13 +4940,11 @@ class PrefsDialog(DraggableDialog):
             tmux_icon_label.setPixmap(tmux_icon.pixmap(ICON_SIZE_SMALL, ICON_SIZE_SMALL))
         auto_row.addWidget(tmux_icon_label)
         self._paste_icon_labels.append(tmux_icon_label)
-        self.tmux_checkbox = QCheckBox("Tmux paste")
-        self.tmux_checkbox.setChecked(S.TMUX_MODE)
-        self.tmux_checkbox.setStyleSheet(get_checkbox_css())
-        self.tmux_checkbox.setToolTip("Paste directly into active tmux pane using send-keys.\n\n"
-                                       "Requires 'Copy to clipboard' to be enabled.\n"
-                                       "When enabled, replaces ⌘V paste.")
-        self.tmux_checkbox.stateChanged.connect(self._on_tmux_pref_changed)
+        self.tmux_checkbox = make_checkbox("Tmux paste", S.TMUX_MODE,
+            "Paste directly into active tmux pane using send-keys.\n\n"
+            "Requires 'Copy to clipboard' to be enabled.\n"
+            "When enabled, replaces ⌘V paste.",
+            self._on_tmux_pref_changed)
         auto_row.addWidget(self.tmux_checkbox)
 
         # Enter after paste
@@ -4970,15 +4954,13 @@ class PrefsDialog(DraggableDialog):
             enter_icon_label.setPixmap(enter_icon.pixmap(ICON_SIZE_SMALL, ICON_SIZE_SMALL))
         auto_row.addWidget(enter_icon_label)
         self._paste_icon_labels.append(enter_icon_label)
-        self.enter_checkbox = QCheckBox("Enter after paste")
-        self.enter_checkbox.setChecked(S.AUTO_ENTER)
-        self.enter_checkbox.setStyleSheet(get_checkbox_css())
-        self.enter_checkbox.setToolTip("Press Enter after pasting transcription.\n\n"
-                                        "With ⌘V paste: sends keyboard Enter key\n"
-                                        "With Tmux paste: uses tmux send-keys Enter\n"
-                                        "Both use the Enter Delay setting below.\n\n"
-                                        "Has no effect if neither paste mode is enabled.")
-        self.enter_checkbox.stateChanged.connect(self._on_enter_changed)
+        self.enter_checkbox = make_checkbox("Enter after paste", S.AUTO_ENTER,
+            "Press Enter after pasting transcription.\n\n"
+            "With ⌘V paste: sends keyboard Enter key\n"
+            "With Tmux paste: uses tmux send-keys Enter\n"
+            "Both use the Enter Delay setting below.\n\n"
+            "Has no effect if neither paste mode is enabled.",
+            self._on_enter_changed)
         auto_row.addWidget(self.enter_checkbox)
 
         auto_row.addStretch()
@@ -5020,10 +5002,8 @@ class PrefsDialog(DraggableDialog):
                                    "Useful for long recordings with gaps - the waveform\n"
                                    "won't scroll during quiet periods.")
         silence_row.addWidget(silence_label)
-        self.silence_checkbox = QCheckBox("Skip recording during silence")
-        self.silence_checkbox.setChecked(S.SILENCE_SKIP_ENABLED)
-        self.silence_checkbox.setStyleSheet(get_checkbox_css(12))
-        self.silence_checkbox.stateChanged.connect(self._on_silence_skip_changed)
+        self.silence_checkbox = make_checkbox("Skip recording during silence",
+            S.SILENCE_SKIP_ENABLED, on_change=self._on_silence_skip_changed, css_size=12)
         silence_row.addWidget(self.silence_checkbox, 1)
         settings_box.addLayout(silence_row)
 
@@ -5079,14 +5059,12 @@ class PrefsDialog(DraggableDialog):
         # Tmux phrases as context words
         phrases_ctx_row = QHBoxLayout()
         phrases_ctx_row.setSpacing(8)
-        self.phrases_ctx_check = QCheckBox(get_tmux_phrases_checkbox_label(S.TMUX_PHRASES_AS_CONTEXT))
-        self.phrases_ctx_check.setChecked(S.TMUX_PHRASES_AS_CONTEXT)
-        self.phrases_ctx_check.setStyleSheet(get_checkbox_css())
-        set_tooltip(self.phrases_ctx_check,
+        self.phrases_ctx_check = make_checkbox(
+            get_tmux_phrases_checkbox_label(S.TMUX_PHRASES_AS_CONTEXT),
+            S.TMUX_PHRASES_AS_CONTEXT,
             "Include tmux pane phrases as context words.\n"
-            "Helps Whisper recognize phrase words in speech."
-        )
-        self.phrases_ctx_check.stateChanged.connect(self._on_phrases_ctx_changed)
+            "Helps Whisper recognize phrase words in speech.",
+            self._on_phrases_ctx_changed)
         phrases_ctx_row.addWidget(self.phrases_ctx_check)
         # Hint label shown when tmux mode is disabled
         self._phrases_ctx_hint = QLabel("")
@@ -5115,16 +5093,13 @@ class PrefsDialog(DraggableDialog):
             LLM_MODELS, S.LLM_MODEL, self._on_llm_model_changed
         )
         llm_model_row.addWidget(self.llm_model_combo, 1)
-        self.llm_enabled_checkbox = QCheckBox("Auto")
-        self.llm_enabled_checkbox.setChecked(S.LLM_ENABLED)
-        self.llm_enabled_checkbox.setStyleSheet(get_checkbox_css())
-        set_tooltip(self.llm_enabled_checkbox,
+        self.llm_enabled_checkbox = make_checkbox("Auto", S.LLM_ENABLED,
             "Auto LLM post-processing (R)\n\n"
             "When checked, transcriptions are automatically\n"
             "sent through the LLM for cleanup.\n\n"
             "You can still manually process any transcription\n"
-            "from the dropdown menu in the Transcriptions tab.")
-        self.llm_enabled_checkbox.stateChanged.connect(self._on_llm_enabled_changed)
+            "from the dropdown menu in the Transcriptions tab.",
+            self._on_llm_enabled_changed)
         llm_model_row.addWidget(self.llm_enabled_checkbox)
         settings_box.addLayout(llm_model_row)
         # Prompt prefix
@@ -5261,11 +5236,8 @@ class PrefsDialog(DraggableDialog):
         settings_box.addWidget(make_section("Window"))
         window_row = QHBoxLayout()
         window_row.setSpacing(8)
-        self.always_on_top_checkbox = QCheckBox("Always on Top")
-        self.always_on_top_checkbox.setChecked(S.ALWAYS_ON_TOP)
-        self.always_on_top_checkbox.setStyleSheet(get_checkbox_css())
-        self.always_on_top_checkbox.setToolTip("Keep window above other windows")
-        self.always_on_top_checkbox.stateChanged.connect(self._on_always_on_top_changed)
+        self.always_on_top_checkbox = make_checkbox("Always on Top", S.ALWAYS_ON_TOP,
+            "Keep window above other windows", self._on_always_on_top_changed)
         window_row.addWidget(self.always_on_top_checkbox)
         # Show override notice when in blue mode (tmux fullscreen)
         self.blue_mode_label = QLabel("(overridden)")
@@ -5276,13 +5248,10 @@ class PrefsDialog(DraggableDialog):
         else:
             self.blue_mode_label.hide()
         window_row.addWidget(self.blue_mode_label)
-        self.restore_geom_checkbox = QCheckBox("Restore Positions")
-        self.restore_geom_checkbox.setChecked(S.RESTORE_WINDOW_GEOMETRY)
-        self.restore_geom_checkbox.setStyleSheet(get_checkbox_css())
-        self.restore_geom_checkbox.setToolTip(
+        self.restore_geom_checkbox = make_checkbox("Restore Positions", S.RESTORE_WINDOW_GEOMETRY,
             "Remember and restore window positions and sizes on startup.\n"
-            "Applies to main window and dialogs (Preferences, Tmux, Help, etc.)")
-        self.restore_geom_checkbox.stateChanged.connect(self._on_restore_geom_changed)
+            "Applies to main window and dialogs (Preferences, Tmux, Help, etc.)",
+            self._on_restore_geom_changed)
         window_row.addWidget(self.restore_geom_checkbox)
         window_row.addStretch()
         settings_box.addLayout(window_row)
