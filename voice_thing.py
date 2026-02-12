@@ -423,6 +423,7 @@ DEFAULTS = dict(
     TMUX_ANNOUNCE_PANE=False,  # Announce pane names via TTS when sending
     AUTO_COPY=True,   # Copy transcription to clipboard before paste
     AUTO_PASTE=True,  # Use ⌘V to paste after copying
+    RESTORE_CLIPBOARD=False,  # Restore original clipboard contents after paste
     LLM_MODEL='OLLAMA:qwen2.5:7b',
     LLM_PREFIX='Claude Haiku Veo',  # Empty means use default
     SILENCE_SKIP_ENABLED=False,  # Skip recording during silence
@@ -985,7 +986,7 @@ def get_combobox_css():
         f"QComboBox QAbstractItemView {{ {bg_css} color: {text_color}; selection-background-color: {ACCENT}; selection-color: white; }}"
         f"QComboBox QAbstractItemView::item:hover {{ background: {ACCENT}; color: white; }}"
         f"QComboBox QLineEdit {{ {bg_css} color: {text_color}; padding: 0px; margin: 0px; border: none; }}"
-        f"QComboBox::drop-down {{ border: none; }}"
+        f"QComboBox::drop-down {{ border: none; }} {TOOLTIP_CSS}"
     )
 
 def make_combobox_searchable(combo_box):
@@ -1109,6 +1110,9 @@ def get_slider_css():
         QSlider::sub-page:horizontal {{ background: {fill}; border-radius: 3px; }}
     """
 
+TOOLTIP_CSS = "QToolTip { background: #333; color: white; border: 1px solid #555; border-radius: 4px; }"
+
+
 def get_pref_label_css():
     """Get label CSS for preference dialogs."""
     return f"color: {TEXT_PRIMARY}; font-size: 12px;"
@@ -1139,7 +1143,7 @@ def make_edit_button(tooltip="Edit", on_click=None):
 
 def get_checkbox_css(size=11):
     """Get checkbox CSS for preference dialogs."""
-    return f"QCheckBox {{ color: {TEXT_PRIMARY}; font-size: {size}px; }}"
+    return f"QCheckBox {{ color: {TEXT_PRIMARY}; font-size: {size}px; }} {TOOLTIP_CSS}"
 
 
 
@@ -1210,7 +1214,7 @@ def get_lineedit_css():
         text_color = TEXT_PRIMARY
     return (
         f"QLineEdit {{ {bg_css} color: {text_color}; "
-        f"border: 1px solid {BORDER_COLOR}; padding: 4px 8px; border-radius: 3px; }}"
+        f"border: 1px solid {BORDER_COLOR}; padding: 4px 8px; border-radius: 3px; }} {TOOLTIP_CSS}"
     )
 
 
@@ -4815,6 +4819,18 @@ class PrefsDialog(DraggableDialog):
                                         "Requires 'Copy to clipboard' to be enabled.")
         self.paste_checkbox.stateChanged.connect(self._on_auto_paste_pref_changed)
         auto_row.addWidget(self.paste_checkbox)
+
+        # Restore clipboard
+        self.restore_clip_checkbox = QCheckBox("Restore clipboard")
+        self.restore_clip_checkbox.setChecked(S.RESTORE_CLIPBOARD)
+        self.restore_clip_checkbox.setStyleSheet(get_checkbox_css())
+        self.restore_clip_checkbox.setToolTip("Restore your original clipboard contents after pasting.\n\n"
+                                               "Without this, pasting a transcription replaces\n"
+                                               "whatever was on your clipboard. With this enabled,\n"
+                                               "your clipboard is saved before and restored after.")
+        self.restore_clip_checkbox.stateChanged.connect(
+            lambda state: S.set('RESTORE_CLIPBOARD', state == Qt.CheckState.Checked.value))
+        auto_row.addWidget(self.restore_clip_checkbox)
 
         # Tmux Paste
         tmux_icon_label = QLabel()
@@ -8653,6 +8669,9 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         if not S.AUTO_COPY:
             return
 
+        # Save clipboard for later restore
+        saved_clipboard = QApplication.clipboard().text() if S.RESTORE_CLIPBOARD else None
+
         # Voice routing: if tmux mode enabled, check for first phrase match
         tmux_routed = False
         if S.TMUX_MODE:
@@ -8686,6 +8705,11 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
                 kb.press(Key.enter)
                 time.sleep(0.1)
                 kb.release(Key.enter)
+
+        # Restore original clipboard contents
+        if saved_clipboard is not None:
+            time.sleep(0.2)
+            QApplication.clipboard().setText(saved_clipboard)
 
     def _do_tmux_paste(self, text):
         """Paste text into the configured tmux pane and optionally press enter."""
@@ -9450,7 +9474,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
                     'TMUX_TARGET', 'TMUX_PANE_NAMES', 'TMUX_PHRASES_AS_CONTEXT', 'TMUX_ANNOUNCE_PANE', 'RECORDINGS_DIR', 'TRANSCRIPTIONS_DIR',
                     'SPEAK_BACK_VOICE', 'TTS_SAY', 'TTS_SUPERTONIC', 'TTS_KITTEN',
                     'SPEAK_BACK_APPEND_INSTRUCTION', 'SPEAK_BACK_TMUX_ONLY', 'SPEAK_BACK_INSTRUCTION_TEMPLATE',
-                    'NTFY_TOPIC', 'NTFY_INSTRUCTION_TEMPLATE', 'TTS_TEST_PHRASE',
+                    'NTFY_TOPIC', 'NTFY_INSTRUCTION_TEMPLATE', 'TTS_TEST_PHRASE', 'RESTORE_CLIPBOARD',
                     'WAKEWORD_ENGINE', 'WAKEWORD_OPENWAKEWORD', 'WAKEWORD_MACOS',
                     'RESTORE_WINDOW_GEOMETRY', 'WINDOW_GEOMETRY', 'CUSTOM_CHIMES', 'CHIME_AUDIO_SETTINGS']:
             if key in data:
