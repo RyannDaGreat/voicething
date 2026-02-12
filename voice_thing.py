@@ -377,6 +377,12 @@ DEFAULT_WAKEWORD_PHRASES = 'hey computer, computer, start recording'
 DEFAULT_WAKEWORD_CANCEL_PHRASES = 'cancel, never mind'
 DEFAULT_OPENWAKEWORD_MODEL = 'computer'
 DEFAULT_OPENWAKEWORD_SENSITIVITY = 0.2
+DEFAULT_TTS_SAY_SPEED = 175
+DEFAULT_TTS_SAY_VOICE = ''
+DEFAULT_TTS_SUPERTONIC_VOICE = 'F1'
+DEFAULT_TTS_SUPERTONIC_SPEED = 1.0
+DEFAULT_TTS_KITTEN_VOICE = 'expr-voice-3-f'
+DEFAULT_TTS_KITTEN_SPEED = 1.0
 
 
 class Settings(dict):
@@ -445,9 +451,9 @@ DEFAULTS = dict(
     ALWAYS_ON_TOP=True,  # Keep window above other windows
     SPEAK_BACK_VOICE='say',  # TTS backend: 'say', 'supertonic', or 'kitten'
     # Per-backend TTS settings (each backend remembers its own settings)
-    TTS_SAY={'voice': '', 'speed': 175},  # macOS say: '' = system default, WPM
-    TTS_SUPERTONIC={'voice': 'F1', 'speed': 1.0, 'volume': 1.0, 'steps': 5},
-    TTS_KITTEN={'voice': 'expr-voice-3-f', 'speed': 1.0},
+    TTS_SAY={'voice': DEFAULT_TTS_SAY_VOICE, 'speed': DEFAULT_TTS_SAY_SPEED},
+    TTS_SUPERTONIC={'voice': DEFAULT_TTS_SUPERTONIC_VOICE, 'speed': DEFAULT_TTS_SUPERTONIC_SPEED, 'volume': 1.0, 'steps': 5},
+    TTS_KITTEN={'voice': DEFAULT_TTS_KITTEN_VOICE, 'speed': DEFAULT_TTS_KITTEN_SPEED},
     SPEAK_BACK_APPEND_INSTRUCTION=True,  # Append TTS instruction to transcriptions
     SPEAK_BACK_TMUX_ONLY=False,  # Only append TTS instruction when sending to tmux (not paste)
     SPEAK_BACK_INSTRUCTION_TEMPLATE="Please speak back with ({command} &)",
@@ -621,8 +627,8 @@ def build_tts_command():
     backend = S.SPEAK_BACK_VOICE
     if backend == 'say':
         cfg = S.TTS_SAY
-        voice = cfg.get('voice', '')
-        rate = cfg.get('speed', 175)
+        voice = cfg.get('voice', DEFAULT_TTS_SAY_VOICE)
+        rate = cfg.get('speed', DEFAULT_TTS_SAY_SPEED)
         if voice:
             return f"say -v {voice} -r {int(rate)} 'YOUR_MESSAGE_HERE'"
         else:
@@ -631,15 +637,15 @@ def build_tts_command():
         cfg = S.TTS_KITTEN
         return (
             f"{sys.executable} -m rp call text_to_speech_via_kitten "
-            f"---text 'YOUR_MESSAGE_HERE' ---voice '{cfg.get('voice', 'expr-voice-3-f')}' "
-            f"--speed {cfg.get('speed', 1.0)} --block True"
+            f"---text 'YOUR_MESSAGE_HERE' ---voice '{cfg.get('voice', DEFAULT_TTS_KITTEN_VOICE)}' "
+            f"--speed {cfg.get('speed', DEFAULT_TTS_KITTEN_SPEED)} --block True"
         )
     else:  # supertonic
         cfg = S.TTS_SUPERTONIC
         return (
             f"{sys.executable} -m rp call text_to_speech_via_supertonic "
-            f"---text 'YOUR_MESSAGE_HERE' ---voice '{cfg.get('voice', 'F1')}' "
-            f"--speed {cfg.get('speed', 1.0)} --volume {cfg.get('volume', 1.0)} "
+            f"---text 'YOUR_MESSAGE_HERE' ---voice '{cfg.get('voice', DEFAULT_TTS_SUPERTONIC_VOICE)}' "
+            f"--speed {cfg.get('speed', DEFAULT_TTS_SUPERTONIC_SPEED)} --volume {cfg.get('volume', 1.0)} "
             f"--steps {cfg.get('steps', 5)} --block True"
         )
 
@@ -658,8 +664,8 @@ def do_tts(text, block=True):
         backend = S.SPEAK_BACK_VOICE
         if backend == 'say':
             cfg = S.TTS_SAY
-            voice = cfg.get('voice', '')
-            rate = cfg.get('speed', 175)
+            voice = cfg.get('voice', DEFAULT_TTS_SAY_VOICE)
+            rate = cfg.get('speed', DEFAULT_TTS_SAY_SPEED)
             cmd = ['say', '-r', str(int(rate))]
             if voice:  # Only add -v if not using system default
                 cmd.extend(['-v', voice])
@@ -669,16 +675,16 @@ def do_tts(text, block=True):
             cfg = S.TTS_KITTEN
             rp.text_to_speech_via_kitten(
                 text,
-                voice=cfg.get('voice', 'expr-voice-3-f'),
-                speed=cfg.get('speed', 1.0),
+                voice=cfg.get('voice', DEFAULT_TTS_KITTEN_VOICE),
+                speed=cfg.get('speed', DEFAULT_TTS_KITTEN_SPEED),
                 block=True
             )
         elif backend == 'supertonic':
             cfg = S.TTS_SUPERTONIC
             rp.text_to_speech_via_supertonic(
                 text,
-                voice=cfg.get('voice', 'F1'),
-                speed=cfg.get('speed', 1.0),
+                voice=cfg.get('voice', DEFAULT_TTS_SUPERTONIC_VOICE),
+                speed=cfg.get('speed', DEFAULT_TTS_SUPERTONIC_SPEED),
                 volume=cfg.get('volume', 1.0),
                 steps=cfg.get('steps', 5),
                 block=True
@@ -694,6 +700,8 @@ def do_tts(text, block=True):
 # NTFY Remote TTS Listener
 # =============================================================================
 _ntfy_generation = 0  # Incremented on each start; old threads check this and exit
+_ntfy_pre_tts_callback = None   # Called before TTS (e.g. pause wakeword)
+_ntfy_post_tts_callback = None  # Called after TTS (e.g. resume wakeword)
 
 
 def start_ntfy_listener():
@@ -730,7 +738,11 @@ def _ntfy_listen_loop(topic, gen):
                 text = msg.message
                 if text:
                     print(f"NTFY received: {text}")
+                    if _ntfy_pre_tts_callback:
+                        _ntfy_pre_tts_callback()
                     do_tts(text, block=True)
+                    if _ntfy_post_tts_callback:
+                        _ntfy_post_tts_callback()
         except Exception as e:
             if gen != _ntfy_generation:
                 return
@@ -1250,6 +1262,18 @@ def listening_for_tmux_panes_as_wakewords() -> bool:
     return False
 
 
+def tmux_paste_text(target, text):
+    """Paste text into a tmux pane using load-buffer + paste-buffer.
+
+    Uses bracketed paste (-p) so the receiving app treats it as a single paste
+    event rather than individually typed characters. This prevents issues with
+    newlines being interpreted as Enter keypresses, special character sequences
+    being interpreted as tmux key names, and apps entering weird modes.
+    """
+    subprocess.run(['tmux', 'load-buffer', '-'], input=text.encode(), check=True)
+    subprocess.run(['tmux', 'paste-buffer', '-t', target, '-d', '-p'], check=True)
+
+
 _HELP_CURSOR = None
 
 def _get_help_cursor():
@@ -1346,8 +1370,8 @@ def chime(*chords, t=0.15, gap=0.0, name=None, **kwargs):
         for cb in _chime_log_callbacks:
             try:
                 cb(entry)
-            except Exception:
-                pass  # Don't let callback errors break chime playback
+            except Exception as e:
+                print(f"WARNING: Chime callback {cb} failed: {e}")
     play_native(chords, duration=t, gap=gap, **params)
 
 
@@ -2713,15 +2737,13 @@ class TmuxPreviewWidget(QTextEdit):
             pass  # print(f"[tmux-preview] tmux not found")
 
     def _send_text_to_tmux(self, text):
-        """Send literal text to tmux pane (for paste operations)."""
+        """Paste literal text into tmux pane using bracketed paste."""
         if not self._target_pane or not text:
             return
         try:
-            # Use send-keys -l for literal text (no key interpretation)
-            subprocess.run(['tmux', 'send-keys', '-t', self._target_pane, '-l', text],
-                          capture_output=True, text=True)
-        except FileNotFoundError:
-            pass
+            tmux_paste_text(self._target_pane, text)
+        except (subprocess.CalledProcessError, FileNotFoundError) as e:
+            print(f"WARNING: tmux paste failed: {e}")
 
     def keyPressEvent(self, event):
         """Forward keyboard input to tmux pane."""
@@ -3624,14 +3646,11 @@ done
         if not self._selected_pane_id:
             return
         try:
-            # Get tmux clipboard contents
             result = subprocess.run(['tmux', 'show-buffer'], capture_output=True, text=True)
             if result.returncode == 0 and result.stdout:
-                # Send as literal text to the pane
-                subprocess.run(['tmux', 'send-keys', '-t', self._selected_pane_id, '-l', result.stdout],
-                              capture_output=True, text=True)
-        except FileNotFoundError:
-            pass
+                tmux_paste_text(self._selected_pane_id, result.stdout)
+        except (subprocess.CalledProcessError, FileNotFoundError) as e:
+            print(f"WARNING: tmux clipboard paste failed: {e}")
 
     def select_pane(self, pane_id):
         """Select a pane by ID - called when text is sent to a tmux pane."""
@@ -4090,19 +4109,19 @@ class TTSSettingsWidget(QWidget):
         elif backend == 'supertonic':
             for value, label in self.SUPERTONIC_VOICES:
                 self._voice_combo.addItem(label, value)
-            current = cfg.get('voice', 'F1')
+            current = cfg.get('voice', DEFAULT_TTS_SUPERTONIC_VOICE)
             idx = [v for v, _ in self.SUPERTONIC_VOICES].index(current) if current in [v for v, _ in self.SUPERTONIC_VOICES] else 0
             self._voice_combo.setCurrentIndex(idx)
         else:  # kitten
             for value, label in self.KITTEN_VOICES:
                 self._voice_combo.addItem(label, value)
-            current = cfg.get('voice', 'expr-voice-3-f')
+            current = cfg.get('voice', DEFAULT_TTS_KITTEN_VOICE)
             idx = [v for v, _ in self.KITTEN_VOICES].index(current) if current in [v for v, _ in self.KITTEN_VOICES] else 0
             self._voice_combo.setCurrentIndex(idx)
         self._voice_combo.blockSignals(False)
 
         # Update speed slider
-        speed = cfg.get('speed', 175 if backend == 'say' else 1.0)
+        speed = cfg.get('speed', DEFAULT_TTS_SAY_SPEED if backend == 'say' else DEFAULT_TTS_SUPERTONIC_SPEED)
         if backend == 'say':
             self._speed_slider.setRange(90, 400)
             self._speed_slider.setValue(int(speed))
@@ -4158,7 +4177,7 @@ class TTSSettingsWidget(QWidget):
     def _on_speed_released(self):
         backend = self._get_backend()
         cfg = self._get_cfg()
-        speed = cfg.get('speed', 175 if backend == 'say' else 1.0)
+        speed = cfg.get('speed', DEFAULT_TTS_SAY_SPEED if backend == 'say' else DEFAULT_TTS_SUPERTONIC_SPEED)
         if backend == 'say':
             self._speak_demo(f"{int(speed)} words per minute")
         else:
@@ -4345,7 +4364,7 @@ class WakeWordSettingsWidget(QWidget):
         sens_row.addWidget(sens_label)
         self._sens_slider = NoScrollSlider(Qt.Orientation.Horizontal)
         self._sens_slider.setRange(1, 100)
-        current_sens = S.WAKEWORD_OPENWAKEWORD.get('sensitivity', 0.2)
+        current_sens = S.WAKEWORD_OPENWAKEWORD.get('sensitivity', DEFAULT_OPENWAKEWORD_SENSITIVITY)
         self._sens_slider.setValue(int(current_sens * 100))
         self._sens_slider.setStyleSheet(get_slider_css())
         self._sens_slider.valueChanged.connect(self._on_sensitivity_changed)
@@ -4408,7 +4427,7 @@ class WakeWordSettingsWidget(QWidget):
         self._cancel_edit = QLineEdit()
         self._cancel_edit.setStyleSheet(get_lineedit_css())
         self._cancel_edit.setPlaceholderText("cancel, never mind")
-        current_cancel = S.WAKEWORD_MACOS.get('cancel_phrases', 'cancel, never mind')
+        current_cancel = S.WAKEWORD_MACOS.get('cancel_phrases', DEFAULT_WAKEWORD_CANCEL_PHRASES)
         self._cancel_edit.setText(current_cancel)
         self._cancel_edit.editingFinished.connect(self._on_cancel_phrases_changed)
         cancel_row.addWidget(self._cancel_edit, 1)
@@ -5605,6 +5624,7 @@ class ChimeEditorDialog(DraggableDialog):
     # Signals for thread-safe UI updates during playback
     _addPlayingBeat = pyqtSignal(int, list)  # beat_idx, chord (add beat to playing set)
     _removePlayingBeat = pyqtSignal(int)  # beat_idx (remove beat from playing set)
+    _chime_played_signal = pyqtSignal(dict)  # thread-safe chime log refresh
 
     # Grid dimensions
     DEFAULT_BEATS = 16  # X-axis: number of beats
@@ -5631,8 +5651,10 @@ class ChimeEditorDialog(DraggableDialog):
         self._redo_stack = []
         self._max_undo = 50  # Max undo history
 
-        # Register callback for real-time chime log updates
-        self._chime_callback = self._on_chime_played
+        # Register callback for real-time chime log updates (callback fires from any thread,
+        # so it emits a signal to marshal the UI refresh to the main thread)
+        self._chime_played_signal.connect(self._on_chime_played)
+        self._chime_callback = lambda entry: self._chime_played_signal.emit(entry)
         _chime_log_callbacks.append(self._chime_callback)
 
         # Connect playback animation signals (thread-safe)
@@ -8157,6 +8179,8 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
     finish_signal = pyqtSignal()  # Signal to call _finish on main thread
     stop_signal = pyqtSignal()  # Signal to stop recording from wake word
     cancel_signal = pyqtSignal()  # Signal to cancel recording (double-tap held long)
+    _select_tmux_pane_signal = pyqtSignal(str)  # Thread-safe tmux pane selection
+    _delayed_wake_resume_signal = pyqtSignal()  # Resume wakeword from background thread
 
     _paint_inset = 0
 
@@ -8426,6 +8450,9 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         self.finish_signal.connect(self._finish)
         self.stop_signal.connect(self.stop_recording)
         self.cancel_signal.connect(self.cancel_recording)
+        self._select_tmux_pane_signal.connect(self._select_tmux_pane_on_main_thread)
+        self._delayed_wake_resume_signal.connect(
+            lambda: QTimer.singleShot(500, self._resume_wake_word_listener))
 
         self.update_timer = QTimer()
         self.update_timer.timeout.connect(self._update_display)
@@ -8458,6 +8485,11 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
 
         self._load_settings()
         self._update_ui()  # Initialize UI layout based on boot size
+
+        # Wire NTFY TTS callbacks to pause/resume wakeword during speech
+        global _ntfy_pre_tts_callback, _ntfy_post_tts_callback
+        _ntfy_pre_tts_callback = self._pause_wake_word_listener
+        _ntfy_post_tts_callback = lambda: self._delayed_wake_resume_signal.emit()
 
     def _get_action_handler(self, action_id):
         """Get the handler method for an action ID."""
@@ -8595,13 +8627,14 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         threading.Thread(target=do_deramble, daemon=True).start()
 
     def _send_to_tmux_pane(self, pane_id, text):
-        """Send transcription text to a tmux pane."""
+        """Send transcription text to a tmux pane using bracketed paste."""
         try:
-            subprocess.run(['tmux', 'send-keys', '-t', pane_id, text], check=True)
+            tmux_paste_text(pane_id, text)
             if S.AUTO_ENTER:
                 subprocess.run(['tmux', 'send-keys', '-t', pane_id, 'Enter'], check=True)
             play_chime('enter')
-        except subprocess.CalledProcessError:
+        except (subprocess.CalledProcessError, FileNotFoundError) as e:
+            print(f"WARNING: tmux send failed: {e}")
             play_chime('delete')
 
     def _play_audio_file(self, audio_path):
@@ -8678,12 +8711,10 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
             pane_id, phrase = self._find_first_matching_tmux_pane(text)
             if pane_id:
                 # Magic phrase matched - route to that tmux pane (skip ⌘V)
-                # Append TTS instruction for tmux if enabled
+                # Uses tmux_paste_text() which pipes via stdin, no system clipboard needed
                 tmux_text = text
                 if S.SPEAK_BACK_APPEND_INSTRUCTION:
                     tmux_text = text + '\n\n' + build_speak_back_instruction()
-                self._copy_to_clipboard(tmux_text)
-                time.sleep(0.1)
                 play_chime('tmux_send')
                 self._do_tmux_paste_to_target(pane_id, tmux_text)
                 tmux_routed = True
@@ -8711,18 +8742,10 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
             time.sleep(0.2)
             QApplication.clipboard().setText(saved_clipboard)
 
-    def _do_tmux_paste(self, text):
-        """Paste text into the configured tmux pane and optionally press enter."""
-        target = S.TMUX_TARGET or '%'
-        self._do_tmux_paste_to_target(target, text)
-
     def _do_tmux_paste_to_target(self, target, text):
-        """Send text to a specific tmux target using paste-buffer for proper bracketed paste."""
+        """Send text to a specific tmux target using bracketed paste."""
         try:
-            # Use load-buffer + paste-buffer instead of send-keys -l
-            # This respects bracketed paste mode so apps treat it as a single paste
-            subprocess.run(['tmux', 'load-buffer', '-'], input=text.encode(), check=True)
-            subprocess.run(['tmux', 'paste-buffer', '-t', target, '-d', '-p'], check=True)
+            tmux_paste_text(target, text)
             if S.AUTO_ENTER:
                 time.sleep(S.ENTER_DELAY)
                 play_chime('enter')
@@ -8761,9 +8784,9 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         def speak_and_resume():
             do_tts(text, block=True)
             if needs_pause:
-                # Resume wake word on main thread after TTS finishes
-                # Extra 500ms to ensure audio fully stops before listening again
-                QTimer.singleShot(500, self._resume_wake_word_listener)
+                # Signal main thread to resume wakeword after 500ms delay
+                # (can't call QTimer.singleShot from background thread)
+                self._delayed_wake_resume_signal.emit()
 
         threading.Thread(target=speak_and_resume, daemon=True).start()
 
@@ -9287,7 +9310,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
                     engine_name,
                     callback=self._on_wake_word_detected,
                     model=cfg.get('model', DEFAULT_OPENWAKEWORD_MODEL),
-                    sensitivity=cfg.get('sensitivity', 0.2),
+                    sensitivity=cfg.get('sensitivity', DEFAULT_OPENWAKEWORD_SENSITIVITY),
                 )
             else:  # macos
                 cfg = S.WAKEWORD_MACOS
@@ -9303,7 +9326,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
                     callback=self._on_wake_word_detected,
                     phrases=cfg.get('phrases', DEFAULT_WAKEWORD_PHRASES),
                     tmux_phrases=tmux_phrases,
-                    cancel_phrases=cfg.get('cancel_phrases', ''),
+                    cancel_phrases=cfg.get('cancel_phrases', DEFAULT_WAKEWORD_CANCEL_PHRASES),
                 )
 
             # Set up stop and cancel callbacks
@@ -9315,7 +9338,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
 
         except Exception as e:
             print(f"Failed to start wake word listener: {e}")
-            S.WAKE_WORD_ENABLED = False
+            S.set('WAKE_WORD_ENABLED', False)
             self.wake_word_engine = None
 
     def _stop_wake_word_listener(self):
@@ -9336,8 +9359,16 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
             self.wake_word_engine.reset()
             self.wake_word_engine.resume()
 
+    def _select_tmux_pane_on_main_thread(self, pane_id):
+        """Select tmux pane in dialog (called on main thread via signal)."""
+        if self._tmux_dialog is not None:
+            self._tmux_dialog.select_pane(pane_id)
+
     def _on_wake_word_detected(self, pre_buffer=None):
-        """Called when wake word is detected - start recording with pre-buffer."""
+        """Called when wake word is detected - start recording with pre-buffer.
+
+        Called from wakeword callback thread — must not touch Qt widgets directly.
+        """
         # Use lock to prevent race between audio callback thread and main thread
         with self._state_lock:
             if self.state != "idle":
@@ -9351,12 +9382,12 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
             # Clear it after reading
             if hasattr(self.wake_word_engine, 'last_detected_phrase'):
                 self.wake_word_engine.last_detected_phrase = None
-            # If tmux dialog is open, select the matching pane immediately
-            if self._tmux_wake_prefix and self._tmux_dialog is not None:
+            # Select matching pane on main thread via signal (not here — wrong thread)
+            if self._tmux_wake_prefix:
                 phrase_lower = self._tmux_wake_prefix.lower()
                 for pane_id, info in S.TMUX_PANE_NAMES.items():
                     if info.get('phrase', '').lower() == phrase_lower:
-                        self._tmux_dialog.select_pane(pane_id)
+                        self._select_tmux_pane_signal.emit(pane_id)
                         break
         # Use signal to call start_recording on main thread with pre_buffer
         if pre_buffer is None:
@@ -9466,34 +9497,48 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
             pet_map = {pt.value: pt for pt in ALL_PET_TYPES}
             data['PET_TYPES'] = [pet_map[v] for v in data['PET_TYPES'] if v in pet_map]
 
-        # Apply settings via S.set() to trigger hooks
-        for key in ['AUTO_HIDE', 'SOUND_ENABLED', 'LLM_ENABLED', 'AUTO_ENTER', 'AUTO_COPY', 'AUTO_PASTE', 'TMUX_MODE', 'PET_TYPES', 'ALWAYS_ON_TOP']:
+        # Apply all settings via S.set() to trigger hooks consistently.
+        # Order matters: load general settings first, then features that depend on them.
+        all_keys = [
+            # Core behavior
+            'AUTO_HIDE', 'SOUND_ENABLED', 'AUTO_ENTER', 'AUTO_COPY', 'AUTO_PASTE',
+            'ALWAYS_ON_TOP', 'ENTER_DELAY', 'RESTORE_CLIPBOARD',
+            # Whisper / LLM
+            'WHISPER_MODEL', 'CUSTOM_WORDS', 'LLM_ENABLED', 'LLM_MODEL', 'LLM_PREFIX',
+            # Silence detection
+            'SILENCE_SKIP_ENABLED', 'SILENCE_THRESHOLD',
+            # Chimes
+            'CHIME_VOLUME', 'CHIME_PITCH', 'CHIME_PROGRAM', 'CHIME_THEME',
+            'CUSTOM_CHIMES', 'CHIME_AUDIO_SETTINGS',
+            # Tmux
+            'TMUX_MODE', 'TMUX_TARGET', 'TMUX_PANE_NAMES',
+            'TMUX_PHRASES_AS_CONTEXT', 'TMUX_ANNOUNCE_PANE',
+            # TTS / speak-back
+            'SPEAK_BACK_VOICE', 'TTS_SAY', 'TTS_SUPERTONIC', 'TTS_KITTEN',
+            'SPEAK_BACK_APPEND_INSTRUCTION', 'SPEAK_BACK_TMUX_ONLY',
+            'SPEAK_BACK_INSTRUCTION_TEMPLATE', 'TTS_TEST_PHRASE',
+            # NTFY (topic before enabled, so listener has topic when it starts)
+            'NTFY_TOPIC', 'NTFY_INSTRUCTION_TEMPLATE',
+            # Wakeword (config before enabled, so engine has config when it starts)
+            'WAKEWORD_ENGINE', 'WAKEWORD_OPENWAKEWORD', 'WAKEWORD_MACOS',
+            # UI / layout
+            'PET_TYPES', 'RECORDINGS_DIR', 'TRANSCRIPTIONS_DIR',
+            'RESTORE_WINDOW_GEOMETRY', 'WINDOW_GEOMETRY',
+        ]
+        for key in all_keys:
             if key in data:
                 S.set(key, data[key])
-        # Simple settings without hooks (or with trivial hooks)
-        for key in ['ENTER_DELAY', 'CUSTOM_WORDS', 'WHISPER_MODEL',
-                    'LLM_MODEL', 'LLM_PREFIX', 'CHIME_VOLUME', 'CHIME_PITCH',
-                    'CHIME_PROGRAM', 'CHIME_THEME', 'SILENCE_SKIP_ENABLED', 'SILENCE_THRESHOLD',
-                    'TMUX_TARGET', 'TMUX_PANE_NAMES', 'TMUX_PHRASES_AS_CONTEXT', 'TMUX_ANNOUNCE_PANE', 'RECORDINGS_DIR', 'TRANSCRIPTIONS_DIR',
-                    'SPEAK_BACK_VOICE', 'TTS_SAY', 'TTS_SUPERTONIC', 'TTS_KITTEN',
-                    'SPEAK_BACK_APPEND_INSTRUCTION', 'SPEAK_BACK_TMUX_ONLY', 'SPEAK_BACK_INSTRUCTION_TEMPLATE',
-                    'NTFY_TOPIC', 'NTFY_INSTRUCTION_TEMPLATE', 'TTS_TEST_PHRASE', 'RESTORE_CLIPBOARD',
-                    'WAKEWORD_ENGINE', 'WAKEWORD_OPENWAKEWORD', 'WAKEWORD_MACOS',
-                    'RESTORE_WINDOW_GEOMETRY', 'WINDOW_GEOMETRY', 'CUSTOM_CHIMES', 'CHIME_AUDIO_SETTINGS']:
-            if key in data:
-                S[key] = data[key]
         # SIMPLE_MODE needs toggle pattern (handle both on->off and off->on)
         if 'SIMPLE_MODE' in data and data['SIMPLE_MODE'] != S.SIMPLE_MODE:
             self.toggle_simple_mode()
         # THEME is separate (not in S)
         if 'THEME' in data:
             self._change_style(data['THEME'], save=False)
-        # WAKE_WORD_ENABLED last (needs model loaded)
+        # Features that depend on other settings being loaded first
         if data.get('WAKE_WORD_ENABLED'):
             S.set('WAKE_WORD_ENABLED', True)
-        # NTFY_ENABLED last (needs NTFY_TOPIC loaded first)
         if data.get('NTFY_ENABLED'):
-            S['NTFY_ENABLED'] = True
+            S.set('NTFY_ENABLED', True)
             start_ntfy_listener()
 
     def _save_settings(self):
@@ -9570,14 +9615,18 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         self._switch_tab(0)
 
         def load():
-            play_chime('loading_start')  # Loading start
-            print(f"Loading model: {new_model}")
-            rp.r._get_pywhispercpp_model(new_model)
-            S.WHISPER_MODEL = new_model
-            self._save_settings()
-            print(f"Model {new_model} loaded")
-            play_chime('loading_done')  # Loading done
-            self._set_state("idle")
+            try:
+                play_chime('loading_start')
+                print(f"Loading model: {new_model}")
+                rp.r._get_pywhispercpp_model(new_model)
+                S.WHISPER_MODEL = new_model
+                print(f"Model {new_model} loaded")
+                play_chime('loading_done')
+            except Exception as e:
+                print(f"Failed to load model {new_model}: {e}")
+                raise
+            finally:
+                self.finish_signal.emit()
 
         threading.Thread(target=load, daemon=True).start()
 
