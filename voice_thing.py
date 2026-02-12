@@ -373,7 +373,8 @@ class TeeOutput:
 # =============================================================================
 
 # Default wake word phrases (single source of truth)
-DEFAULT_WAKEWORD_PHRASES = 'hey computer, computer, start recording'
+DEFAULT_WAKEWORD_PHRASES = 'jarvis, roger'
+DEFAULT_WAKEWORD_STOP_PHRASES = 'over'
 DEFAULT_WAKEWORD_CANCEL_PHRASES = 'cancel, never mind'
 DEFAULT_OPENWAKEWORD_MODEL = 'computer'
 DEFAULT_OPENWAKEWORD_SENSITIVITY = 0.2
@@ -412,11 +413,11 @@ DEFAULTS = dict(
     SIMPLE_MODE=True,
     PET_TYPES=[],
     WHISPER_MODEL='base',
-    THEME='macos_2005',
+    THEME='cyberpunk_metal',
     # Wake word engine selection and per-engine settings
     WAKEWORD_ENGINE='openwakeword',  # 'openwakeword' or 'macos'
     WAKEWORD_OPENWAKEWORD={'model': DEFAULT_OPENWAKEWORD_MODEL, 'sensitivity': DEFAULT_OPENWAKEWORD_SENSITIVITY},
-    WAKEWORD_MACOS={'phrases': DEFAULT_WAKEWORD_PHRASES, 'cancel_phrases': DEFAULT_WAKEWORD_CANCEL_PHRASES},
+    WAKEWORD_MACOS={'phrases': DEFAULT_WAKEWORD_PHRASES, 'stop_phrases': DEFAULT_WAKEWORD_STOP_PHRASES, 'cancel_phrases': DEFAULT_WAKEWORD_CANCEL_PHRASES},
     TMUX_MODE=False,
     TMUX_TARGET='%',  # Tmux pane target (% = current pane)
     TMUX_PANE_NAMES={},  # pane_id -> {phrase: str}
@@ -474,7 +475,7 @@ import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
 from styles import get_style, STYLES
 from styles.base import CYAN_CSS
-STYLE = get_style("macos_2005")  # Can swap to "windows_95" etc later
+STYLE = get_style(DEFAULTS['THEME'])
 
 # Expose style properties as module-level for backward compatibility
 ACCENT = STYLE.accent
@@ -983,21 +984,14 @@ def get_menu_css():
     return STYLE.menu_css()
 
 def get_combobox_css():
-    """Get ComboBox CSS - theme-compatible colors."""
-    # Use input_bg if defined, else PANEL_BG_FLAT_CSS
-    input_bg = getattr(STYLE, 'input_bg', None)
-    input_text = getattr(STYLE, 'input_text', None)
-    if input_bg:
-        bg_css = f"background: {input_bg};"
-        text_color = input_text or TEXT_PRIMARY
-    else:
-        bg_css = PANEL_BG_FLAT_CSS
-        text_color = TEXT_PRIMARY
+    """Get ComboBox CSS - uses input_bg/input_text for opaque, contrasting dropdowns."""
+    bg = STYLE.input_bg
+    text = STYLE.input_text
     return (
-        f"QComboBox {{ {bg_css} color: {text_color}; border: 1px solid {BORDER_COLOR}; padding: 4px 8px; }}"
-        f"QComboBox QAbstractItemView {{ {bg_css} color: {text_color}; selection-background-color: {ACCENT}; selection-color: white; }}"
+        f"QComboBox {{ background-color: {bg}; color: {text}; border: 1px solid {BORDER_COLOR}; padding: 4px 8px; }}"
+        f"QComboBox QAbstractItemView {{ background-color: {bg}; color: {text}; selection-background-color: {ACCENT}; selection-color: white; }}"
         f"QComboBox QAbstractItemView::item:hover {{ background: {ACCENT}; color: white; }}"
-        f"QComboBox QLineEdit {{ {bg_css} color: {text_color}; padding: 0px; margin: 0px; border: none; }}"
+        f"QComboBox QLineEdit {{ background-color: {bg}; color: {text}; padding: 0px; margin: 0px; border: none; }}"
         f"QComboBox::drop-down {{ border: none; }} {TOOLTIP_CSS}"
     )
 
@@ -1016,6 +1010,14 @@ def make_combobox_searchable(combo_box):
 
     completer = QCompleter(filter_model, combo_box)
     completer.setCompletionMode(QCompleter.CompletionMode.UnfilteredPopupCompletion)
+    # Style the completer popup (it's a separate top-level widget, not a child of the combobox)
+    bg = STYLE.input_bg
+    text = STYLE.input_text
+    completer.popup().setStyleSheet(
+        f"QAbstractItemView {{ background-color: {bg}; color: {text}; "
+        f"selection-background-color: {ACCENT}; selection-color: white; "
+        f"border: 1px solid {BORDER_COLOR}; }}"
+    )
     combo_box.setCompleter(completer)
 
     combo_box.lineEdit().textEdited.connect(filter_model.setFilterFixedString)
@@ -1122,7 +1124,29 @@ def get_slider_css():
         QSlider::sub-page:horizontal {{ background: {fill}; border-radius: 3px; }}
     """
 
-TOOLTIP_CSS = "QToolTip { background: #333; color: white; border: 1px solid #555; border-radius: 4px; }"
+TOOLTIP_CSS = "QToolTip { background: #333333; color: #ffffff; border: 1px solid #555555; border-radius: 4px; }"
+
+# Indentation for nested settings
+INDENT_PX = 20
+
+def indented_row(level=1, spacing=8):
+    """Create an indented QHBoxLayout for nested settings."""
+    row = QHBoxLayout()
+    row.setSpacing(spacing)
+    row.addSpacing(INDENT_PX * level)
+    return row
+
+def indented_widget(level=1, spacing=8):
+    """Create a QWidget with left indentation for nested settings groups."""
+    w = QWidget()
+    layout = QHBoxLayout(w)
+    layout.setContentsMargins(INDENT_PX * level, 0, 0, 0)
+    layout.setSpacing(spacing)
+    return w, layout
+
+def knob_label(name, value, fmt="{:.1f}"):
+    """Format a knob label as 'Name: value' for reactive display under rotary knobs."""
+    return f"{name}: {fmt.format(value)}"
 
 
 def get_pref_label_css():
@@ -1205,27 +1229,22 @@ def make_slider_row(label_text, tooltip, min_val, max_val, current_val, format_f
 
 
 def get_textedit_css():
-    """Get text edit CSS for preference dialogs (dark theme compatible)."""
+    """Get text edit CSS for preference dialogs."""
+    bg = STYLE.input_bg
+    text = STYLE.input_text
     return (
-        f"QTextEdit {{ {PANEL_BG_FLAT_CSS} color: {TEXT_PRIMARY}; "
+        f"QTextEdit {{ background-color: {bg}; color: {text}; "
         f"border: 1px solid {BORDER_COLOR}; font-family: Menlo, monospace; "
-        f"font-size: 11px; padding: 6px; }}" + SCROLLBAR_CSS
+        f"font-size: 11px; padding: 6px; }} {TOOLTIP_CSS}" + SCROLLBAR_CSS
     )
 
 
 def get_lineedit_css():
-    """Get line edit CSS for preference dialogs (dark theme compatible)."""
-    # Use input_bg if defined, else PANEL_BG_FLAT_CSS
-    input_bg = getattr(STYLE, 'input_bg', None)
-    input_text = getattr(STYLE, 'input_text', None)
-    if input_bg:
-        bg_css = f"background: {input_bg};"
-        text_color = input_text or TEXT_PRIMARY
-    else:
-        bg_css = PANEL_BG_FLAT_CSS
-        text_color = TEXT_PRIMARY
+    """Get line edit CSS for preference dialogs."""
+    bg = STYLE.input_bg
+    text = STYLE.input_text
     return (
-        f"QLineEdit {{ {bg_css} color: {text_color}; "
+        f"QLineEdit {{ background-color: {bg}; color: {text}; "
         f"border: 1px solid {BORDER_COLOR}; padding: 4px 8px; border-radius: 3px; }} {TOOLTIP_CSS}"
     )
 
@@ -1962,8 +1981,8 @@ class HelpDialog(DraggableDialog):
             "• Access from menu bar (top right of Mac)\n"
             "• Drag & drop audio files to transcribe\n"
             "• ⌘Q to quit\n\n"
-            f"Wake word (J): Say the wake word to start recording hands-free! "
-            f"Say it again to stop recording.\n\n"
+            f"Wake word (J): Say a start phrase to begin recording hands-free! "
+            f"Say a stop phrase to finish recording.\n\n"
             "Tmux mode (U): Paste directly into your active tmux pane instead of ⌘V.\n\n"
             "100% keyboard-driven - no mouse needed! (hover buttons to see shortcuts)\n\n"
             "Small mode (E or green button): Compact view with just status and timer - "
@@ -3987,23 +4006,25 @@ class TTSSettingsWidget(QWidget):
         append_row.addStretch()
         self._layout.addLayout(append_row)
 
+        # Container for TTS sub-options (hidden when append is off)
+        self._tts_sub_options = QWidget()
+        tts_sub = QVBoxLayout(self._tts_sub_options)
+        tts_sub.setContentsMargins(0, 0, 0, 0)
+        tts_sub.setSpacing(4)
+
         # Only for tmux checkbox (indented)
-        tmux_only_row = QHBoxLayout()
-        tmux_only_row.setSpacing(8)
-        tmux_only_row.addSpacing(20)
+        tmux_only_row = indented_row(level=1)
         self._tmux_only_checkbox = QCheckBox("Only for tmux")
         self._tmux_only_checkbox.setChecked(S.SPEAK_BACK_TMUX_ONLY)
         self._tmux_only_checkbox.setStyleSheet(get_checkbox_css())
         self._tmux_only_checkbox.setToolTip("Only append when sending to tmux panes.")
-        self._tmux_only_checkbox.setEnabled(S.SPEAK_BACK_APPEND_INSTRUCTION)
         self._tmux_only_checkbox.stateChanged.connect(self._on_tmux_only_changed)
         tmux_only_row.addWidget(self._tmux_only_checkbox)
         tmux_only_row.addStretch()
-        self._layout.addLayout(tmux_only_row)
+        tts_sub.addLayout(tmux_only_row)
 
-        # NTFY remote TTS checkbox
-        ntfy_row = QHBoxLayout()
-        ntfy_row.setSpacing(8)
+        # NTFY remote TTS checkbox (indented)
+        ntfy_row = indented_row(level=1)
         self._ntfy_checkbox = QCheckBox("NTFY remote TTS")
         self._ntfy_checkbox.setChecked(S.NTFY_ENABLED)
         self._ntfy_checkbox.setStyleSheet(get_checkbox_css())
@@ -4011,13 +4032,10 @@ class TTSSettingsWidget(QWidget):
         self._ntfy_checkbox.stateChanged.connect(self._on_ntfy_changed)
         ntfy_row.addWidget(self._ntfy_checkbox)
         ntfy_row.addStretch()
-        self._layout.addLayout(ntfy_row)
+        tts_sub.addLayout(ntfy_row)
 
-        # NTFY topic row (indented, hidden when NTFY disabled)
-        self._ntfy_topic_widget = QWidget()
-        ntfy_topic_layout = QHBoxLayout(self._ntfy_topic_widget)
-        ntfy_topic_layout.setContentsMargins(20, 0, 0, 0)
-        ntfy_topic_layout.setSpacing(8)
+        # NTFY topic row (further indented, hidden when NTFY disabled)
+        self._ntfy_topic_widget, ntfy_topic_layout = indented_widget(level=2)
         topic_label = QLabel("Topic:")
         topic_label.setStyleSheet(get_pref_label_css())
         ntfy_topic_layout.addWidget(topic_label)
@@ -4042,8 +4060,11 @@ class TTSSettingsWidget(QWidget):
         set_tooltip(self._ntfy_test_btn, "Send test phrase via NTFY to this topic.\nIf the listener is running, you should hear it\nspoken back — verifying the full round trip.")
         self._ntfy_test_btn.clicked.connect(self._on_ntfy_test)
         ntfy_topic_layout.addWidget(self._ntfy_test_btn)
-        self._layout.addWidget(self._ntfy_topic_widget)
+        tts_sub.addWidget(self._ntfy_topic_widget)
         self._ntfy_topic_widget.setVisible(S.NTFY_ENABLED)
+
+        self._layout.addWidget(self._tts_sub_options)
+        self._tts_sub_options.setVisible(S.SPEAK_BACK_APPEND_INSTRUCTION)
 
         # Announce pane checkbox
         announce_row = QHBoxLayout()
@@ -4200,7 +4221,7 @@ class TTSSettingsWidget(QWidget):
     def _on_append_changed(self, state):
         enabled = state == Qt.CheckState.Checked.value
         S.set('SPEAK_BACK_APPEND_INSTRUCTION', enabled)
-        self._tmux_only_checkbox.setEnabled(enabled)
+        self._tts_sub_options.setVisible(enabled)
 
     def _on_tmux_only_changed(self, state):
         S.set('SPEAK_BACK_TMUX_ONLY', state == Qt.CheckState.Checked.value)
@@ -4382,28 +4403,27 @@ class WakeWordSettingsWidget(QWidget):
         macos_layout.setContentsMargins(0, 4, 0, 0)
         macos_layout.setSpacing(4)
 
-        # Phrases text input
-        phrases_row = QHBoxLayout()
-        phrases_row.setSpacing(8)
-        phrases_label = QLabel("Phrases:")
-        phrases_label.setStyleSheet(get_pref_label_css())
-        set_tooltip(phrases_label,
-            "Comma-separated list of phrases to listen for.\n\n"
-            "Example: hey computer, computer, start recording\n\n"
+        # Start phrases text input
+        start_row = QHBoxLayout()
+        start_row.setSpacing(8)
+        start_label = QLabel("Start:")
+        start_label.setStyleSheet(get_pref_label_css())
+        set_tooltip(start_label,
+            "Comma-separated phrases that START recording.\n\n"
+            "Example: jarvis, roger\n\n"
             "Works offline using Apple's built-in speech recognition.")
-        phrases_row.addWidget(phrases_label)
+        start_row.addWidget(start_label)
         self._phrases_edit = QLineEdit()
         self._phrases_edit.setStyleSheet(get_lineedit_css())
-        self._phrases_edit.setPlaceholderText("hey computer, computer, start")
+        self._phrases_edit.setPlaceholderText("jarvis, roger")
         current_phrases = S.WAKEWORD_MACOS.get('phrases', DEFAULT_WAKEWORD_PHRASES)
         self._phrases_edit.setText(current_phrases)
         self._phrases_edit.editingFinished.connect(self._on_phrases_changed)
-        phrases_row.addWidget(self._phrases_edit, 1)
-        macos_layout.addLayout(phrases_row)
+        start_row.addWidget(self._phrases_edit, 1)
+        macos_layout.addLayout(start_row)
 
-        # +Tmux Phrases checkbox
-        tmux_row = QHBoxLayout()
-        tmux_row.setSpacing(8)
+        # +Tmux Phrases checkbox (indented, only applies to start phrases)
+        tmux_row = indented_row(level=1)
         checked = S.WAKEWORD_MACOS.get('use_tmux_phrases', False)
         self._tmux_phrases_checkbox = QCheckBox(get_tmux_phrases_checkbox_label(checked))
         self._tmux_phrases_checkbox.setStyleSheet(get_checkbox_css())
@@ -4414,14 +4434,33 @@ class WakeWordSettingsWidget(QWidget):
         tmux_row.addStretch()
         macos_layout.addLayout(tmux_row)
 
+        # Stop phrases row (below tmux checkbox, above cancel)
+        stop_row = QHBoxLayout()
+        stop_row.setSpacing(8)
+        stop_label = QLabel("Stop:")
+        stop_label.setStyleSheet(get_pref_label_css())
+        set_tooltip(stop_label,
+            "Comma-separated phrases that STOP recording.\n\n"
+            "Example: over\n\n"
+            "Saying these while recording will finish and transcribe.")
+        stop_row.addWidget(stop_label)
+        self._stop_edit = QLineEdit()
+        self._stop_edit.setStyleSheet(get_lineedit_css())
+        self._stop_edit.setPlaceholderText("over")
+        current_stop = S.WAKEWORD_MACOS.get('stop_phrases', DEFAULT_WAKEWORD_STOP_PHRASES)
+        self._stop_edit.setText(current_stop)
+        self._stop_edit.editingFinished.connect(self._on_stop_phrases_changed)
+        stop_row.addWidget(self._stop_edit, 1)
+        macos_layout.addLayout(stop_row)
+
         # Cancel phrases row
         cancel_row = QHBoxLayout()
         cancel_row.setSpacing(8)
         cancel_label = QLabel("Cancel:")
         cancel_label.setStyleSheet(get_pref_label_css())
         set_tooltip(cancel_label,
-            "Comma-separated list of phrases that cancel recording.\n\n"
-            "Example: cancel, never mind, stop\n\n"
+            "Comma-separated phrases that CANCEL recording.\n\n"
+            "Example: cancel, never mind\n\n"
             "Saying these while recording will cancel without transcribing.")
         cancel_row.addWidget(cancel_label)
         self._cancel_edit = QLineEdit()
@@ -4434,7 +4473,7 @@ class WakeWordSettingsWidget(QWidget):
         macos_layout.addLayout(cancel_row)
 
         # Info label
-        info_label = QLabel("Offline via macOS Speech Recognition. Slower than OpenWakeWord but supports custom phrases, cancel phrases, and tmux routing.")
+        info_label = QLabel("Offline via macOS Speech Recognition. Start phrases begin recording, stop phrases end it. Tmux phrases also start recording and route to specific panes.")
         info_label.setStyleSheet(get_pref_label_css() + f" color: {TEXT_MUTED};")
         info_label.setWordWrap(True)
         macos_layout.addWidget(info_label)
@@ -4484,6 +4523,13 @@ class WakeWordSettingsWidget(QWidget):
         S.set('WAKEWORD_MACOS', cfg)
         self.settings_changed.emit()
 
+    def _on_stop_phrases_changed(self):
+        phrases = self._stop_edit.text().strip()
+        cfg = S.WAKEWORD_MACOS.copy()
+        cfg['stop_phrases'] = phrases
+        S.set('WAKEWORD_MACOS', cfg)
+        self.settings_changed.emit()
+
     def _on_tmux_phrases_changed(self, state):
         checked = state == Qt.CheckState.Checked.value
         cfg = S.WAKEWORD_MACOS.copy()
@@ -4502,9 +4548,9 @@ class WakeWordSettingsWidget(QWidget):
     def _update_tmux_phrases_tooltip(self):
         """Update tooltip for +Tmux Phrases checkbox."""
         set_tooltip(self._tmux_phrases_checkbox,
-            "Add tmux pane phrases as wake words.\n\n"
-            "Tmux phrases can only START recording, not stop it.\n"
-            "Regular wake words can still stop recording.\n\n"
+            "Add tmux pane phrases as additional start phrases.\n\n"
+            "Tmux phrases can only START recording (like start phrases).\n"
+            "Use stop phrases to end recording.\n\n"
             "The first phrase in your transcription determines\n"
             "which pane receives the text.")
 
@@ -4606,15 +4652,18 @@ class PrefsDialog(DraggableDialog):
         knobs_row.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         # Volume knob (0 = mute)
-        self.vol_knob = RotaryKnob("Vol", min_val=0.0, max_val=1.0, value=S.CHIME_VOLUME,
-                                    fmt="{:.0%}", size=36)
+        _KW = 64  # Min width for knobs with value labels
+        self.vol_knob = RotaryKnob(knob_label("Vol", S.CHIME_VOLUME),
+                                    min_val=0.0, max_val=1.0, value=S.CHIME_VOLUME,
+                                    fmt="{:.0%}", size=36, min_width=_KW)
         self.vol_knob.valueChanged.connect(self._on_volume_knob_changed)
         set_tooltip(self.vol_knob, "Chime volume (0 = mute)")
         knobs_row.addWidget(self.vol_knob)
 
         # Pitch knob
-        self.pitch_knob = RotaryKnob("Pitch", min_val=-24, max_val=24, value=S.CHIME_PITCH,
-                                      fmt="{:+.0f}", size=36)
+        self.pitch_knob = RotaryKnob(knob_label("Pitch", S.CHIME_PITCH, "{:+.0f}"),
+                                      min_val=-24, max_val=24, value=S.CHIME_PITCH,
+                                      fmt="{:+.0f}", size=36, min_width=_KW)
         self.pitch_knob.valueChanged.connect(self._on_pitch_knob_changed)
         set_tooltip(self.pitch_knob, "Pitch shift in semitones (-24 to +24)")
         knobs_row.addWidget(self.pitch_knob)
@@ -4623,17 +4672,19 @@ class PrefsDialog(DraggableDialog):
         audio_settings = get_audio_settings()
 
         # Reverb knob
-        self.reverb_knob = RotaryKnob("Reverb", min_val=0.0, max_val=1.0,
-                                       value=audio_settings.get('reverb', 0.4),
-                                       fmt="{:.0%}", size=36)
+        _rv = audio_settings.get('reverb', 0.4)
+        self.reverb_knob = RotaryKnob(knob_label("Reverb", _rv),
+                                       min_val=0.0, max_val=1.0, value=_rv,
+                                       fmt="{:.0%}", size=36, min_width=_KW)
         self.reverb_knob.valueChanged.connect(self._on_reverb_changed)
         set_tooltip(self.reverb_knob, "Reverb amount (per chime theme)")
         knobs_row.addWidget(self.reverb_knob)
 
         # Chorus knob
-        self.chorus_knob = RotaryKnob("Chorus", min_val=0.0, max_val=1.0,
-                                       value=audio_settings.get('chorus', 0.3),
-                                       fmt="{:.0%}", size=36)
+        _ch = audio_settings.get('chorus', 0.3)
+        self.chorus_knob = RotaryKnob(knob_label("Chorus", _ch),
+                                       min_val=0.0, max_val=1.0, value=_ch,
+                                       fmt="{:.0%}", size=36, min_width=_KW)
         self.chorus_knob.valueChanged.connect(self._on_chorus_changed)
         set_tooltip(self.chorus_knob, "Chorus/shimmer amount (per chime theme)")
         knobs_row.addWidget(self.chorus_knob)
@@ -5384,26 +5435,34 @@ class PrefsDialog(DraggableDialog):
 
     def _on_volume_knob_changed(self, value):
         S.CHIME_VOLUME = value
+        self.vol_knob.setLabel(knob_label("Vol", value))
         # Volume 0 effectively mutes
         S.set('SOUND_ENABLED', value > 0)
 
     def _on_pitch_knob_changed(self, value):
         S.CHIME_PITCH = int(round(value))
+        self.pitch_knob.setLabel(knob_label("Pitch", value, "{:+.0f}"))
         self.piano.update()  # Redraw piano with shifted keys
 
     def _on_reverb_changed(self, value):
         set_audio_settings(S.CHIME_THEME, reverb=value)
+        self.reverb_knob.setLabel(knob_label("Reverb", value))
 
     def _on_chorus_changed(self, value):
         set_audio_settings(S.CHIME_THEME, chorus=value)
+        self.chorus_knob.setLabel(knob_label("Chorus", value))
 
     def _on_chime_theme_changed(self, index):
         theme = self.chime_theme_combo.currentData()
         S.CHIME_THEME = theme
         # Update all audio knobs to match new theme's settings
         audio_settings = get_audio_settings(theme)
-        self.reverb_knob.setValue(audio_settings.get('reverb', 0.4), emit=False)
-        self.chorus_knob.setValue(audio_settings.get('chorus', 0.3), emit=False)
+        rv = audio_settings.get('reverb', 0.4)
+        ch = audio_settings.get('chorus', 0.3)
+        self.reverb_knob.setValue(rv, emit=False)
+        self.reverb_knob.setLabel(knob_label("Reverb", rv))
+        self.chorus_knob.setValue(ch, emit=False)
+        self.chorus_knob.setLabel(knob_label("Chorus", ch))
         apply_audio_settings(theme)
         # Play demo to hear the new theme
         import threading
@@ -7381,7 +7440,7 @@ class RotaryKnob(QWidget):
     valueChanged = pyqtSignal(float)
 
     def __init__(self, label, min_val=0.0, max_val=1.0, value=0.5, fmt="{:.0%}",
-                 size=36, color=None, exponential=False, parent=None):
+                 size=36, color=None, exponential=False, min_width=None, parent=None):
         """
         Args:
             label: Text label shown below knob
@@ -7392,6 +7451,7 @@ class RotaryKnob(QWidget):
             size: Knob diameter in pixels (default 36)
             color: Accent color (defaults to theme accent)
             exponential: Use exponential/logarithmic scaling (finer control at low values)
+            min_width: Minimum widget width (for longer labels)
         """
         super().__init__(parent)
         self._label = label
@@ -7405,7 +7465,8 @@ class RotaryKnob(QWidget):
         self._dragging = False
         self._drag_start_y = 0
         self._drag_start_val = 0
-        self.setFixedSize(size + 8, size + 16)  # Tighter spacing to label
+        width = max(size + 8, min_width or 0)
+        self.setFixedSize(width, size + 16)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setMouseTracking(True)
 
@@ -9161,7 +9222,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
             return get_wake_word_display(model)
         else:
             phrases = S.WAKEWORD_MACOS.get('phrases', DEFAULT_WAKEWORD_PHRASES)
-            first = phrases.split(',')[0].strip() if phrases else 'hey computer'
+            first = phrases.split(',')[0].strip() if phrases else 'jarvis'
             return first
 
     def _get_all_wake_words(self) -> list:
@@ -9180,16 +9241,16 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
             return phrases if phrases else ['hey computer']
 
     def _get_stop_wake_words(self) -> list:
-        """Get wake words that can STOP recording (excludes tmux-only phrases)."""
+        """Get wake words that can STOP recording."""
         engine = S.WAKEWORD_ENGINE
         if engine == 'openwakeword':
             model = S.WAKEWORD_OPENWAKEWORD.get('model', DEFAULT_OPENWAKEWORD_MODEL)
             return [get_wake_word_display(model)]
         else:
-            # macOS: only regular phrases can stop (not tmux phrases)
-            phrases_str = S.WAKEWORD_MACOS.get('phrases', DEFAULT_WAKEWORD_PHRASES)
+            # macOS: use dedicated stop phrases
+            phrases_str = S.WAKEWORD_MACOS.get('stop_phrases', DEFAULT_WAKEWORD_STOP_PHRASES)
             phrases = [p.strip() for p in phrases_str.split(',') if p.strip()]
-            return phrases if phrases else ['hey computer']
+            return phrases if phrases else ['over']
 
     def toggle_auto_hide(self):
         S.set('AUTO_HIDE', not S.AUTO_HIDE)
@@ -9325,6 +9386,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
                     engine_name,
                     callback=self._on_wake_word_detected,
                     phrases=cfg.get('phrases', DEFAULT_WAKEWORD_PHRASES),
+                    stop_phrases=cfg.get('stop_phrases', DEFAULT_WAKEWORD_STOP_PHRASES),
                     tmux_phrases=tmux_phrases,
                     cancel_phrases=cfg.get('cancel_phrases', DEFAULT_WAKEWORD_CANCEL_PHRASES),
                 )

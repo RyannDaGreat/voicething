@@ -55,6 +55,10 @@ class MacOS2005Style(BaseStyle):
     text_link = "rgb(30,80,140)"  # Darker blue for section headers
     accent_css = "rgb(60,140,220)"  # Darker blue for sliders
 
+    # Input fields - white background (matches Aqua text fields)
+    input_bg = WHITE
+    input_text = TEXT_DARK
+
     # Slider - dark groove on light brushed metal background
     slider_groove = "rgba(80,80,90,0.6)"
 
