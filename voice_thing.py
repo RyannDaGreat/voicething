@@ -472,7 +472,7 @@ DEFAULTS = dict(
     # NTFY remote TTS settings
     NTFY_ENABLED=False,  # Enable NTFY listener for remote TTS
     NTFY_TOPIC='',  # Topic to listen on (empty = generate random on first enable)
-    NTFY_INSTRUCTION_TEMPLATE="Please speak back with (curl -d '{message}' ntfy.sh/{topic} &)",
+    NTFY_USE_CURL=True,  # Use curl instead of rp ntfy_send for NTFY instructions
     TTS_TEST_PHRASE="Testing 1, 2, 3",  # Phrase spoken by TTS/NTFY test buttons
     # Window geometry settings
     RESTORE_WINDOW_GEOMETRY=True,  # Restore window positions/sizes on startup
@@ -765,9 +765,14 @@ def _ntfy_listen_loop(topic, gen):
                 time.sleep(0.1)
 
 
+NTFY_CURL_TEMPLATE = "Please speak back with (curl -d '{message}' ntfy.sh/{topic} &)"
+NTFY_RP_TEMPLATE = "Please speak back with (python3 -m rp call ntfy_send --- '{message}' ---topic '{topic}' &)"
+
+
 def build_ntfy_instruction():
     """Build the NTFY instruction string for appending to transcriptions."""
-    return S.NTFY_INSTRUCTION_TEMPLATE.format(
+    template = NTFY_CURL_TEMPLATE if S.NTFY_USE_CURL else NTFY_RP_TEMPLATE
+    return template.format(
         message="YOUR_MESSAGE_HERE",
         topic=S.NTFY_TOPIC,
     )
@@ -4132,7 +4137,22 @@ class TTSSettingsWidget(QWidget):
         self._ntfy_test_btn.clicked.connect(self._on_ntfy_test)
         ntfy_topic_layout.addWidget(self._ntfy_test_btn)
         tts_sub.addWidget(self._ntfy_topic_widget)
+
+        # Use curl checkbox (same indent as topic, hidden when NTFY disabled)
+        self._ntfy_curl_widget, ntfy_curl_layout = indented_widget(level=2)
+        self._ntfy_curl_checkbox = make_checkbox("Use curl",
+            S.NTFY_USE_CURL,
+            "Use curl instead of rp ntfy_send.\n\n"
+            "curl: curl -d 'msg' ntfy.sh/topic\n"
+            "rp: python3 -m rp call ntfy_send --- 'msg' ---topic 'topic'\n\n"
+            "curl is more portable (no rp dependency).",
+            self._on_ntfy_curl_changed)
+        ntfy_curl_layout.addWidget(self._ntfy_curl_checkbox)
+        ntfy_curl_layout.addStretch()
+        tts_sub.addWidget(self._ntfy_curl_widget)
+
         self._ntfy_topic_widget.setVisible(S.NTFY_ENABLED)
+        self._ntfy_curl_widget.setVisible(S.NTFY_ENABLED)
 
         self._layout.addWidget(self._tts_sub_options)
         self._tts_sub_options.setVisible(S.SPEAK_BACK_APPEND_INSTRUCTION)
@@ -4302,9 +4322,13 @@ class TTSSettingsWidget(QWidget):
     def _on_announce_changed(self, state):
         S.set('TMUX_ANNOUNCE_PANE', state == Qt.CheckState.Checked.value)
 
+    def _on_ntfy_curl_changed(self, state):
+        S.set('NTFY_USE_CURL', state == Qt.CheckState.Checked.value)
+
     def _on_ntfy_changed(self, state):
         enabled = state == Qt.CheckState.Checked.value
         self._ntfy_topic_widget.setVisible(enabled)
+        self._ntfy_curl_widget.setVisible(enabled)
         if enabled and not S.NTFY_TOPIC:
             self._on_ntfy_dice()
         S.set('NTFY_ENABLED', enabled)
@@ -4933,68 +4957,74 @@ class PrefsDialog(DraggableDialog):
         # Paste Behavior section (separate from wake word)
         settings_box.addWidget(make_section("Paste Behavior"))
 
-        # All four checkboxes in one horizontal row with icons
-        # Order: Copy, ⌘V paste, Tmux paste, Enter after paste
-        auto_row = QHBoxLayout()
-        auto_row.setSpacing(12)
-
+        # Paste checkboxes in two rows with icons
         # Store icon labels for graying out
         self._paste_icon_labels = []
 
-        # Copy
+        # Row 1: Copy, ⌘V paste, Restore clipboard
+        row1 = QHBoxLayout()
+        row1.setSpacing(12)
+
         copy_icon_label = QLabel()
         copy_icon = load_icon("copy", color=ICON_COLOR_DARK)
         if copy_icon:
             copy_icon_label.setPixmap(copy_icon.pixmap(ICON_SIZE_SMALL, ICON_SIZE_SMALL))
-        auto_row.addWidget(copy_icon_label)
+        row1.addWidget(copy_icon_label)
         self.copy_checkbox = make_checkbox("Copy to clipboard", S.AUTO_COPY,
             "Copy transcription to clipboard after recording.\n\n"
             "Other paste options require this to be enabled.",
             self._on_auto_copy_pref_changed)
-        auto_row.addWidget(self.copy_checkbox)
+        row1.addWidget(self.copy_checkbox)
 
-        # ⌘V Paste
         paste_icon_label = QLabel()
         paste_icon = load_icon("layers", color=ICON_COLOR_DARK)
         if paste_icon:
             paste_icon_label.setPixmap(paste_icon.pixmap(ICON_SIZE_SMALL, ICON_SIZE_SMALL))
-        auto_row.addWidget(paste_icon_label)
+        row1.addWidget(paste_icon_label)
         self._paste_icon_labels.append(paste_icon_label)
         self.paste_checkbox = make_checkbox("⌘V paste", S.AUTO_PASTE,
             "Automatically paste transcription via ⌘V.\n\n"
             "Requires 'Copy to clipboard' to be enabled.",
             self._on_auto_paste_pref_changed)
-        auto_row.addWidget(self.paste_checkbox)
+        row1.addWidget(self.paste_checkbox)
 
-        # Restore clipboard
+        restore_icon_label = QLabel()
+        restore_icon = load_icon("recycle", color=ICON_COLOR_DARK)
+        if restore_icon:
+            restore_icon_label.setPixmap(restore_icon.pixmap(ICON_SIZE_SMALL, ICON_SIZE_SMALL))
+        row1.addWidget(restore_icon_label)
         self.restore_clip_checkbox = make_checkbox("Restore clipboard", S.RESTORE_CLIPBOARD,
             "Restore your original clipboard contents after pasting.\n\n"
             "Without this, pasting a transcription replaces\n"
             "whatever was on your clipboard. With this enabled,\n"
             "your clipboard is saved before and restored after.",
             lambda state: S.set('RESTORE_CLIPBOARD', state == Qt.CheckState.Checked.value))
-        auto_row.addWidget(self.restore_clip_checkbox)
+        row1.addWidget(self.restore_clip_checkbox)
+        row1.addStretch()
+        settings_box.addLayout(row1)
 
-        # Tmux Paste
+        # Row 2: Tmux paste, Enter after paste
+        row2 = QHBoxLayout()
+        row2.setSpacing(12)
+
         tmux_icon_label = QLabel()
         tmux_icon = load_icon("tmux", color=ICON_COLOR_DARK)
         if tmux_icon:
             tmux_icon_label.setPixmap(tmux_icon.pixmap(ICON_SIZE_SMALL, ICON_SIZE_SMALL))
-        auto_row.addWidget(tmux_icon_label)
+        row2.addWidget(tmux_icon_label)
         self._paste_icon_labels.append(tmux_icon_label)
         self.tmux_checkbox = make_checkbox("Tmux paste", S.TMUX_MODE,
             "Paste directly into active tmux pane using send-keys.\n\n"
             "Requires 'Copy to clipboard' to be enabled.\n"
             "When enabled, replaces ⌘V paste.",
             self._on_tmux_pref_changed)
-        auto_row.addWidget(self.tmux_checkbox)
+        row2.addWidget(self.tmux_checkbox)
 
-        # Enter after paste
         enter_icon_label = QLabel()
         enter_icon = load_icon("enter", color=ICON_COLOR_DARK)
         if enter_icon:
             enter_icon_label.setPixmap(enter_icon.pixmap(ICON_SIZE_SMALL, ICON_SIZE_SMALL))
-        auto_row.addWidget(enter_icon_label)
+        row2.addWidget(enter_icon_label)
         self._paste_icon_labels.append(enter_icon_label)
         self.enter_checkbox = make_checkbox("Enter after paste", S.AUTO_ENTER,
             "Press Enter after pasting transcription.\n\n"
@@ -5003,10 +5033,9 @@ class PrefsDialog(DraggableDialog):
             "Both use the Enter Delay setting below.\n\n"
             "Has no effect if neither paste mode is enabled.",
             self._on_enter_changed)
-        auto_row.addWidget(self.enter_checkbox)
-
-        auto_row.addStretch()
-        settings_box.addLayout(auto_row)
+        row2.addWidget(self.enter_checkbox)
+        row2.addStretch()
+        settings_box.addLayout(row2)
 
         # Enter delay slider (hidden when auto-enter disabled)
         self._enter_delay_container = QWidget()
@@ -8583,7 +8612,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         self.permission_error_signal.connect(self._on_permission_error)
         self.wake_word_signal.connect(self._start_recording_from_wake_word)
         self.finish_signal.connect(self._finish)
-        self.stop_signal.connect(self.stop_recording)
+        self.stop_signal.connect(self._stop_recording_from_wake_word)
         self.cancel_signal.connect(self.cancel_recording)
         self._select_tmux_pane_signal.connect(self._select_tmux_pane_on_main_thread)
         self._delayed_wake_resume_signal.connect(
@@ -8669,7 +8698,12 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         menu.addSeparator()
         menu.addAction("Quit", QApplication.quit)
         self.tray.setContextMenu(menu)
-        self.tray.setToolTip(APP_NAME)
+        self.tray.setToolTip(
+            f"{APP_NAME}\n"
+            f"Right-click: start/stop recording\n"
+            f"Left-click: menu (or hold {CANCEL_HOLD_SECONDS}s to cancel)\n"
+            f"Drag off icon: abort"
+        )
         self.tray.show()
 
     def _update_tray_icon(self):
@@ -9656,7 +9690,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
             'SPEAK_BACK_APPEND_INSTRUCTION', 'SPEAK_BACK_TMUX_ONLY', 'SPEAK_BACK_WAKE_ONLY',
             'SPEAK_BACK_INSTRUCTION_TEMPLATE', 'TTS_TEST_PHRASE',
             # NTFY (topic before enabled, so listener has topic when it starts)
-            'NTFY_TOPIC', 'NTFY_INSTRUCTION_TEMPLATE',
+            'NTFY_TOPIC', 'NTFY_USE_CURL',
             # Wakeword (config before enabled, so engine has config when it starts)
             'WAKEWORD_ENGINE', 'WAKEWORD_OPENWAKEWORD', 'WAKEWORD_MACOS',
             # UI / layout
@@ -9826,6 +9860,11 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         """Start recording triggered by wake word detection."""
         self._recording_from_wake_word = True
         self.start_recording(pre_buffer=pre_buffer)
+
+    def _stop_recording_from_wake_word(self):
+        """Stop recording triggered by wake word detection."""
+        self._recording_from_wake_word = True
+        self.stop_recording()
 
     def start_recording(self, pre_buffer=None):
         """Start recording audio. Optional pre_buffer is prepended to recording."""
