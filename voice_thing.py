@@ -18,6 +18,9 @@ from datetime import datetime
 import numpy as np
 import rp
 
+rp.r._ensure_curl_installed()
+rp.r._pip_import_autoyes=True
+
 # Suppress ONNX warnings for wake word model
 warnings.filterwarnings('ignore', category=UserWarning, module='onnxruntime')
 
