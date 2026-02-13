@@ -469,7 +469,7 @@ DEFAULTS = dict(
     # NTFY remote TTS settings
     NTFY_ENABLED=False,  # Enable NTFY listener for remote TTS
     NTFY_TOPIC='',  # Topic to listen on (empty = generate random on first enable)
-    NTFY_INSTRUCTION_TEMPLATE="Please speak back with (python3 -m rp call ntfy_send --- '{message}' ---topic '{topic}' &)",
+    NTFY_INSTRUCTION_TEMPLATE="Please speak back with (curl -d '{message}' ntfy.sh/{topic} &)",
     TTS_TEST_PHRASE="Testing 1, 2, 3",  # Phrase spoken by TTS/NTFY test buttons
     # Window geometry settings
     RESTORE_WINDOW_GEOMETRY=True,  # Restore window positions/sizes on startup
