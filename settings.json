@@ -24,7 +24,7 @@
     "use_tmux_phrases": true
   },
   "TMUX_MODE": true,
-  "TMUX_TARGET": "%",
+  "TMUX_TARGET": "%2",
   "TMUX_PANE_NAMES": {},
   "TMUX_PREVIEW_DARK_MODE": true,
   "TMUX_PREVIEW_ANSI_COLORS": true,
@@ -56,6 +56,8 @@
     }
   },
   "CUSTOM_CHIMES": {},
+  "RECORDINGS_DIR": "/var/folders/pm/461ntwb12b7bbqcjw1s6t0kw0000gn/T/VoiceThing",
+  "TRANSCRIPTIONS_DIR": "/opt/homebrew/lib/python3.10/site-packages/rp/git/voicething/transcriptions",
   "ALWAYS_ON_TOP": false,
   "SPEAK_BACK_VOICE": "say",
   "TTS_SAY": {
@@ -80,5 +82,23 @@
   "NTFY_TOPIC": "etch_tank",
   "NTFY_USE_CURL": true,
   "TTS_TEST_PHRASE": "Testing 1, 2, 3",
-  "RESTORE_WINDOW_GEOMETRY": false
+  "RESTORE_WINDOW_GEOMETRY": false,
+  "WINDOW_GEOMETRY": {
+    "tmux_selection": {
+      "x": 509,
+      "y": 309,
+      "width": 709,
+      "height": 400,
+      "splitter": [
+        392,
+        280
+      ]
+    },
+    "main": {
+      "x": 625,
+      "y": 279,
+      "width": 478,
+      "height": 460
+    }
+  }
 }

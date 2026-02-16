@@ -1011,35 +1011,18 @@ def get_combobox_css():
         f"QComboBox::drop-down {{ border: none; }} {TOOLTIP_CSS}"
     )
 
-def _make_styled_listview():
-    """Create a QListView with opaque input_bg/input_text for combobox dropdowns.
-
-    Replacing the default view forces Qt off the native macOS popup path,
-    which ignores stylesheets. A custom QListView is always styled by Qt.
-    """
-    from PyQt6.QtWidgets import QListView
-    bg = STYLE.input_bg
-    text = STYLE.input_text
-    view = QListView()
-    view.setStyleSheet(
-        f"QListView {{ background-color: {bg}; color: {text}; "
-        f"border: 1px solid {BORDER_COLOR}; }} "
-        f"QListView::item:selected {{ background-color: {ACCENT}; color: white; }} "
-        f"QListView::item:hover {{ background-color: {ACCENT}; color: white; }}"
-    )
-    return view
-
 def make_combobox_searchable(combo_box):
     """Make a QComboBox searchable with substring filtering (type to filter).
 
     Based on https://gist.github.com/rBrenick/cb4c29f8a2d094e9df3e321a87eceb04
+
+    WARNING: Do NOT call combo_box.setView() here. It eagerly creates native
+    Qt::Popup windows that cause macOS fullscreen Space switching in blue mode.
+    See .claude_logs/blue_mode_space_switch.md
     """
     combo_box.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
     combo_box.setEditable(True)
     combo_box.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
-
-    # Replace the default view to force Qt off the native macOS popup path
-    combo_box.setView(_make_styled_listview())
 
     filter_model = QSortFilterProxyModel(combo_box)
     filter_model.setFilterCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
@@ -1047,11 +1030,12 @@ def make_combobox_searchable(combo_box):
 
     completer = QCompleter(filter_model, combo_box)
     completer.setCompletionMode(QCompleter.CompletionMode.UnfilteredPopupCompletion)
+    bg = STYLE.input_bg
+    text = STYLE.input_text
     completer.popup().setStyleSheet(
-        f"QAbstractItemView {{ background-color: {STYLE.input_bg}; color: {STYLE.input_text}; "
-        f"border: 1px solid {BORDER_COLOR}; }} "
-        f"QAbstractItemView::item:selected {{ background-color: {ACCENT}; color: white; }} "
-        f"QAbstractItemView::item:hover {{ background-color: {ACCENT}; color: white; }}"
+        f"QAbstractItemView {{ background-color: {bg}; color: {text}; "
+        f"selection-background-color: {ACCENT}; selection-color: white; "
+        f"border: 1px solid {BORDER_COLOR}; }}"
     )
     combo_box.setCompleter(completer)
 
@@ -1834,7 +1818,11 @@ class DraggableDialog(DraggableResizableMixin, QDialog):
     def center_on_parent(self):
         """Center on parent, or restore saved geometry if enabled."""
         parent = self.parent()
-        # If parent is in blue mode (fullscreen), make dialog appear on fullscreen space
+
+        # CRITICAL: Blue mode fullscreen fix. Without this, opening dialogs in blue mode
+        # causes macOS to switch away from the fullscreen Space (rapid 6-7 desktop flails).
+        # WindowStaysOnTopHint keeps the dialog anchored to the fullscreen Space.
+        # See .claude_logs/blue_mode_space_switch.md — DO NOT REMOVE THIS BLOCK.
         if parent and getattr(parent, '_blue_mode_override', False):
             tmux_dialog = getattr(parent, '_tmux_dialog', None)
             if tmux_dialog and tmux_dialog.isVisible():
@@ -3537,11 +3525,12 @@ done
     def showEvent(self, event):
         """Start polling when dialog is shown."""
         super().showEvent(event)
-        # Delay poll start: fork() during Qt's show/paint cycle causes SIGBUS on macOS
-        QTimer.singleShot(500, self._delayed_poll_start)
+        # Defer poll start: subprocess.Popen calls fork(), which is unsafe on macOS while
+        # Cocoa/AppKit is mid-render (causes SIGBUS). QTimer(0) runs after queued paint events.
+        QTimer.singleShot(0, self._deferred_poll_start)
 
-    def _delayed_poll_start(self):
-        """Start polling after dialog is fully rendered (avoids fork-during-paint SIGBUS)."""
+    def _deferred_poll_start(self):
+        """Start polling after pending paint events are processed (avoids fork-during-paint SIGBUS)."""
         self._start_polling()
         self._last_pane_ids = {p['pane_id'] for p in self._pane_data}
         self._auto_refresh_timer.start(5000)
@@ -4141,8 +4130,8 @@ class TTSSettingsWidget(QWidget):
         ntfy_topic_layout.addWidget(self._ntfy_test_btn)
         tts_sub.addWidget(self._ntfy_topic_widget)
 
-        # Use curl checkbox (same indent as topic, hidden when NTFY disabled)
-        self._ntfy_curl_widget, ntfy_curl_layout = indented_widget(level=2)
+        # Use curl checkbox (same indent as topic)
+        ntfy_curl_row = indented_row(level=2)
         self._ntfy_curl_checkbox = make_checkbox("Use curl",
             S.NTFY_USE_CURL,
             "Use curl instead of rp ntfy_send.\n\n"
@@ -4150,12 +4139,11 @@ class TTSSettingsWidget(QWidget):
             "rp: python3 -m rp call ntfy_send --- 'msg' ---topic 'topic'\n\n"
             "curl is more portable (no rp dependency).",
             self._on_ntfy_curl_changed)
-        ntfy_curl_layout.addWidget(self._ntfy_curl_checkbox)
-        ntfy_curl_layout.addStretch()
-        tts_sub.addWidget(self._ntfy_curl_widget)
+        ntfy_curl_row.addWidget(self._ntfy_curl_checkbox)
+        ntfy_curl_row.addStretch()
+        tts_sub.addLayout(ntfy_curl_row)
 
         self._ntfy_topic_widget.setVisible(S.NTFY_ENABLED)
-        self._ntfy_curl_widget.setVisible(S.NTFY_ENABLED)
 
         self._layout.addWidget(self._tts_sub_options)
         self._tts_sub_options.setVisible(S.SPEAK_BACK_APPEND_INSTRUCTION)
@@ -4331,7 +4319,6 @@ class TTSSettingsWidget(QWidget):
     def _on_ntfy_changed(self, state):
         enabled = state == Qt.CheckState.Checked.value
         self._ntfy_topic_widget.setVisible(enabled)
-        self._ntfy_curl_widget.setVisible(enabled)
         if enabled and not S.NTFY_TOPIC:
             self._on_ntfy_dice()
         S.set('NTFY_ENABLED', enabled)
@@ -4416,12 +4403,6 @@ class WakeWordSettingsWidget(QWidget):
         enable_row.addWidget(self._enable_checkbox, 1)
         self._layout.addLayout(enable_row)
 
-        # Container for all options (hidden when detection disabled)
-        self._wakeword_options = QWidget()
-        options_layout = QVBoxLayout(self._wakeword_options)
-        options_layout.setContentsMargins(0, 0, 0, 0)
-        options_layout.setSpacing(4)
-
         # Engine selector
         engine_row = QHBoxLayout()
         engine_row.setSpacing(8)
@@ -4448,7 +4429,7 @@ class WakeWordSettingsWidget(QWidget):
         self._engine_combo.setCurrentIndex(idx)
         self._engine_combo.currentIndexChanged.connect(self._on_engine_changed)
         engine_row.addWidget(self._engine_combo, 1)
-        options_layout.addLayout(engine_row)
+        self._layout.addLayout(engine_row)
 
         # === OpenWakeWord settings ===
         self._oww_container = QWidget()
@@ -4499,7 +4480,7 @@ class WakeWordSettingsWidget(QWidget):
         sens_row.addWidget(self._sens_value)
         oww_layout.addLayout(sens_row)
 
-        options_layout.addWidget(self._oww_container)
+        self._layout.addWidget(self._oww_container)
 
         # === macOS Native settings ===
         self._macos_container = QWidget()
@@ -4581,12 +4562,9 @@ class WakeWordSettingsWidget(QWidget):
         info_label.setWordWrap(True)
         macos_layout.addWidget(info_label)
 
-        options_layout.addWidget(self._macos_container)
-
-        self._layout.addWidget(self._wakeword_options)
+        self._layout.addWidget(self._macos_container)
 
         # Initialize visibility
-        self._wakeword_options.setVisible(S.WAKE_WORD_ENABLED)
         self._update_for_engine()
 
     def _get_engine(self):
@@ -4664,7 +4642,6 @@ class WakeWordSettingsWidget(QWidget):
         """Handle enable checkbox toggle."""
         enabled = state == Qt.CheckState.Checked.value
         S.set('WAKE_WORD_ENABLED', enabled)
-        self._wakeword_options.setVisible(enabled)
         self.enabled_changed.emit(enabled)
 
     def set_enabled_state(self, enabled):
@@ -5040,10 +5017,8 @@ class PrefsDialog(DraggableDialog):
         row2.addStretch()
         settings_box.addLayout(row2)
 
-        # Enter delay slider (hidden when auto-enter disabled)
-        self._enter_delay_container = QWidget()
-        delay_row = QHBoxLayout(self._enter_delay_container)
-        delay_row.setContentsMargins(0, 0, 0, 0)
+        # Enter delay slider
+        delay_row = QHBoxLayout()
         delay_row.setSpacing(8)
         delay_label = QLabel("Enter Delay:")
         delay_label.setStyleSheet(get_pref_label_css())
@@ -5061,8 +5036,7 @@ class PrefsDialog(DraggableDialog):
         self.delay_value = QLabel(f"{S.ENTER_DELAY:.1f}s")
         self.delay_value.setStyleSheet(get_pref_label_css() + " min-width: 35px;")
         delay_row.addWidget(self.delay_value)
-        self._enter_delay_container.setVisible(S.AUTO_ENTER)
-        settings_box.addWidget(self._enter_delay_container)
+        settings_box.addLayout(delay_row)
 
         # Recording section
         settings_box.addWidget(make_section("Recording"))
@@ -5081,10 +5055,8 @@ class PrefsDialog(DraggableDialog):
         silence_row.addWidget(self.silence_checkbox, 1)
         settings_box.addLayout(silence_row)
 
-        # Silence threshold slider (hidden when skip silence disabled)
-        self._silence_thresh_container = QWidget()
-        thresh_row = QHBoxLayout(self._silence_thresh_container)
-        thresh_row.setContentsMargins(0, 0, 0, 0)
+        # Silence threshold slider (-100 to -10 dB)
+        thresh_row = QHBoxLayout()
         thresh_row.setSpacing(8)
         thresh_label = QLabel("Threshold:")
         thresh_label.setStyleSheet(get_pref_label_css())
@@ -5103,8 +5075,7 @@ class PrefsDialog(DraggableDialog):
         self.thresh_value = QLabel(f"{S.SILENCE_THRESHOLD} dB")
         self.thresh_value.setStyleSheet(get_pref_label_css() + " min-width: 45px;")
         thresh_row.addWidget(self.thresh_value)
-        self._silence_thresh_container.setVisible(S.SILENCE_SKIP_ENABLED)
-        settings_box.addWidget(self._silence_thresh_container)
+        settings_box.addLayout(thresh_row)
 
         # Context Words section
         settings_box.addWidget(make_section("Context Words"))
@@ -5401,8 +5372,6 @@ class PrefsDialog(DraggableDialog):
         btn_row.addWidget(ok_btn)
         layout.addLayout(btn_row)
         self.setMinimumWidth(400)  # Compact two-column layout
-        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        self.setFocus()  # Don't focus textboxes - allow number keys for themes
 
         # Final state update for all dependent options (including phrases_ctx_check)
         self._update_paste_options_state()
@@ -5437,18 +5406,14 @@ class PrefsDialog(DraggableDialog):
         self.wake_word_changed.emit(S.WAKEWORD_ENGINE)
 
     def _on_enter_changed(self, state):
-        enabled = state == Qt.CheckState.Checked.value
-        S.set('AUTO_ENTER', enabled)
-        self._enter_delay_container.setVisible(enabled)
+        S.set('AUTO_ENTER', state == Qt.CheckState.Checked.value)
 
     def _on_delay_changed(self, value):
         S.set('ENTER_DELAY', value / 10.0)
         self.delay_value.setText(f"{S.ENTER_DELAY:.1f}s")
 
     def _on_silence_skip_changed(self, state):
-        enabled = state == Qt.CheckState.Checked.value
-        S.SILENCE_SKIP_ENABLED = enabled
-        self._silence_thresh_container.setVisible(enabled)
+        S.SILENCE_SKIP_ENABLED = state == Qt.CheckState.Checked.value
 
     def _on_always_on_top_changed(self, state):
         S.set('ALWAYS_ON_TOP', state == Qt.CheckState.Checked.value)
@@ -9596,61 +9561,59 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
 
     def show_prefs(self):
         """Show preferences dialog (non-modal). Settings apply live, Cancel reverts."""
-        # Close existing prefs dialog if open
-        if hasattr(self, '_prefs_dialog') and self._prefs_dialog is not None:
-            self._prefs_dialog.close()
-            self._prefs_dialog = None
+        # Use exact same pattern as show_chime_editor
+        if not hasattr(self, '_prefs_dialog') or self._prefs_dialog is None:
+            import copy
+            self._prefs_orig = copy.deepcopy(dict(S))  # Snapshot for Cancel
+            self._prefs_orig_style = STYLE.name
 
-        self._open_prefs_dialog()
+            # CRITICAL: In blue mode, parent to tmux dialog so prefs appears on fullscreen space.
+            # See .claude_logs/blue_mode_space_switch.md — DO NOT REMOVE.
+            parent = self
+            if self._blue_mode_override and hasattr(self, '_tmux_dialog') and self._tmux_dialog:
+                parent = self._tmux_dialog
 
-    def _open_prefs_dialog(self):
-        """Internal: create and show the preferences dialog."""
-        import copy
-        self._prefs_orig = copy.deepcopy(dict(S))  # Snapshot for Cancel
-        self._prefs_orig_style = STYLE.name
+            dialog = PrefsDialog(STYLE.name, S.PET_TYPES, S.SIMPLE_MODE, parent,
+                                 auto_enter=S.AUTO_ENTER)
+            self._prefs_dialog = dialog
 
-        # In blue mode, parent to tmux dialog so prefs appears on fullscreen space
-        parent = self
-        if self._blue_mode_override and hasattr(self, '_tmux_dialog') and self._tmux_dialog:
-            parent = self._tmux_dialog
+            # Live preview connections - all use S.set() to trigger hooks
+            dialog.simple_mode_changed.connect(self._set_simple_mode)
+            dialog.style_changed.connect(lambda s: self._change_style(s, save=False))
+            dialog.pets_changed.connect(lambda p: S.set('PET_TYPES', list(p)))
+            dialog.wake_word_changed.connect(self._on_wake_word_settings_changed)
+            dialog.auto_enter_changed.connect(lambda v: S.set('AUTO_ENTER', v))
 
-        dialog = PrefsDialog(STYLE.name, S.PET_TYPES, S.SIMPLE_MODE, parent,
-                             auto_enter=S.AUTO_ENTER)
-        self._prefs_dialog = dialog
+            # Handle accept/reject (non-modal)
+            dialog.accepted.connect(self._on_prefs_accepted)
+            dialog.rejected.connect(self._on_prefs_rejected)
+            dialog.finished.connect(self._on_prefs_closed)
 
-        # Live preview connections - all use S.set() to trigger hooks
-        dialog.simple_mode_changed.connect(self._set_simple_mode)
-        dialog.style_changed.connect(lambda s: self._change_style(s, save=False))
-        dialog.pets_changed.connect(lambda p: S.set('PET_TYPES', list(p)))
-        dialog.wake_word_changed.connect(self._on_wake_word_settings_changed)
-        dialog.auto_enter_changed.connect(lambda v: S.set('AUTO_ENTER', v))
+            dialog.center_on_parent()
+        self._prefs_dialog.show()
+        self._prefs_dialog.raise_()
+        self._prefs_dialog.activateWindow()
 
-        # Handle accept/reject (non-modal)
-        dialog.accepted.connect(self._on_prefs_accepted)
-        dialog.rejected.connect(self._on_prefs_rejected)
-
-        dialog.center_on_parent()
-        dialog.show()  # Non-modal
+    def _on_prefs_closed(self, result):
+        """Handle prefs dialog closed - null the reference so it gets recreated next time."""
+        self._prefs_dialog = None
 
     def _on_prefs_accepted(self):
         """Handle preferences OK (save settings)."""
         self._save_settings()
-        self._prefs_dialog = None
 
     def _on_prefs_rejected(self):
         """Handle preferences Cancel or Revert to Defaults."""
         dialog = self._prefs_dialog
         if getattr(dialog, 'reverted_to_defaults', False):
             self._change_style(DEFAULTS['THEME'], save=False)
-            self._prefs_dialog = None
-            # Re-open with defaults
-            QTimer.singleShot(0, self._open_prefs_dialog)
+            # Re-open with defaults after close
+            QTimer.singleShot(0, self.show_prefs)
         else:
             # Cancel - restore snapshot
             if STYLE.name != self._prefs_orig_style:
                 self._change_style(self._prefs_orig_style, save=False)
             S.restore(self._prefs_orig)
-            self._prefs_dialog = None
 
     def _set_simple_mode(self, enabled):
         """Set simple mode on/off (called from prefs dialog)."""
