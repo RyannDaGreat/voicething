@@ -3537,11 +3537,12 @@ done
     def showEvent(self, event):
         """Start polling when dialog is shown."""
         super().showEvent(event)
-        # Delay poll start: fork() during Qt's show/paint cycle causes SIGBUS on macOS
-        QTimer.singleShot(500, self._delayed_poll_start)
+        # Defer poll start: subprocess.Popen calls fork(), which is unsafe on macOS while
+        # Cocoa/AppKit is mid-render (causes SIGBUS). QTimer(0) runs after queued paint events.
+        QTimer.singleShot(0, self._deferred_poll_start)
 
-    def _delayed_poll_start(self):
-        """Start polling after dialog is fully rendered (avoids fork-during-paint SIGBUS)."""
+    def _deferred_poll_start(self):
+        """Start polling after pending paint events are processed (avoids fork-during-paint SIGBUS)."""
         self._start_polling()
         self._last_pane_ids = {p['pane_id'] for p in self._pane_data}
         self._auto_refresh_timer.start(5000)
