@@ -3536,10 +3536,13 @@ done
 
     def showEvent(self, event):
         """Start polling when dialog is shown."""
-        # print("[tmux-dialog] showEvent called")
         super().showEvent(event)
+        # Delay poll start: fork() during Qt's show/paint cycle causes SIGBUS on macOS
+        QTimer.singleShot(500, self._delayed_poll_start)
+
+    def _delayed_poll_start(self):
+        """Start polling after dialog is fully rendered (avoids fork-during-paint SIGBUS)."""
         self._start_polling()
-        # Start auto-refresh timer (5 seconds)
         self._last_pane_ids = {p['pane_id'] for p in self._pane_data}
         self._auto_refresh_timer.start(5000)
 
