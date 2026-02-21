@@ -765,23 +765,12 @@ def _ntfy_listen_loop(topic, gen):
                 time.sleep(0.1)
 
 
-NTFY_CURL_TEMPLATE = "Please speak back with (curl -d '{message}' ntfy.sh/{topic} &)"
-NTFY_RP_TEMPLATE = "Please speak back with (python3 -m rp call ntfy_send --- '{message}' ---topic '{topic}' &)"
-
-
-def build_ntfy_instruction():
-    """Build the NTFY instruction string for appending to transcriptions."""
-    template = NTFY_CURL_TEMPLATE if S.NTFY_USE_CURL else NTFY_RP_TEMPLATE
-    return template.format(
-        message="YOUR_MESSAGE_HERE",
-        topic=S.NTFY_TOPIC,
-    )
-
-
 def build_speak_back_instruction():
-    """Build the appropriate TTS instruction (NTFY if enabled, else local TTS command)."""
-    if S.NTFY_ENABLED and S.NTFY_TOPIC:
-        return build_ntfy_instruction()
+    """Build the TTS instruction from the user's template (single source of truth).
+
+    The template in S.SPEAK_BACK_INSTRUCTION_TEMPLATE may use {command} which
+    expands to the local TTS command string.
+    """
     return S.SPEAK_BACK_INSTRUCTION_TEMPLATE.format(command=build_tts_command())
 
 
