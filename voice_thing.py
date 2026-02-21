@@ -1011,24 +1011,6 @@ def get_combobox_css():
         f"QComboBox::drop-down {{ border: none; }} {TOOLTIP_CSS}"
     )
 
-def _make_styled_listview():
-    """Create a QListView with opaque input_bg/input_text for combobox dropdowns.
-
-    Replacing the default view forces Qt off the native macOS popup path,
-    which ignores stylesheets. A custom QListView is always styled by Qt.
-    """
-    from PyQt6.QtWidgets import QListView
-    bg = STYLE.input_bg
-    text = STYLE.input_text
-    view = QListView()
-    view.setStyleSheet(
-        f"QListView {{ background-color: {bg}; color: {text}; "
-        f"border: 1px solid {BORDER_COLOR}; }} "
-        f"QListView::item:selected {{ background-color: {ACCENT}; color: white; }} "
-        f"QListView::item:hover {{ background-color: {ACCENT}; color: white; }}"
-    )
-    return view
-
 def make_combobox_searchable(combo_box):
     """Make a QComboBox searchable with substring filtering (type to filter).
 
@@ -1038,20 +1020,18 @@ def make_combobox_searchable(combo_box):
     combo_box.setEditable(True)
     combo_box.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
 
-    # Replace the default view to force Qt off the native macOS popup path
-    combo_box.setView(_make_styled_listview())
-
     filter_model = QSortFilterProxyModel(combo_box)
     filter_model.setFilterCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
     filter_model.setSourceModel(combo_box.model())
 
     completer = QCompleter(filter_model, combo_box)
     completer.setCompletionMode(QCompleter.CompletionMode.UnfilteredPopupCompletion)
+    bg = STYLE.input_bg
+    text = STYLE.input_text
     completer.popup().setStyleSheet(
-        f"QAbstractItemView {{ background-color: {STYLE.input_bg}; color: {STYLE.input_text}; "
-        f"border: 1px solid {BORDER_COLOR}; }} "
-        f"QAbstractItemView::item:selected {{ background-color: {ACCENT}; color: white; }} "
-        f"QAbstractItemView::item:hover {{ background-color: {ACCENT}; color: white; }}"
+        f"QAbstractItemView {{ background-color: {bg}; color: {text}; "
+        f"selection-background-color: {ACCENT}; selection-color: white; "
+        f"border: 1px solid {BORDER_COLOR}; }}"
     )
     combo_box.setCompleter(completer)
 
@@ -4404,12 +4384,6 @@ class WakeWordSettingsWidget(QWidget):
         enable_row.addWidget(self._enable_checkbox, 1)
         self._layout.addLayout(enable_row)
 
-        # Container for all options (hidden when detection disabled)
-        self._wakeword_options = QWidget()
-        options_layout = QVBoxLayout(self._wakeword_options)
-        options_layout.setContentsMargins(0, 0, 0, 0)
-        options_layout.setSpacing(4)
-
         # Engine selector
         engine_row = QHBoxLayout()
         engine_row.setSpacing(8)
@@ -4436,7 +4410,7 @@ class WakeWordSettingsWidget(QWidget):
         self._engine_combo.setCurrentIndex(idx)
         self._engine_combo.currentIndexChanged.connect(self._on_engine_changed)
         engine_row.addWidget(self._engine_combo, 1)
-        options_layout.addLayout(engine_row)
+        self._layout.addLayout(engine_row)
 
         # === OpenWakeWord settings ===
         self._oww_container = QWidget()
@@ -4487,7 +4461,7 @@ class WakeWordSettingsWidget(QWidget):
         sens_row.addWidget(self._sens_value)
         oww_layout.addLayout(sens_row)
 
-        options_layout.addWidget(self._oww_container)
+        self._layout.addWidget(self._oww_container)
 
         # === macOS Native settings ===
         self._macos_container = QWidget()
@@ -4569,12 +4543,9 @@ class WakeWordSettingsWidget(QWidget):
         info_label.setWordWrap(True)
         macos_layout.addWidget(info_label)
 
-        options_layout.addWidget(self._macos_container)
-
-        self._layout.addWidget(self._wakeword_options)
+        self._layout.addWidget(self._macos_container)
 
         # Initialize visibility
-        self._wakeword_options.setVisible(S.WAKE_WORD_ENABLED)
         self._update_for_engine()
 
     def _get_engine(self):
@@ -4652,7 +4623,6 @@ class WakeWordSettingsWidget(QWidget):
         """Handle enable checkbox toggle."""
         enabled = state == Qt.CheckState.Checked.value
         S.set('WAKE_WORD_ENABLED', enabled)
-        self._wakeword_options.setVisible(enabled)
         self.enabled_changed.emit(enabled)
 
     def set_enabled_state(self, enabled):
@@ -5028,10 +4998,8 @@ class PrefsDialog(DraggableDialog):
         row2.addStretch()
         settings_box.addLayout(row2)
 
-        # Enter delay slider (hidden when auto-enter disabled)
-        self._enter_delay_container = QWidget()
-        delay_row = QHBoxLayout(self._enter_delay_container)
-        delay_row.setContentsMargins(0, 0, 0, 0)
+        # Enter delay slider
+        delay_row = QHBoxLayout()
         delay_row.setSpacing(8)
         delay_label = QLabel("Enter Delay:")
         delay_label.setStyleSheet(get_pref_label_css())
@@ -5049,8 +5017,7 @@ class PrefsDialog(DraggableDialog):
         self.delay_value = QLabel(f"{S.ENTER_DELAY:.1f}s")
         self.delay_value.setStyleSheet(get_pref_label_css() + " min-width: 35px;")
         delay_row.addWidget(self.delay_value)
-        self._enter_delay_container.setVisible(S.AUTO_ENTER)
-        settings_box.addWidget(self._enter_delay_container)
+        settings_box.addLayout(delay_row)
 
         # Recording section
         settings_box.addWidget(make_section("Recording"))
@@ -5069,10 +5036,8 @@ class PrefsDialog(DraggableDialog):
         silence_row.addWidget(self.silence_checkbox, 1)
         settings_box.addLayout(silence_row)
 
-        # Silence threshold slider (hidden when skip silence disabled)
-        self._silence_thresh_container = QWidget()
-        thresh_row = QHBoxLayout(self._silence_thresh_container)
-        thresh_row.setContentsMargins(0, 0, 0, 0)
+        # Silence threshold slider (-100 to -10 dB)
+        thresh_row = QHBoxLayout()
         thresh_row.setSpacing(8)
         thresh_label = QLabel("Threshold:")
         thresh_label.setStyleSheet(get_pref_label_css())
@@ -5091,8 +5056,7 @@ class PrefsDialog(DraggableDialog):
         self.thresh_value = QLabel(f"{S.SILENCE_THRESHOLD} dB")
         self.thresh_value.setStyleSheet(get_pref_label_css() + " min-width: 45px;")
         thresh_row.addWidget(self.thresh_value)
-        self._silence_thresh_container.setVisible(S.SILENCE_SKIP_ENABLED)
-        settings_box.addWidget(self._silence_thresh_container)
+        settings_box.addLayout(thresh_row)
 
         # Context Words section
         settings_box.addWidget(make_section("Context Words"))
@@ -5423,18 +5387,14 @@ class PrefsDialog(DraggableDialog):
         self.wake_word_changed.emit(S.WAKEWORD_ENGINE)
 
     def _on_enter_changed(self, state):
-        enabled = state == Qt.CheckState.Checked.value
-        S.set('AUTO_ENTER', enabled)
-        self._enter_delay_container.setVisible(enabled)
+        S.set('AUTO_ENTER', state == Qt.CheckState.Checked.value)
 
     def _on_delay_changed(self, value):
         S.set('ENTER_DELAY', value / 10.0)
         self.delay_value.setText(f"{S.ENTER_DELAY:.1f}s")
 
     def _on_silence_skip_changed(self, state):
-        enabled = state == Qt.CheckState.Checked.value
-        S.SILENCE_SKIP_ENABLED = enabled
-        self._silence_thresh_container.setVisible(enabled)
+        S.SILENCE_SKIP_ENABLED = state == Qt.CheckState.Checked.value
 
     def _on_always_on_top_changed(self, state):
         S.set('ALWAYS_ON_TOP', state == Qt.CheckState.Checked.value)
