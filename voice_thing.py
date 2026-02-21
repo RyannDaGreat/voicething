@@ -999,6 +999,11 @@ def make_combobox_searchable(combo_box):
     """Make a QComboBox searchable with substring filtering (type to filter).
 
     Based on https://gist.github.com/rBrenick/cb4c29f8a2d094e9df3e321a87eceb04
+
+    WARNING: Do NOT call combo_box.setView() here to replace the default view.
+    setView() eagerly creates a QComboBoxPrivateContainer (Qt::Popup native window)
+    which causes macOS fullscreen Space switching in blue mode.
+    See .claude_logs/blue_mode_space_switch.md
     """
     combo_box.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
     combo_box.setEditable(True)
@@ -1798,16 +1803,17 @@ class DraggableDialog(DraggableResizableMixin, QDialog):
         self.adjustSize()
 
         parent = self.parent()
-        # If parent is in blue mode (fullscreen), make dialog appear on fullscreen space
+        # CRITICAL: Blue mode fullscreen fix. Without this, opening dialogs in blue mode
+        # causes macOS to switch away from the fullscreen Space (rapid 6-7 desktop flails).
+        # WindowStaysOnTopHint keeps the dialog anchored to the fullscreen Space.
+        # See .claude_logs/blue_mode_space_switch.md for the full investigation.
+        # DO NOT REMOVE THIS BLOCK.
         if parent and getattr(parent, '_blue_mode_override', False):
-            # Get reference to the tmux dialog which owns the fullscreen
             tmux_dialog = getattr(parent, '_tmux_dialog', None)
             if tmux_dialog and tmux_dialog.isVisible():
-                # Position on the same screen as tmux dialog (fullscreen)
                 screen = tmux_dialog.screen()
                 if screen:
                     sg = screen.availableGeometry()
-                    # Set window flags to stay on top and be visible over fullscreen
                     flags = self.windowFlags() | Qt.WindowType.WindowStaysOnTopHint
                     self.setWindowFlags(flags)
                     self.move(sg.x() + (sg.width() - self.width()) // 2,
@@ -9496,7 +9502,10 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         self._prefs_orig = copy.deepcopy(dict(S))  # Snapshot for Cancel
         self._prefs_orig_style = STYLE.name
 
-        # In blue mode, parent to tmux dialog so prefs appears on fullscreen space
+        # CRITICAL: In blue mode, parent to tmux dialog so prefs appears on fullscreen space.
+        # Without this, the dialog opens on the wrong Space. The tmux dialog owns the
+        # fullscreen, so parenting to it keeps prefs on the same Space.
+        # See .claude_logs/blue_mode_space_switch.md — DO NOT REMOVE.
         parent = self
         if self._blue_mode_override and hasattr(self, '_tmux_dialog') and self._tmux_dialog:
             parent = self._tmux_dialog
