@@ -18,9 +18,6 @@ from datetime import datetime
 import numpy as np
 import rp
 
-rp.r._ensure_curl_installed()
-rp.r._pip_import_autoyes=True
-
 # Suppress ONNX warnings for wake word model
 warnings.filterwarnings('ignore', category=UserWarning, module='onnxruntime')
 
@@ -167,7 +164,6 @@ CHIME_THEMES = {
         'auto_enter_off': (([16, 11], [7, 4]), 0.08),           # C#6+G# → E+C# descending
         'tmux_on':        (([-3], [4], [7, 12]), 0.07),         # F# → C# → E+A5 ascending 3-chord
         'tmux_off':       (([12, 7], [4], [-3]), 0.07),         # A5+E → C# → F# descending
-        'boot':           (([0], [4], [7], [12], [0, 4, 7, 12]), 0.08),  # A→C#→E→A5→Amaj chord
     },
     # Minimal: Clean single notes, perfect intervals (octaves, 5ths)
     'minimal': {
@@ -195,7 +191,6 @@ CHIME_THEMES = {
         'auto_enter_off': (([7], [-5]), 0.06),                  # E5 → E4 octave leap down
         'tmux_on':        (([-12], [0], [12]), 0.05),           # A3 → A4 → A5 ascending octaves
         'tmux_off':       (([12], [0], [-12]), 0.05),           # A5 → A4 → A3 descending octaves
-        'boot':           (([0], [7], [12], [0, 7, 12]), 0.06), # A→E→A5→power chord
     },
     # Blues: A blues scale with blue notes (0, 3, 5, 6, 7, 10)
     'blues': {
@@ -223,7 +218,6 @@ CHIME_THEMES = {
         'auto_enter_off': (([15, 10], [7, 3]), 0.08),           # C6+G → E+C minor walk down
         'tmux_on':        (([0, 6], [3, 10], [7, 15]), 0.07),   # A+Eb → C+G → E+C6 tritone ascend
         'tmux_off':       (([15, 7], [10, 3], [6, 0]), 0.07),   # C6+E → G+C → Eb+A tritone descend
-        'boot':           (([0, 3], [6], [7, 10], [0, 3, 7, 10]), 0.1),  # Am→Eb→E+G→Am7 blues
     },
     # Ethereal: Sus2/Sus4 only, wide voicings (0, 2, 5, 7, 9)
     # Rapid sequence: Asus2 → Esus4 → Dsus2 → Asus2/E → Asus2 high
@@ -252,7 +246,6 @@ CHIME_THEMES = {
         'auto_enter_off': (([14, 7], [9, 2]), 0.1),             # B5+E → F#+B sus2 fall
         'tmux_on':        (([-7, 0], [2, 7], [9, 14]), 0.09),   # D+A → B+E → F#+B5 ascending 5ths
         'tmux_off':       (([14, 9], [7, 2], [0, -7]), 0.09),   # B5+F# → E+B → A+D descending 5ths
-        'boot':           (([0, 2], [7], [9, 14], [0, 2, 7, 14]), 0.12), # Asus2→E→F#+B5→Asus2 spread
     },
     # Melancholy: A natural minor (0, 2, 3, 5, 7, 8, 10)
     'melancholy': {
@@ -280,7 +273,6 @@ CHIME_THEMES = {
         'auto_enter_off': (([12, 7], [8, 3]), 0.1),             # A5+E → F+C minor 6 fall
         'tmux_on':        (([-5, 0], [3, 7], [8, 12]), 0.08),   # E+A → C+E → F+A5 ascending minor
         'tmux_off':       (([12, 8], [7, 3], [0, -5]), 0.08),   # A5+F → E+C → A+E descending minor
-        'boot':           (([0, 3], [5], [7], [8, 12], [0, 3, 7]), 0.12), # Am→D→E→F+A5→Am triad
     },
     # Bright: A major scale (0, 2, 4, 5, 7, 9, 11)
     'bright': {
@@ -310,7 +302,6 @@ CHIME_THEMES = {
         'auto_enter_off': (([14, 18], [9, 2]), 0.06),              # B5+D#6 → F#+B fall
         'tmux_on':        (([-7, 0], [4, 9], [11, 16]), 0.06),  # D+A → C#+F# → G#+C#6 ascending maj
         'tmux_off':       (([16, 11], [9, 4], [0, -7]), 0.06),  # C#6+G# → F#+C# → A+D descending maj
-        'boot':           (([0], [4], [7], [11], [16], [0, 4, 7, 11, 16]), 0.06),  # A→C#→E→G#→C#6→Amaj9
     },
     # Jazzy: Extended chords, 7ths, 9ths, 13ths
     'jazzy': {
@@ -338,7 +329,6 @@ CHIME_THEMES = {
         'auto_enter_off': (([14, 9], [10, 5]), 0.07),           # B5+F# → G+D jazz 2nds fall
         'tmux_on':        (([-2, 2], [5, 10], [9, 14]), 0.06),  # G+B → D+G → F#+B5 ascending jazz
         'tmux_off':       (([14, 9], [10, 5], [2, -2]), 0.06),  # B5+F# → G+D → B+G descending jazz
-        'boot':           (([0, 4], [7, 10], [14], [0, 4, 7, 10, 14]), 0.08),  # A9 arpeggio → full voicing
     },
 }
 
@@ -467,12 +457,11 @@ DEFAULTS = dict(
     TTS_KITTEN={'voice': DEFAULT_TTS_KITTEN_VOICE, 'speed': DEFAULT_TTS_KITTEN_SPEED},
     SPEAK_BACK_APPEND_INSTRUCTION=True,  # Append TTS instruction to transcriptions
     SPEAK_BACK_TMUX_ONLY=False,  # Only append TTS instruction when sending to tmux (not paste)
-    SPEAK_BACK_WAKE_ONLY=False,  # Only append TTS instruction when recording started by wake word
     SPEAK_BACK_INSTRUCTION_TEMPLATE="Please speak back with ({command} &)",
     # NTFY remote TTS settings
     NTFY_ENABLED=False,  # Enable NTFY listener for remote TTS
     NTFY_TOPIC='',  # Topic to listen on (empty = generate random on first enable)
-    NTFY_USE_CURL=True,  # Use curl instead of rp ntfy_send for NTFY instructions
+    NTFY_INSTRUCTION_TEMPLATE="Please speak back with (python3 -m rp call ntfy_send --- '{message}' ---topic '{topic}' &)",
     TTS_TEST_PHRASE="Testing 1, 2, 3",  # Phrase spoken by TTS/NTFY test buttons
     # Window geometry settings
     RESTORE_WINDOW_GEOMETRY=True,  # Restore window positions/sizes on startup
@@ -540,7 +529,7 @@ def make_checkbox(text, checked, tooltip=None, on_change=None, css_size=11):
     cb.setChecked(checked)
     cb.setStyleSheet(get_checkbox_css(css_size))
     if tooltip:
-        set_tooltip(cb, tooltip)
+        cb.setToolTip(tooltip)
     if on_change:
         cb.stateChanged.connect(on_change)
     return cb
@@ -765,14 +754,9 @@ def _ntfy_listen_loop(topic, gen):
                 time.sleep(0.1)
 
 
-NTFY_CURL_TEMPLATE = "Please speak back with (curl -d '{message}' ntfy.sh/{topic} &)"
-NTFY_RP_TEMPLATE = "Please speak back with (python3 -m rp call ntfy_send --- '{message}' ---topic '{topic}' &)"
-
-
 def build_ntfy_instruction():
     """Build the NTFY instruction string for appending to transcriptions."""
-    template = NTFY_CURL_TEMPLATE if S.NTFY_USE_CURL else NTFY_RP_TEMPLATE
-    return template.format(
+    return S.NTFY_INSTRUCTION_TEMPLATE.format(
         message="YOUR_MESSAGE_HERE",
         topic=S.NTFY_TOPIC,
     )
@@ -1004,10 +988,10 @@ def get_combobox_css():
     bg = STYLE.input_bg
     text = STYLE.input_text
     return (
-        f"QComboBox {{ background-color: {bg}; color: {text}; border: 1px solid {BORDER_COLOR}; padding: 4px 8px; }} "
-        f"QComboBox QAbstractItemView {{ background-color: {bg}; color: {text}; selection-background-color: {ACCENT}; selection-color: white; }} "
-        f"QComboBox QAbstractItemView::item:hover {{ background: {ACCENT}; color: white; }} "
-        f"QComboBox QLineEdit {{ background-color: {bg}; color: {text}; padding: 0px; margin: 0px; border: none; }} "
+        f"QComboBox {{ background-color: {bg}; color: {text}; border: 1px solid {BORDER_COLOR}; padding: 4px 8px; }}"
+        f"QComboBox QAbstractItemView {{ background-color: {bg}; color: {text}; selection-background-color: {ACCENT}; selection-color: white; }}"
+        f"QComboBox QAbstractItemView::item:hover {{ background: {ACCENT}; color: white; }}"
+        f"QComboBox QLineEdit {{ background-color: {bg}; color: {text}; padding: 0px; margin: 0px; border: none; }}"
         f"QComboBox::drop-down {{ border: none; }} {TOOLTIP_CSS}"
     )
 
@@ -1026,6 +1010,7 @@ def make_combobox_searchable(combo_box):
 
     completer = QCompleter(filter_model, combo_box)
     completer.setCompletionMode(QCompleter.CompletionMode.UnfilteredPopupCompletion)
+    # Style the completer popup (it's a separate top-level widget, not a child of the combobox)
     bg = STYLE.input_bg
     text = STYLE.input_text
     completer.popup().setStyleSheet(
@@ -1354,7 +1339,6 @@ _chime_log = []
 _CHIME_DEBUG = True  # Set to False to disable logging
 CHIME_LOG_FILE = os.path.join(DEFAULT_RECORDINGS_DIR, "chime_log.jsonl")  # Uses default, not configurable
 _chime_log_callbacks = []  # Callbacks to notify when chime is logged (for real-time UI updates)
-_chimes_enabled = False  # Set to True after boot completes and MIDI settings are applied
 
 def _log_chime_to_file(entry):
     """Append chime entry to persistent log file (JSONL format)."""
@@ -1380,7 +1364,7 @@ def get_chime_audio_params():
 
 def chime(*chords, t=0.15, gap=0.0, name=None, **kwargs):
     """Play chime using native FluidSynth audio (non-blocking, layerable)."""
-    if not _chimes_enabled or not S.SOUND_ENABLED or S.CHIME_VOLUME <= 0:
+    if not S.SOUND_ENABLED or S.CHIME_VOLUME <= 0:
         return
     params = get_chime_audio_params()
     # Log if debug enabled
@@ -1601,11 +1585,10 @@ ACTIONS = [
     ("folder", "F", "folder-open", "Open recordings folder", "Open Recordings Folder"),
     ("sound", "S", "volume", "Toggle sound effects", None),
     ("auto_hide", "H", "eye", "Toggle auto-minimize", None),
-    ("llm", "R", "robot", "Toggle auto LLM post-processing", None),
+    ("llm", "R", "robot", "Toggle LLM post-processing", None),
     ("wake_word", "J", "ear", "Toggle wake word detection (disable to save battery)", None),
     ("auto_enter", "N", "enter", "Toggle auto-enter after paste", None),
     ("tmux", "U", "tmux", "Open tmux pane manager", None),
-    ("tmux_toggle", "⇧U", "tmux", "Toggle tmux mode on/off", None),
     ("chime_editor", "I", "music", "Open chime editor", None),
     ("model", "M", "mic", "Change Whisper model", None),
     ("prefs", "P", "settings", "Preferences", None),
@@ -1802,7 +1785,6 @@ class DraggableDialog(DraggableResizableMixin, QDialog):
 
     # Override in subclasses for geometry persistence
     window_name = None
-    _scroll_areas = None  # Subclasses: {'name': QScrollArea} for scroll position save/restore
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -1813,65 +1795,45 @@ class DraggableDialog(DraggableResizableMixin, QDialog):
 
     def center_on_parent(self):
         """Center on parent, or restore saved geometry if enabled."""
-        parent = self.parent()
+        self.adjustSize()
 
-        # Try to restore saved geometry (skip adjustSize — use saved size directly)
+        parent = self.parent()
+        # If parent is in blue mode (fullscreen), make dialog appear on fullscreen space
+        if parent and getattr(parent, '_blue_mode_override', False):
+            # Get reference to the tmux dialog which owns the fullscreen
+            tmux_dialog = getattr(parent, '_tmux_dialog', None)
+            if tmux_dialog and tmux_dialog.isVisible():
+                # Position on the same screen as tmux dialog (fullscreen)
+                screen = tmux_dialog.screen()
+                if screen:
+                    sg = screen.availableGeometry()
+                    # Set window flags to stay on top and be visible over fullscreen
+                    flags = self.windowFlags() | Qt.WindowType.WindowStaysOnTopHint
+                    self.setWindowFlags(flags)
+                    self.move(sg.x() + (sg.width() - self.width()) // 2,
+                              sg.y() + (sg.height() - self.height()) // 2)
+                    return
+
+        # Try to restore saved geometry
         if self.window_name and S.RESTORE_WINDOW_GEOMETRY:
             geom = S.WINDOW_GEOMETRY.get(self.window_name)
             if geom:
+                self.move(geom['x'], geom['y'])
                 if 'width' in geom and 'height' in geom:
                     self.resize(geom['width'], geom['height'])
-                self.move(geom['x'], geom['y'])
-                # Force layout recalculation for the restored size
-                QTimer.singleShot(0, self._force_layout_update)
                 return
-
         # Fall back to centering on parent
-        self.adjustSize()
         if parent:
             self.move(parent.x() + (parent.width() - self.width()) // 2,
                       parent.y() + (parent.height() - self.height()) // 2)
 
-    def _force_layout_update(self):
-        """Force layout recalculation after geometry restore, then restore scroll positions."""
-        if self.layout():
-            self.layout().invalidate()
-            self.layout().activate()
-        self._restore_scroll_positions()
-
-    def _restore_scroll_positions(self):
-        """Restore saved scroll positions for registered scroll areas."""
-        if not self._scroll_areas or not self.window_name:
-            return
-        geom = S.WINDOW_GEOMETRY.get(self.window_name)
-        if not geom or 'scroll' not in geom:
-            return
-        saved = geom['scroll']
-        for name, sa in self._scroll_areas.items():
-            if name not in saved:
-                continue
-            val = saved[name]
-            if isinstance(val, list):
-                sa.verticalScrollBar().setValue(val[0])
-                sa.horizontalScrollBar().setValue(val[1])
-            else:
-                sa.verticalScrollBar().setValue(val)
-
     def _save_geometry(self):
-        """Save window geometry and scroll positions to settings."""
+        """Save window geometry to settings."""
         if self.window_name:
-            geom = {
+            S.WINDOW_GEOMETRY[self.window_name] = {
                 'x': self.x(), 'y': self.y(),
                 'width': self.width(), 'height': self.height()
             }
-            if self._scroll_areas:
-                scroll = {}
-                for name, sa in self._scroll_areas.items():
-                    v = sa.verticalScrollBar().value()
-                    h = sa.horizontalScrollBar().value()
-                    scroll[name] = [v, h] if h else v
-                geom['scroll'] = scroll
-            S.WINDOW_GEOMETRY[self.window_name] = geom
 
     def closeEvent(self, event):
         """Save geometry on close."""
@@ -2021,8 +1983,7 @@ class HelpDialog(DraggableDialog):
             "• ⌘Q to quit\n\n"
             f"Wake word (J): Say a start phrase to begin recording hands-free! "
             f"Say a stop phrase to finish recording.\n\n"
-            "Tmux mode (⇧U to toggle, U to open pane manager): "
-            "Paste directly into your active tmux pane instead of ⌘V.\n\n"
+            "Tmux mode (U): Paste directly into your active tmux pane instead of ⌘V.\n\n"
             "100% keyboard-driven - no mouse needed! (hover buttons to see shortcuts)\n\n"
             "Small mode (E or green button): Compact view with just status and timer - "
             "great for keeping visible while using keyboard shortcuts.\n\n"
@@ -2944,10 +2905,10 @@ class TmuxSelectionDialog(DraggableDialog):
         accent_css = STYLE.accent_css
         self.table.setStyleSheet(
             f"QTableWidget {{ {PANEL_BG_FLAT_CSS} color: {TEXT_PRIMARY}; "
-            f"border: 1px solid {BORDER_COLOR}; font-family: Menlo, monospace; font-size: 11px; }} "
-            f"QTableWidget::item {{ padding: 1px 4px; color: {TEXT_PRIMARY}; }} "
-            f"QTableWidget::item:hover {{ background: rgba({STYLE.accent.red()},{STYLE.accent.green()},{STYLE.accent.blue()},0.25); }} "
-            f"QTableWidget::item:selected {{ background: rgba({STYLE.accent.red()},{STYLE.accent.green()},{STYLE.accent.blue()},0.5); color: {TEXT_PRIMARY}; }} "
+            f"border: 1px solid {BORDER_COLOR}; font-family: Menlo, monospace; font-size: 11px; }}"
+            f"QTableWidget::item {{ padding: 1px 4px; color: {TEXT_PRIMARY}; }}"
+            f"QTableWidget::item:hover {{ background: rgba({STYLE.accent.red()},{STYLE.accent.green()},{STYLE.accent.blue()},0.25); }}"
+            f"QTableWidget::item:selected {{ background: rgba({STYLE.accent.red()},{STYLE.accent.green()},{STYLE.accent.blue()},0.5); color: {TEXT_PRIMARY}; }}"
             f"QHeaderView::section {{ background: {BORDER_COLOR}; color: {TEXT_PRIMARY}; padding: 2px 4px; "
             f"border: 1px solid {BORDER_COLOR}; font-weight: bold; }}"
             + SCROLLBAR_CSS
@@ -3503,14 +3464,10 @@ done
 
     def showEvent(self, event):
         """Start polling when dialog is shown."""
+        # print("[tmux-dialog] showEvent called")
         super().showEvent(event)
-        # Defer poll start: subprocess.Popen calls fork(), which is unsafe on macOS while
-        # Cocoa/AppKit is mid-render (causes SIGBUS). QTimer(0) runs after queued paint events.
-        QTimer.singleShot(0, self._deferred_poll_start)
-
-    def _deferred_poll_start(self):
-        """Start polling after pending paint events are processed (avoids fork-during-paint SIGBUS)."""
         self._start_polling()
+        # Start auto-refresh timer (5 seconds)
         self._last_pane_ids = {p['pane_id'] for p in self._pane_data}
         self._auto_refresh_timer.start(5000)
 
@@ -3568,9 +3525,12 @@ done
 
     def _save_geometry(self):
         """Save window geometry including splitter position."""
-        super()._save_geometry()
         if self.window_name:
-            S.WINDOW_GEOMETRY[self.window_name]['splitter'] = self.splitter.sizes()
+            S.WINDOW_GEOMETRY[self.window_name] = {
+                'x': self.x(), 'y': self.y(),
+                'width': self.width(), 'height': self.height(),
+                'splitter': self.splitter.sizes(),
+            }
 
     def keyPressEvent(self, e):
         # Only forward to preview if it's actually focused
@@ -4028,10 +3988,11 @@ class TTSSettingsWidget(QWidget):
         # Append instruction checkbox + edit button
         append_row = QHBoxLayout()
         append_row.setSpacing(8)
-        self._append_checkbox = make_checkbox("Append TTS instruction",
-            S.SPEAK_BACK_APPEND_INSTRUCTION,
-            "Appends TTS command to transcriptions for Claude to speak.",
-            self._on_append_changed)
+        self._append_checkbox = QCheckBox("Append TTS instruction")
+        self._append_checkbox.setChecked(S.SPEAK_BACK_APPEND_INSTRUCTION)
+        self._append_checkbox.setStyleSheet(get_checkbox_css())
+        self._append_checkbox.setToolTip("Appends TTS command to transcriptions for Claude to speak.")
+        self._append_checkbox.stateChanged.connect(self._on_append_changed)
         append_row.addWidget(self._append_checkbox)
         self._edit_btn = make_edit_button("Edit the instruction template", self._edit_instruction)
         append_row.addWidget(self._edit_btn)
@@ -4053,30 +4014,22 @@ class TTSSettingsWidget(QWidget):
 
         # Only for tmux checkbox (indented)
         tmux_only_row = indented_row(level=1)
-        self._tmux_only_checkbox = make_checkbox("Only for tmux",
-            S.SPEAK_BACK_TMUX_ONLY,
-            "Only append when sending to tmux panes.",
-            self._on_tmux_only_changed)
+        self._tmux_only_checkbox = QCheckBox("Only for tmux")
+        self._tmux_only_checkbox.setChecked(S.SPEAK_BACK_TMUX_ONLY)
+        self._tmux_only_checkbox.setStyleSheet(get_checkbox_css())
+        self._tmux_only_checkbox.setToolTip("Only append when sending to tmux panes.")
+        self._tmux_only_checkbox.stateChanged.connect(self._on_tmux_only_changed)
         tmux_only_row.addWidget(self._tmux_only_checkbox)
         tmux_only_row.addStretch()
         tts_sub.addLayout(tmux_only_row)
 
-        # Only on wake word checkbox (indented)
-        wake_only_row = indented_row(level=1)
-        self._wake_only_checkbox = make_checkbox("Only on wake word",
-            S.SPEAK_BACK_WAKE_ONLY,
-            "Only append when recording was started by wake word\n(skip when using keyboard shortcut).",
-            self._on_wake_only_changed)
-        wake_only_row.addWidget(self._wake_only_checkbox)
-        wake_only_row.addStretch()
-        tts_sub.addLayout(wake_only_row)
-
         # NTFY remote TTS checkbox (indented)
         ntfy_row = indented_row(level=1)
-        self._ntfy_checkbox = make_checkbox("NTFY remote TTS",
-            S.NTFY_ENABLED,
-            "Listen for messages via ntfy.sh and speak them locally.\nWhen enabled, transcriptions tell Claude to reply via NTFY\ninstead of a local TTS command — so speech works even\nwhen you're SSH'd into a remote machine.",
-            self._on_ntfy_changed)
+        self._ntfy_checkbox = QCheckBox("NTFY remote TTS")
+        self._ntfy_checkbox.setChecked(S.NTFY_ENABLED)
+        self._ntfy_checkbox.setStyleSheet(get_checkbox_css())
+        set_tooltip(self._ntfy_checkbox, "Listen for messages via ntfy.sh and speak them locally.\nWhen enabled, transcriptions tell Claude to reply via NTFY\ninstead of a local TTS command — so speech works even\nwhen you're SSH'd into a remote machine.")
+        self._ntfy_checkbox.stateChanged.connect(self._on_ntfy_changed)
         ntfy_row.addWidget(self._ntfy_checkbox)
         ntfy_row.addStretch()
         tts_sub.addLayout(ntfy_row)
@@ -4108,22 +4061,7 @@ class TTSSettingsWidget(QWidget):
         self._ntfy_test_btn.clicked.connect(self._on_ntfy_test)
         ntfy_topic_layout.addWidget(self._ntfy_test_btn)
         tts_sub.addWidget(self._ntfy_topic_widget)
-
-        # Use curl checkbox (same indent as topic, hidden when NTFY disabled)
-        self._ntfy_curl_widget, ntfy_curl_layout = indented_widget(level=2)
-        self._ntfy_curl_checkbox = make_checkbox("Use curl",
-            S.NTFY_USE_CURL,
-            "Use curl instead of rp ntfy_send.\n\n"
-            "curl: curl -d 'msg' ntfy.sh/topic\n"
-            "rp: python3 -m rp call ntfy_send --- 'msg' ---topic 'topic'\n\n"
-            "curl is more portable (no rp dependency).",
-            self._on_ntfy_curl_changed)
-        ntfy_curl_layout.addWidget(self._ntfy_curl_checkbox)
-        ntfy_curl_layout.addStretch()
-        tts_sub.addWidget(self._ntfy_curl_widget)
-
         self._ntfy_topic_widget.setVisible(S.NTFY_ENABLED)
-        self._ntfy_curl_widget.setVisible(S.NTFY_ENABLED)
 
         self._layout.addWidget(self._tts_sub_options)
         self._tts_sub_options.setVisible(S.SPEAK_BACK_APPEND_INSTRUCTION)
@@ -4131,10 +4069,11 @@ class TTSSettingsWidget(QWidget):
         # Announce pane checkbox
         announce_row = QHBoxLayout()
         announce_row.setSpacing(8)
-        self._announce_checkbox = make_checkbox("Announce tmux pane",
-            S.TMUX_ANNOUNCE_PANE,
-            "Speak which pane(s) received the message.",
-            self._on_announce_changed)
+        self._announce_checkbox = QCheckBox("Announce tmux pane")
+        self._announce_checkbox.setChecked(S.TMUX_ANNOUNCE_PANE)
+        self._announce_checkbox.setStyleSheet(get_checkbox_css())
+        set_tooltip(self._announce_checkbox, "Speak which pane(s) received the message.")
+        self._announce_checkbox.stateChanged.connect(self._on_announce_changed)
         announce_row.addWidget(self._announce_checkbox)
         announce_row.addStretch()
         self._layout.addLayout(announce_row)
@@ -4287,19 +4226,12 @@ class TTSSettingsWidget(QWidget):
     def _on_tmux_only_changed(self, state):
         S.set('SPEAK_BACK_TMUX_ONLY', state == Qt.CheckState.Checked.value)
 
-    def _on_wake_only_changed(self, state):
-        S.set('SPEAK_BACK_WAKE_ONLY', state == Qt.CheckState.Checked.value)
-
     def _on_announce_changed(self, state):
         S.set('TMUX_ANNOUNCE_PANE', state == Qt.CheckState.Checked.value)
-
-    def _on_ntfy_curl_changed(self, state):
-        S.set('NTFY_USE_CURL', state == Qt.CheckState.Checked.value)
 
     def _on_ntfy_changed(self, state):
         enabled = state == Qt.CheckState.Checked.value
         self._ntfy_topic_widget.setVisible(enabled)
-        self._ntfy_curl_widget.setVisible(enabled)
         if enabled and not S.NTFY_TOPIC:
             self._on_ntfy_dice()
         S.set('NTFY_ENABLED', enabled)
@@ -4379,8 +4311,10 @@ class WakeWordSettingsWidget(QWidget):
             "which uses significant battery on laptops.\n\n"
             "Disable when not needed to save battery.")
         enable_row.addWidget(enable_label)
-        self._enable_checkbox = make_checkbox("Enable wake word detection",
-            S.WAKE_WORD_ENABLED, on_change=self._on_enabled_changed, css_size=12)
+        self._enable_checkbox = QCheckBox("Enable wake word detection")
+        self._enable_checkbox.setChecked(S.WAKE_WORD_ENABLED)
+        self._enable_checkbox.setStyleSheet(get_checkbox_css(12))
+        self._enable_checkbox.stateChanged.connect(self._on_enabled_changed)
         enable_row.addWidget(self._enable_checkbox, 1)
         self._layout.addLayout(enable_row)
 
@@ -4491,10 +4425,11 @@ class WakeWordSettingsWidget(QWidget):
         # +Tmux Phrases checkbox (indented, only applies to start phrases)
         tmux_row = indented_row(level=1)
         checked = S.WAKEWORD_MACOS.get('use_tmux_phrases', False)
-        self._tmux_phrases_checkbox = make_checkbox(
-            get_tmux_phrases_checkbox_label(checked), checked,
-            on_change=self._on_tmux_phrases_changed)
+        self._tmux_phrases_checkbox = QCheckBox(get_tmux_phrases_checkbox_label(checked))
+        self._tmux_phrases_checkbox.setStyleSheet(get_checkbox_css())
+        self._tmux_phrases_checkbox.setChecked(checked)
         self._update_tmux_phrases_tooltip()
+        self._tmux_phrases_checkbox.stateChanged.connect(self._on_tmux_phrases_changed)
         tmux_row.addWidget(self._tmux_phrases_checkbox)
         tmux_row.addStretch()
         macos_layout.addLayout(tmux_row)
@@ -4918,85 +4853,91 @@ class PrefsDialog(DraggableDialog):
         # Paste Behavior section (separate from wake word)
         settings_box.addWidget(make_section("Paste Behavior"))
 
-        # Paste checkboxes in two rows with icons
+        # All four checkboxes in one horizontal row with icons
+        # Order: Copy, ⌘V paste, Tmux paste, Enter after paste
+        auto_row = QHBoxLayout()
+        auto_row.setSpacing(12)
+
         # Store icon labels for graying out
         self._paste_icon_labels = []
 
-        # Row 1: Copy, ⌘V paste, Restore clipboard
-        row1 = QHBoxLayout()
-        row1.setSpacing(12)
-
+        # Copy
         copy_icon_label = QLabel()
         copy_icon = load_icon("copy", color=ICON_COLOR_DARK)
         if copy_icon:
             copy_icon_label.setPixmap(copy_icon.pixmap(ICON_SIZE_SMALL, ICON_SIZE_SMALL))
-        row1.addWidget(copy_icon_label)
-        self.copy_checkbox = make_checkbox("Copy to clipboard", S.AUTO_COPY,
-            "Copy transcription to clipboard after recording.\n\n"
-            "Other paste options require this to be enabled.",
-            self._on_auto_copy_pref_changed)
-        row1.addWidget(self.copy_checkbox)
+        auto_row.addWidget(copy_icon_label)
+        self.copy_checkbox = QCheckBox("Copy to clipboard")
+        self.copy_checkbox.setChecked(S.AUTO_COPY)
+        self.copy_checkbox.setStyleSheet(get_checkbox_css())
+        self.copy_checkbox.setToolTip("Copy transcription to clipboard after recording.\n\n"
+                                       "Other paste options require this to be enabled.")
+        self.copy_checkbox.stateChanged.connect(self._on_auto_copy_pref_changed)
+        auto_row.addWidget(self.copy_checkbox)
 
+        # ⌘V Paste
         paste_icon_label = QLabel()
         paste_icon = load_icon("layers", color=ICON_COLOR_DARK)
         if paste_icon:
             paste_icon_label.setPixmap(paste_icon.pixmap(ICON_SIZE_SMALL, ICON_SIZE_SMALL))
-        row1.addWidget(paste_icon_label)
+        auto_row.addWidget(paste_icon_label)
         self._paste_icon_labels.append(paste_icon_label)
-        self.paste_checkbox = make_checkbox("⌘V paste", S.AUTO_PASTE,
-            "Automatically paste transcription via ⌘V.\n\n"
-            "Requires 'Copy to clipboard' to be enabled.",
-            self._on_auto_paste_pref_changed)
-        row1.addWidget(self.paste_checkbox)
+        self.paste_checkbox = QCheckBox("⌘V paste")
+        self.paste_checkbox.setChecked(S.AUTO_PASTE)
+        self.paste_checkbox.setStyleSheet(get_checkbox_css())
+        self.paste_checkbox.setToolTip("Automatically paste transcription via ⌘V.\n\n"
+                                        "Requires 'Copy to clipboard' to be enabled.")
+        self.paste_checkbox.stateChanged.connect(self._on_auto_paste_pref_changed)
+        auto_row.addWidget(self.paste_checkbox)
 
-        restore_icon_label = QLabel()
-        restore_icon = load_icon("recycle", color=ICON_COLOR_DARK)
-        if restore_icon:
-            restore_icon_label.setPixmap(restore_icon.pixmap(ICON_SIZE_SMALL, ICON_SIZE_SMALL))
-        row1.addWidget(restore_icon_label)
-        self.restore_clip_checkbox = make_checkbox("Restore clipboard", S.RESTORE_CLIPBOARD,
-            "Restore your original clipboard contents after pasting.\n\n"
-            "Without this, pasting a transcription replaces\n"
-            "whatever was on your clipboard. With this enabled,\n"
-            "your clipboard is saved before and restored after.",
+        # Restore clipboard
+        self.restore_clip_checkbox = QCheckBox("Restore clipboard")
+        self.restore_clip_checkbox.setChecked(S.RESTORE_CLIPBOARD)
+        self.restore_clip_checkbox.setStyleSheet(get_checkbox_css())
+        self.restore_clip_checkbox.setToolTip("Restore your original clipboard contents after pasting.\n\n"
+                                               "Without this, pasting a transcription replaces\n"
+                                               "whatever was on your clipboard. With this enabled,\n"
+                                               "your clipboard is saved before and restored after.")
+        self.restore_clip_checkbox.stateChanged.connect(
             lambda state: S.set('RESTORE_CLIPBOARD', state == Qt.CheckState.Checked.value))
-        row1.addWidget(self.restore_clip_checkbox)
-        row1.addStretch()
-        settings_box.addLayout(row1)
+        auto_row.addWidget(self.restore_clip_checkbox)
 
-        # Row 2: Tmux paste, Enter after paste
-        row2 = QHBoxLayout()
-        row2.setSpacing(12)
-
+        # Tmux Paste
         tmux_icon_label = QLabel()
         tmux_icon = load_icon("tmux", color=ICON_COLOR_DARK)
         if tmux_icon:
             tmux_icon_label.setPixmap(tmux_icon.pixmap(ICON_SIZE_SMALL, ICON_SIZE_SMALL))
-        row2.addWidget(tmux_icon_label)
+        auto_row.addWidget(tmux_icon_label)
         self._paste_icon_labels.append(tmux_icon_label)
-        self.tmux_checkbox = make_checkbox("Tmux paste", S.TMUX_MODE,
-            "Paste directly into active tmux pane using send-keys.\n\n"
-            "Requires 'Copy to clipboard' to be enabled.\n"
-            "When enabled, replaces ⌘V paste.",
-            self._on_tmux_pref_changed)
-        row2.addWidget(self.tmux_checkbox)
+        self.tmux_checkbox = QCheckBox("Tmux paste")
+        self.tmux_checkbox.setChecked(S.TMUX_MODE)
+        self.tmux_checkbox.setStyleSheet(get_checkbox_css())
+        self.tmux_checkbox.setToolTip("Paste directly into active tmux pane using send-keys.\n\n"
+                                       "Requires 'Copy to clipboard' to be enabled.\n"
+                                       "When enabled, replaces ⌘V paste.")
+        self.tmux_checkbox.stateChanged.connect(self._on_tmux_pref_changed)
+        auto_row.addWidget(self.tmux_checkbox)
 
+        # Enter after paste
         enter_icon_label = QLabel()
         enter_icon = load_icon("enter", color=ICON_COLOR_DARK)
         if enter_icon:
             enter_icon_label.setPixmap(enter_icon.pixmap(ICON_SIZE_SMALL, ICON_SIZE_SMALL))
-        row2.addWidget(enter_icon_label)
+        auto_row.addWidget(enter_icon_label)
         self._paste_icon_labels.append(enter_icon_label)
-        self.enter_checkbox = make_checkbox("Enter after paste", S.AUTO_ENTER,
-            "Press Enter after pasting transcription.\n\n"
-            "With ⌘V paste: sends keyboard Enter key\n"
-            "With Tmux paste: uses tmux send-keys Enter\n"
-            "Both use the Enter Delay setting below.\n\n"
-            "Has no effect if neither paste mode is enabled.",
-            self._on_enter_changed)
-        row2.addWidget(self.enter_checkbox)
-        row2.addStretch()
-        settings_box.addLayout(row2)
+        self.enter_checkbox = QCheckBox("Enter after paste")
+        self.enter_checkbox.setChecked(S.AUTO_ENTER)
+        self.enter_checkbox.setStyleSheet(get_checkbox_css())
+        self.enter_checkbox.setToolTip("Press Enter after pasting transcription.\n\n"
+                                        "With ⌘V paste: sends keyboard Enter key\n"
+                                        "With Tmux paste: uses tmux send-keys Enter\n"
+                                        "Both use the Enter Delay setting below.\n\n"
+                                        "Has no effect if neither paste mode is enabled.")
+        self.enter_checkbox.stateChanged.connect(self._on_enter_changed)
+        auto_row.addWidget(self.enter_checkbox)
+
+        auto_row.addStretch()
+        settings_box.addLayout(auto_row)
 
         # Enter delay slider
         delay_row = QHBoxLayout()
@@ -5031,8 +4972,10 @@ class PrefsDialog(DraggableDialog):
                                    "Useful for long recordings with gaps - the waveform\n"
                                    "won't scroll during quiet periods.")
         silence_row.addWidget(silence_label)
-        self.silence_checkbox = make_checkbox("Skip recording during silence",
-            S.SILENCE_SKIP_ENABLED, on_change=self._on_silence_skip_changed, css_size=12)
+        self.silence_checkbox = QCheckBox("Skip recording during silence")
+        self.silence_checkbox.setChecked(S.SILENCE_SKIP_ENABLED)
+        self.silence_checkbox.setStyleSheet(get_checkbox_css(12))
+        self.silence_checkbox.stateChanged.connect(self._on_silence_skip_changed)
         silence_row.addWidget(self.silence_checkbox, 1)
         settings_box.addLayout(silence_row)
 
@@ -5085,12 +5028,14 @@ class PrefsDialog(DraggableDialog):
         # Tmux phrases as context words
         phrases_ctx_row = QHBoxLayout()
         phrases_ctx_row.setSpacing(8)
-        self.phrases_ctx_check = make_checkbox(
-            get_tmux_phrases_checkbox_label(S.TMUX_PHRASES_AS_CONTEXT),
-            S.TMUX_PHRASES_AS_CONTEXT,
+        self.phrases_ctx_check = QCheckBox(get_tmux_phrases_checkbox_label(S.TMUX_PHRASES_AS_CONTEXT))
+        self.phrases_ctx_check.setChecked(S.TMUX_PHRASES_AS_CONTEXT)
+        self.phrases_ctx_check.setStyleSheet(get_checkbox_css())
+        set_tooltip(self.phrases_ctx_check,
             "Include tmux pane phrases as context words.\n"
-            "Helps Whisper recognize phrase words in speech.",
-            self._on_phrases_ctx_changed)
+            "Helps Whisper recognize phrase words in speech."
+        )
+        self.phrases_ctx_check.stateChanged.connect(self._on_phrases_ctx_changed)
         phrases_ctx_row.addWidget(self.phrases_ctx_check)
         # Hint label shown when tmux mode is disabled
         self._phrases_ctx_hint = QLabel("")
@@ -5119,13 +5064,11 @@ class PrefsDialog(DraggableDialog):
             LLM_MODELS, S.LLM_MODEL, self._on_llm_model_changed
         )
         llm_model_row.addWidget(self.llm_model_combo, 1)
-        self.llm_enabled_checkbox = make_checkbox("Auto", S.LLM_ENABLED,
-            "Auto LLM post-processing (R)\n\n"
-            "When checked, transcriptions are automatically\n"
-            "sent through the LLM for cleanup.\n\n"
-            "You can still manually process any transcription\n"
-            "from the dropdown menu in the Transcriptions tab.",
-            self._on_llm_enabled_changed)
+        self.llm_enabled_checkbox = QCheckBox("Enable")
+        self.llm_enabled_checkbox.setChecked(S.LLM_ENABLED)
+        self.llm_enabled_checkbox.setStyleSheet(get_checkbox_css())
+        self.llm_enabled_checkbox.setToolTip("Enable LLM post-processing (R)")
+        self.llm_enabled_checkbox.stateChanged.connect(self._on_llm_enabled_changed)
         llm_model_row.addWidget(self.llm_enabled_checkbox)
         settings_box.addLayout(llm_model_row)
         # Prompt prefix
@@ -5262,8 +5205,11 @@ class PrefsDialog(DraggableDialog):
         settings_box.addWidget(make_section("Window"))
         window_row = QHBoxLayout()
         window_row.setSpacing(8)
-        self.always_on_top_checkbox = make_checkbox("Always on Top", S.ALWAYS_ON_TOP,
-            "Keep window above other windows", self._on_always_on_top_changed)
+        self.always_on_top_checkbox = QCheckBox("Always on Top")
+        self.always_on_top_checkbox.setChecked(S.ALWAYS_ON_TOP)
+        self.always_on_top_checkbox.setStyleSheet(get_checkbox_css())
+        self.always_on_top_checkbox.setToolTip("Keep window above other windows")
+        self.always_on_top_checkbox.stateChanged.connect(self._on_always_on_top_changed)
         window_row.addWidget(self.always_on_top_checkbox)
         # Show override notice when in blue mode (tmux fullscreen)
         self.blue_mode_label = QLabel("(overridden)")
@@ -5274,10 +5220,13 @@ class PrefsDialog(DraggableDialog):
         else:
             self.blue_mode_label.hide()
         window_row.addWidget(self.blue_mode_label)
-        self.restore_geom_checkbox = make_checkbox("Restore Positions", S.RESTORE_WINDOW_GEOMETRY,
+        self.restore_geom_checkbox = QCheckBox("Restore Positions")
+        self.restore_geom_checkbox.setChecked(S.RESTORE_WINDOW_GEOMETRY)
+        self.restore_geom_checkbox.setStyleSheet(get_checkbox_css())
+        self.restore_geom_checkbox.setToolTip(
             "Remember and restore window positions and sizes on startup.\n"
-            "Applies to main window and dialogs (Preferences, Tmux, Help, etc.)",
-            self._on_restore_geom_changed)
+            "Applies to main window and dialogs (Preferences, Tmux, Help, etc.)")
+        self.restore_geom_checkbox.stateChanged.connect(self._on_restore_geom_changed)
         window_row.addWidget(self.restore_geom_checkbox)
         window_row.addStretch()
         settings_box.addLayout(window_row)
@@ -5312,7 +5261,6 @@ class PrefsDialog(DraggableDialog):
         self.content_scroll.setStyleSheet("QScrollArea { background: transparent; }" + SCROLLBAR_CSS)
         self.content_widget = content_widget
         layout.addWidget(self.content_scroll, 1)  # stretch=1 so it takes available space
-        self._scroll_areas = {'content': self.content_scroll}
 
         # Bottom action buttons row (3 equally spaced)
         action_row = QHBoxLayout()
@@ -5353,6 +5301,8 @@ class PrefsDialog(DraggableDialog):
         btn_row.addWidget(ok_btn)
         layout.addLayout(btn_row)
         self.setMinimumWidth(400)  # Compact two-column layout
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.setFocus()  # Don't focus textboxes - allow number keys for themes
 
         # Final state update for all dependent options (including phrases_ctx_check)
         self._update_paste_options_state()
@@ -5936,7 +5886,6 @@ class ChimeEditorDialog(DraggableDialog):
         scroll_layout.addStretch()
         self.scroll.setWidget(scroll_content)
         main_content.addWidget(self.scroll, 1)
-        self._scroll_areas = {'grid': self.scroll}
 
         # Chime list on right side - use theme colors
         self.chime_list = QListWidget()
@@ -5948,9 +5897,9 @@ class ChimeEditorDialog(DraggableDialog):
             f"QListWidget {{ background: rgb({list_bg.red()},{list_bg.green()},{list_bg.blue()}); "
             f"color: {TEXT_PRIMARY}; "
             f"border: 1px solid rgb({list_border.red()},{list_border.green()},{list_border.blue()}); "
-            f"font-size: 11px; }} "
-            f"QListWidget::item {{ padding: 4px 6px; }} "
-            f"QListWidget::item:selected {{ background: {STYLE.accent_css}; color: #000; }} "
+            f"font-size: 11px; }}"
+            f"QListWidget::item {{ padding: 4px 6px; }}"
+            f"QListWidget::item:selected {{ background: {STYLE.accent_css}; color: #000; }}"
             f"QListWidget::item:hover {{ background: rgba({STYLE.accent.red()},{STYLE.accent.green()},{STYLE.accent.blue()},0.2); }}"
             + SCROLLBAR_CSS
         )
@@ -7067,8 +7016,8 @@ class TranscriptionRow(QFrame):
     @staticmethod
     def _btn_style():
         return (
-            f"QPushButton {{ background: {STYLE.transcription_row_btn_bg}; border: none; border-radius: 4px; }} "
-            f"QPushButton:hover {{ background: {STYLE.transcription_row_btn_hover}; }} "
+            f"QPushButton {{ background: {STYLE.transcription_row_btn_bg}; border: none; border-radius: 4px; }}"
+            f"QPushButton:hover {{ background: {STYLE.transcription_row_btn_hover}; }}"
             f"QPushButton:pressed {{ background: {STYLE.transcription_row_btn_pressed}; }}"
         )
 
@@ -8315,7 +8264,6 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         # Non-settings instance state
         self.wake_word_engine = None  # Wake word engine instance (from wakeword module)
         self._tmux_wake_prefix = None  # Tmux phrase that triggered recording (for prefix)
-        self._recording_from_wake_word = False  # True when current recording was started by wake word
         self._tmux_dialog = None  # Reference to open TmuxSelectionDialog (if any)
         self._blue_mode_override = False  # True when tmux fullscreen forces always-on-top
 
@@ -8447,7 +8395,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
             self.enter_btn.setIcon(load_icon("enter", color=ICON_COLOR_LIGHT))
         self.enter_btn.setEnabled(True)
         self.tmux_btn = make_btn("U", "tmux", self.show_tmux_selection)
-        set_tooltip(self.tmux_btn, "U: Open tmux pane manager\n⇧U: Toggle tmux mode on/off")
+        self.tmux_btn.setToolTip("Select tmux pane target")
         self.tmux_btn.setCheckable(True)
         self.tmux_btn.setChecked(S.TMUX_MODE)
         if S.TMUX_MODE:
@@ -8559,9 +8507,9 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         self.add_transcription_signal.connect(self._add_transcription)
         self.update_transcription_signal.connect(self._update_transcription)
         self.permission_error_signal.connect(self._on_permission_error)
-        self.wake_word_signal.connect(self._start_recording_from_wake_word)
+        self.wake_word_signal.connect(lambda buf: self.start_recording(pre_buffer=buf))
         self.finish_signal.connect(self._finish)
-        self.stop_signal.connect(self._stop_recording_from_wake_word)
+        self.stop_signal.connect(self.stop_recording)
         self.cancel_signal.connect(self.cancel_recording)
         self._select_tmux_pane_signal.connect(self._select_tmux_pane_on_main_thread)
         self._delayed_wake_resume_signal.connect(
@@ -8647,12 +8595,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         menu.addSeparator()
         menu.addAction("Quit", QApplication.quit)
         self.tray.setContextMenu(menu)
-        self.tray.setToolTip(
-            f"{APP_NAME}\n"
-            f"Right-click: start/stop recording\n"
-            f"Left-click: menu (or hold {CANCEL_HOLD_SECONDS}s to cancel)\n"
-            f"Drag off icon: abort"
-        )
+        self.tray.setToolTip(APP_NAME)
         self.tray.show()
 
     def _update_tray_icon(self):
@@ -8831,7 +8774,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
                 # Magic phrase matched - route to that tmux pane (skip ⌘V)
                 # Uses tmux_paste_text() which pipes via stdin, no system clipboard needed
                 tmux_text = text
-                if S.SPEAK_BACK_APPEND_INSTRUCTION and not (S.SPEAK_BACK_WAKE_ONLY and not self._recording_from_wake_word):
+                if S.SPEAK_BACK_APPEND_INSTRUCTION:
                     tmux_text = text + '\n\n' + build_speak_back_instruction()
                 play_chime('tmux_send')
                 self._do_tmux_paste_to_target(pane_id, tmux_text)
@@ -8841,7 +8784,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         if S.AUTO_PASTE and not tmux_routed:
             # Append TTS instruction for paste only if enabled and not tmux-only mode
             paste_text = text
-            if S.SPEAK_BACK_APPEND_INSTRUCTION and not S.SPEAK_BACK_TMUX_ONLY and not (S.SPEAK_BACK_WAKE_ONLY and not self._recording_from_wake_word):
+            if S.SPEAK_BACK_APPEND_INSTRUCTION and not S.SPEAK_BACK_TMUX_ONLY:
                 paste_text = text + '\n\n' + build_speak_back_instruction()
             self._copy_to_clipboard(paste_text)
             time.sleep(0.1)
@@ -8986,7 +8929,6 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         elif no_mods and key == Qt.Key.Key_R: self.toggle_llm()
         elif no_mods and key == Qt.Key.Key_J: self.toggle_wake_word()
         elif no_mods and key == Qt.Key.Key_N: self.toggle_auto_enter()
-        elif mods == Qt.KeyboardModifier.ShiftModifier and key == Qt.Key.Key_U: self.toggle_tmux_mode()
         elif no_mods and key == Qt.Key.Key_U: self.show_tmux_selection()
         elif no_mods and key == Qt.Key.Key_I: self.show_chime_editor()
         elif no_mods and key == Qt.Key.Key_E: self.toggle_small_mode()
@@ -9137,7 +9079,6 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
 
     def toggle_recording(self):
         if self.state == "idle":
-            self._recording_from_wake_word = False
             self.start_recording()
         elif self.state == "recording":
             self.stop_recording()
@@ -9542,53 +9483,61 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
 
     def show_prefs(self):
         """Show preferences dialog (non-modal). Settings apply live, Cancel reverts."""
-        # Use exact same pattern as show_chime_editor
-        if not hasattr(self, '_prefs_dialog') or self._prefs_dialog is None:
-            import copy
-            self._prefs_orig = copy.deepcopy(dict(S))  # Snapshot for Cancel
-            self._prefs_orig_style = STYLE.name
+        # Close existing prefs dialog if open
+        if hasattr(self, '_prefs_dialog') and self._prefs_dialog is not None:
+            self._prefs_dialog.close()
+            self._prefs_dialog = None
 
-            dialog = PrefsDialog(STYLE.name, S.PET_TYPES, S.SIMPLE_MODE, self,
-                                 auto_enter=S.AUTO_ENTER)
-            self._prefs_dialog = dialog
+        self._open_prefs_dialog()
 
-            # Live preview connections - all use S.set() to trigger hooks
-            dialog.simple_mode_changed.connect(self._set_simple_mode)
-            dialog.style_changed.connect(lambda s: self._change_style(s, save=False))
-            dialog.pets_changed.connect(lambda p: S.set('PET_TYPES', list(p)))
-            dialog.wake_word_changed.connect(self._on_wake_word_settings_changed)
-            dialog.auto_enter_changed.connect(lambda v: S.set('AUTO_ENTER', v))
+    def _open_prefs_dialog(self):
+        """Internal: create and show the preferences dialog."""
+        import copy
+        self._prefs_orig = copy.deepcopy(dict(S))  # Snapshot for Cancel
+        self._prefs_orig_style = STYLE.name
 
-            # Handle accept/reject (non-modal)
-            dialog.accepted.connect(self._on_prefs_accepted)
-            dialog.rejected.connect(self._on_prefs_rejected)
-            dialog.finished.connect(self._on_prefs_closed)
+        # In blue mode, parent to tmux dialog so prefs appears on fullscreen space
+        parent = self
+        if self._blue_mode_override and hasattr(self, '_tmux_dialog') and self._tmux_dialog:
+            parent = self._tmux_dialog
 
-            dialog.center_on_parent()
-        self._prefs_dialog.show()
-        self._prefs_dialog.raise_()
-        self._prefs_dialog.activateWindow()
+        dialog = PrefsDialog(STYLE.name, S.PET_TYPES, S.SIMPLE_MODE, parent,
+                             auto_enter=S.AUTO_ENTER)
+        self._prefs_dialog = dialog
 
-    def _on_prefs_closed(self, result):
-        """Handle prefs dialog closed - null the reference so it gets recreated next time."""
-        self._prefs_dialog = None
+        # Live preview connections - all use S.set() to trigger hooks
+        dialog.simple_mode_changed.connect(self._set_simple_mode)
+        dialog.style_changed.connect(lambda s: self._change_style(s, save=False))
+        dialog.pets_changed.connect(lambda p: S.set('PET_TYPES', list(p)))
+        dialog.wake_word_changed.connect(self._on_wake_word_settings_changed)
+        dialog.auto_enter_changed.connect(lambda v: S.set('AUTO_ENTER', v))
+
+        # Handle accept/reject (non-modal)
+        dialog.accepted.connect(self._on_prefs_accepted)
+        dialog.rejected.connect(self._on_prefs_rejected)
+
+        dialog.center_on_parent()
+        dialog.show()  # Non-modal
 
     def _on_prefs_accepted(self):
         """Handle preferences OK (save settings)."""
         self._save_settings()
+        self._prefs_dialog = None
 
     def _on_prefs_rejected(self):
         """Handle preferences Cancel or Revert to Defaults."""
         dialog = self._prefs_dialog
         if getattr(dialog, 'reverted_to_defaults', False):
             self._change_style(DEFAULTS['THEME'], save=False)
-            # Re-open with defaults after close
-            QTimer.singleShot(0, self.show_prefs)
+            self._prefs_dialog = None
+            # Re-open with defaults
+            QTimer.singleShot(0, self._open_prefs_dialog)
         else:
             # Cancel - restore snapshot
             if STYLE.name != self._prefs_orig_style:
                 self._change_style(self._prefs_orig_style, save=False)
             S.restore(self._prefs_orig)
+            self._prefs_dialog = None
 
     def _set_simple_mode(self, enabled):
         """Set simple mode on/off (called from prefs dialog)."""
@@ -9628,10 +9577,10 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
             'TMUX_PHRASES_AS_CONTEXT', 'TMUX_ANNOUNCE_PANE',
             # TTS / speak-back
             'SPEAK_BACK_VOICE', 'TTS_SAY', 'TTS_SUPERTONIC', 'TTS_KITTEN',
-            'SPEAK_BACK_APPEND_INSTRUCTION', 'SPEAK_BACK_TMUX_ONLY', 'SPEAK_BACK_WAKE_ONLY',
+            'SPEAK_BACK_APPEND_INSTRUCTION', 'SPEAK_BACK_TMUX_ONLY',
             'SPEAK_BACK_INSTRUCTION_TEMPLATE', 'TTS_TEST_PHRASE',
             # NTFY (topic before enabled, so listener has topic when it starts)
-            'NTFY_TOPIC', 'NTFY_USE_CURL',
+            'NTFY_TOPIC', 'NTFY_INSTRUCTION_TEMPLATE',
             # Wakeword (config before enabled, so engine has config when it starts)
             'WAKEWORD_ENGINE', 'WAKEWORD_OPENWAKEWORD', 'WAKEWORD_MACOS',
             # UI / layout
@@ -9796,16 +9745,6 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
             raise
         finally:
             self.finish_signal.emit()
-
-    def _start_recording_from_wake_word(self, pre_buffer):
-        """Start recording triggered by wake word detection."""
-        self._recording_from_wake_word = True
-        self.start_recording(pre_buffer=pre_buffer)
-
-    def _stop_recording_from_wake_word(self):
-        """Stop recording triggered by wake word detection."""
-        self._recording_from_wake_word = True
-        self.stop_recording()
 
     def start_recording(self, pre_buffer=None):
         """Start recording audio. Optional pre_buffer is prepended to recording."""
@@ -10076,12 +10015,6 @@ def main():
 
     # Apply saved reverb/chorus settings to synth (lazy-inits the native synth)
     apply_audio_settings()
-
-    # Now that MIDI settings are applied, enable chimes and play boot chime
-    global _chimes_enabled
-    _chimes_enabled = True
-    if S.SOUND_ENABLED:
-        threading.Thread(target=lambda: play_chime('boot'), daemon=True).start()
 
     # Load whisper model in background thread (GUI stays responsive)
     def load_model():
