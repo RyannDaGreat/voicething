@@ -1834,19 +1834,6 @@ class DraggableDialog(DraggableResizableMixin, QDialog):
     def center_on_parent(self):
         """Center on parent, or restore saved geometry if enabled."""
         parent = self.parent()
-        # If parent is in blue mode (fullscreen), make dialog appear on fullscreen space
-        if parent and getattr(parent, '_blue_mode_override', False):
-            tmux_dialog = getattr(parent, '_tmux_dialog', None)
-            if tmux_dialog and tmux_dialog.isVisible():
-                screen = tmux_dialog.screen()
-                if screen:
-                    self.adjustSize()
-                    sg = screen.availableGeometry()
-                    flags = self.windowFlags() | Qt.WindowType.WindowStaysOnTopHint
-                    self.setWindowFlags(flags)
-                    self.move(sg.x() + (sg.width() - self.width()) // 2,
-                              sg.y() + (sg.height() - self.height()) // 2)
-                    return
 
         # Try to restore saved geometry (skip adjustSize — use saved size directly)
         if self.window_name and S.RESTORE_WINDOW_GEOMETRY:
@@ -5402,8 +5389,6 @@ class PrefsDialog(DraggableDialog):
         btn_row.addWidget(ok_btn)
         layout.addLayout(btn_row)
         self.setMinimumWidth(400)  # Compact two-column layout
-        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        self.setFocus()  # Don't focus textboxes - allow number keys for themes
 
         # Final state update for all dependent options (including phrases_ctx_check)
         self._update_paste_options_state()
@@ -9597,61 +9582,53 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
 
     def show_prefs(self):
         """Show preferences dialog (non-modal). Settings apply live, Cancel reverts."""
-        # Close existing prefs dialog if open
-        if hasattr(self, '_prefs_dialog') and self._prefs_dialog is not None:
-            self._prefs_dialog.close()
-            self._prefs_dialog = None
+        # Use exact same pattern as show_chime_editor
+        if not hasattr(self, '_prefs_dialog') or self._prefs_dialog is None:
+            import copy
+            self._prefs_orig = copy.deepcopy(dict(S))  # Snapshot for Cancel
+            self._prefs_orig_style = STYLE.name
 
-        self._open_prefs_dialog()
+            dialog = PrefsDialog(STYLE.name, S.PET_TYPES, S.SIMPLE_MODE, self,
+                                 auto_enter=S.AUTO_ENTER)
+            self._prefs_dialog = dialog
 
-    def _open_prefs_dialog(self):
-        """Internal: create and show the preferences dialog."""
-        import copy
-        self._prefs_orig = copy.deepcopy(dict(S))  # Snapshot for Cancel
-        self._prefs_orig_style = STYLE.name
+            # Live preview connections - all use S.set() to trigger hooks
+            dialog.simple_mode_changed.connect(self._set_simple_mode)
+            dialog.style_changed.connect(lambda s: self._change_style(s, save=False))
+            dialog.pets_changed.connect(lambda p: S.set('PET_TYPES', list(p)))
+            dialog.wake_word_changed.connect(self._on_wake_word_settings_changed)
+            dialog.auto_enter_changed.connect(lambda v: S.set('AUTO_ENTER', v))
 
-        # In blue mode, parent to tmux dialog so prefs appears on fullscreen space
-        parent = self
-        if self._blue_mode_override and hasattr(self, '_tmux_dialog') and self._tmux_dialog:
-            parent = self._tmux_dialog
+            # Handle accept/reject (non-modal)
+            dialog.accepted.connect(self._on_prefs_accepted)
+            dialog.rejected.connect(self._on_prefs_rejected)
+            dialog.finished.connect(self._on_prefs_closed)
 
-        dialog = PrefsDialog(STYLE.name, S.PET_TYPES, S.SIMPLE_MODE, parent,
-                             auto_enter=S.AUTO_ENTER)
-        self._prefs_dialog = dialog
+            dialog.center_on_parent()
+        self._prefs_dialog.show()
+        self._prefs_dialog.raise_()
+        self._prefs_dialog.activateWindow()
 
-        # Live preview connections - all use S.set() to trigger hooks
-        dialog.simple_mode_changed.connect(self._set_simple_mode)
-        dialog.style_changed.connect(lambda s: self._change_style(s, save=False))
-        dialog.pets_changed.connect(lambda p: S.set('PET_TYPES', list(p)))
-        dialog.wake_word_changed.connect(self._on_wake_word_settings_changed)
-        dialog.auto_enter_changed.connect(lambda v: S.set('AUTO_ENTER', v))
-
-        # Handle accept/reject (non-modal)
-        dialog.accepted.connect(self._on_prefs_accepted)
-        dialog.rejected.connect(self._on_prefs_rejected)
-
-        dialog.center_on_parent()
-        dialog.show()  # Non-modal
+    def _on_prefs_closed(self, result):
+        """Handle prefs dialog closed - null the reference so it gets recreated next time."""
+        self._prefs_dialog = None
 
     def _on_prefs_accepted(self):
         """Handle preferences OK (save settings)."""
         self._save_settings()
-        self._prefs_dialog = None
 
     def _on_prefs_rejected(self):
         """Handle preferences Cancel or Revert to Defaults."""
         dialog = self._prefs_dialog
         if getattr(dialog, 'reverted_to_defaults', False):
             self._change_style(DEFAULTS['THEME'], save=False)
-            self._prefs_dialog = None
-            # Re-open with defaults
-            QTimer.singleShot(0, self._open_prefs_dialog)
+            # Re-open with defaults after close
+            QTimer.singleShot(0, self.show_prefs)
         else:
             # Cancel - restore snapshot
             if STYLE.name != self._prefs_orig_style:
                 self._change_style(self._prefs_orig_style, save=False)
             S.restore(self._prefs_orig)
-            self._prefs_dialog = None
 
     def _set_simple_mode(self, enabled):
         """Set simple mode on/off (called from prefs dialog)."""
