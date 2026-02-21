@@ -9483,7 +9483,13 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
             self.wake_word_engine.pause()
 
     def _resume_wake_word_listener(self):
-        """Resume wake word listener if enabled."""
+        """Resume wake word listener if enabled and not recording/transcribing.
+
+        Guards against spurious resumes (e.g. NTFY TTS finishing during recording)
+        that would desync the engine's _is_recording flag from the actual app state.
+        """
+        if self.state in ("recording", "transcribing", "starting"):
+            return
         if S.WAKE_WORD_ENABLED and self.wake_word_engine is not None:
             self.wake_word_engine.reset()
             self.wake_word_engine.resume()
@@ -9504,6 +9510,11 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
                 return
             # Immediately mark state to prevent double-trigger
             self.state = "starting"
+        # Immediately pause wake word listener so stop/cancel phrases work right away.
+        # Without this, there's a race window between wake word detection and
+        # start_recording() (which runs on main thread via signal) where the engine's
+        # _is_recording is still False, causing stop phrases like "over" to be ignored.
+        self._pause_wake_word_listener()
         # Capture tmux phrase prefix from macOS engine (if any)
         self._tmux_wake_prefix = None
         if self.wake_word_engine is not None:
