@@ -1598,7 +1598,7 @@ def _get_menubar_icon(hue=None):
 
     from io import BytesIO
     buf = BytesIO()
-    Image.fromarray(data, 'RGBA').save(buf, format='PNG')
+    Image.fromarray(data).save(buf, format='PNG')
     buf.seek(0)
     pixmap = QPixmap()
     pixmap.loadFromData(buf.read())
