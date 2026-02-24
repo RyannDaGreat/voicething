@@ -445,6 +445,8 @@ DEFAULTS = dict(
     LLM_PREFIX='Claude Haiku Veo',  # Empty means use default
     SILENCE_SKIP_ENABLED=False,  # Skip recording during silence
     SILENCE_THRESHOLD=-65,  # dB threshold below which audio is considered silence
+    VOLUME_REDUCTION_ENABLED=False,  # Reduce Mac volume while recording
+    VOLUME_REDUCTION_PERCENT=50,  # Target % of original volume (0=mute, 100=no change)
     CHIME_VOLUME=0.5,  # Volume for chimes (0.0 to 1.0)
     CHIME_PROGRAM=127,  # Program number (0-127), single source of truth
     CHIME_PITCH=12,  # Pitch shift in semitones (-24 to +24)
@@ -712,6 +714,43 @@ def do_tts(text, block=True):
 # NTFY Remote TTS Listener
 # =============================================================================
 _ntfy_generation = 0  # Incremented on each start; old threads check this and exit
+def get_mac_volume():
+    """
+    Get current Mac system output volume (0-100). Returns None on failure.
+
+    Examples:
+        >>> # vol = get_mac_volume()  # returns int 0-100 or None
+    """
+    try:
+        result = subprocess.run(
+            ['osascript', '-e', 'output volume of (get volume settings)'],
+            capture_output=True, text=True, timeout=5,
+        )
+        return int(result.stdout.strip())
+    except Exception as e:
+        print(f"get_mac_volume failed: {e}")
+        return None
+
+
+def set_mac_volume(volume):
+    """
+    Set Mac system output volume.
+
+    Args:
+        volume (int): Volume level 0-100.
+
+    Examples:
+        >>> # set_mac_volume(50)  # sets system volume to 50
+    """
+    try:
+        subprocess.run(
+            ['osascript', '-e', f'set volume output volume {int(volume)}'],
+            capture_output=True, text=True, timeout=5,
+        )
+    except Exception as e:
+        print(f"set_mac_volume failed: {e}")
+
+
 _ntfy_pre_tts_callback = None   # Called before TTS (e.g. pause wakeword)
 _ntfy_post_tts_callback = None  # Called after TTS (e.g. resume wakeword)
 
@@ -2359,6 +2398,54 @@ AI_CODER_PROCESSES = ['claude', 'opencode', 'gemini', 'aider', 'cursor']
 _pane_html_cache = {}
 
 
+def _strip_emoji(text: str) -> str:
+    """
+    Pure function. Replace emoji and pictographic characters with '?'.
+
+    Prevents macOS CoreText/ImageIO crash (SIGBUS in CopyEmojiImage) when
+    Qt renders emoji glyphs via the sbix bitmap path on Apple Silicon.
+
+    >>> _strip_emoji("hello ⭐ world")
+    'hello ? world'
+    >>> _strip_emoji("plain text")
+    'plain text'
+    """
+    import re
+    # Covers Emoji_Presentation, Emoji_Modifier, dingbats, symbols, pictographs, flags
+    return re.sub(
+        '['
+        '\U0001F600-\U0001F64F'  # emoticons
+        '\U0001F300-\U0001F5FF'  # misc symbols & pictographs
+        '\U0001F680-\U0001F6FF'  # transport & map
+        '\U0001F1E0-\U0001F1FF'  # flags
+        '\U0001F900-\U0001F9FF'  # supplemental symbols
+        '\U0001FA00-\U0001FA6F'  # chess symbols
+        '\U0001FA70-\U0001FAFF'  # symbols extended-A
+        '\U00002702-\U000027B0'  # dingbats
+        '\U0000FE00-\U0000FE0F'  # variation selectors
+        '\U0000200D'             # zero-width joiner
+        '\U00002600-\U000026FF'  # misc symbols (⭐ etc.)
+        '\U0000231A-\U0000231B'  # watch, hourglass
+        '\U00002934-\U00002935'  # arrows
+        '\U000025AA-\U000025AB'  # squares
+        '\U000025FB-\U000025FE'  # squares
+        '\U00002B05-\U00002B07'  # arrows
+        '\U00002B1B-\U00002B1C'  # squares
+        '\U00002B50'             # star
+        '\U00002B55'             # circle
+        '\U0000274C'             # cross mark ❌
+        '\U0000274E'             # cross mark
+        '\U00002753-\U00002755'  # question marks
+        '\U00002795-\U00002797'  # plus/minus/divide
+        '\U000023CF'             # eject
+        '\U000023E9-\U000023F3'  # various
+        '\U000023F8-\U000023FA'  # various
+        ']+',
+        '?',
+        text
+    )
+
+
 def _ansi_to_html(text: str, cursor_info=None, scrollback_lines=50, ansi_colors=True) -> str:
     """Convert ANSI escape sequences to HTML for QTextEdit.
 
@@ -2379,6 +2466,9 @@ def _ansi_to_html(text: str, cursor_info=None, scrollback_lines=50, ansi_colors=
     """
     import html as html_module
     import re
+
+    # Strip emoji to prevent macOS CoreText SIGBUS crash (CopyEmojiImage)
+    text = _strip_emoji(text)
 
     # Insert cursor placeholder in RAW text before any HTML conversion
     # This way we count raw characters, not HTML entities
@@ -5066,6 +5156,41 @@ class PrefsDialog(DraggableDialog):
         thresh_row.addWidget(self.thresh_value)
         settings_box.addLayout(thresh_row)
 
+        # Volume reduction during recording
+        vol_reduce_row = QHBoxLayout()
+        vol_reduce_row.setSpacing(8)
+        vol_reduce_label = QLabel("Volume:")
+        vol_reduce_label.setStyleSheet(get_pref_label_css())
+        set_tooltip(vol_reduce_label, "Reduce Mac system volume while recording.\n\n"
+                                      "Prevents speaker audio from bleeding into the\n"
+                                      "microphone and corrupting transcriptions.")
+        vol_reduce_row.addWidget(vol_reduce_label)
+        self.vol_reduce_checkbox = make_checkbox("Reduce Mac volume during recording",
+            S.VOLUME_REDUCTION_ENABLED, on_change=self._on_vol_reduce_changed, css_size=12)
+        vol_reduce_row.addWidget(self.vol_reduce_checkbox, 1)
+        settings_box.addLayout(vol_reduce_row)
+
+        # Volume reduction percent slider (0-100%)
+        vol_pct_row = QHBoxLayout()
+        vol_pct_row.setSpacing(8)
+        vol_pct_label = QLabel("Target %:")
+        vol_pct_label.setStyleSheet(get_pref_label_css())
+        set_tooltip(vol_pct_label, "Target volume as percentage of current level.\n\n"
+                                   "0% = mute completely during recording\n"
+                                   "50% = halve the volume\n"
+                                   "100% = no change")
+        vol_pct_row.addWidget(vol_pct_label)
+        self.vol_pct_slider = NoScrollSlider(Qt.Orientation.Horizontal)
+        self.vol_pct_slider.setRange(0, 100)
+        self.vol_pct_slider.setValue(S.VOLUME_REDUCTION_PERCENT)
+        self.vol_pct_slider.setStyleSheet(get_slider_css())
+        self.vol_pct_slider.valueChanged.connect(self._on_vol_reduce_pct_changed)
+        vol_pct_row.addWidget(self.vol_pct_slider, 1)
+        self.vol_pct_value = QLabel(f"{S.VOLUME_REDUCTION_PERCENT}%")
+        self.vol_pct_value.setStyleSheet(get_pref_label_css() + " min-width: 35px;")
+        vol_pct_row.addWidget(self.vol_pct_value)
+        settings_box.addLayout(vol_pct_row)
+
         # Context Words section
         settings_box.addWidget(make_section("Context Words"))
         context_row = QHBoxLayout()
@@ -5403,6 +5528,13 @@ class PrefsDialog(DraggableDialog):
 
     def _on_silence_skip_changed(self, state):
         S.SILENCE_SKIP_ENABLED = state == Qt.CheckState.Checked.value
+
+    def _on_vol_reduce_changed(self, state):
+        S.VOLUME_REDUCTION_ENABLED = state == Qt.CheckState.Checked.value
+
+    def _on_vol_reduce_pct_changed(self, value):
+        S.VOLUME_REDUCTION_PERCENT = value
+        self.vol_pct_value.setText(f"{value}%")
 
     def _on_always_on_top_changed(self, state):
         S.set('ALWAYS_ON_TOP', state == Qt.CheckState.Checked.value)
@@ -8326,6 +8458,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         self._recording_from_wake_word = False  # True when current recording was started by wake word
         self._tmux_dialog = None  # Reference to open TmuxSelectionDialog (if any)
         self._blue_mode_override = False  # True when tmux fullscreen forces always-on-top
+        self._original_volume = None  # Mac volume before reduction (None = not reduced)
 
         self.setWindowTitle(APP_NAME)
         self._apply_window_flags(show=False)
@@ -9155,6 +9288,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
     def cancel_recording(self):
         if self.state != "recording":
             return
+        self._restore_volume()
         self._cleanup()
         self._set_state("idle")
         self.audio_chunks = []
@@ -9645,6 +9779,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
             'WHISPER_MODEL', 'CUSTOM_WORDS', 'LLM_ENABLED', 'LLM_MODEL', 'LLM_PREFIX',
             # Silence detection
             'SILENCE_SKIP_ENABLED', 'SILENCE_THRESHOLD',
+            'VOLUME_REDUCTION_ENABLED', 'VOLUME_REDUCTION_PERCENT',
             # Chimes
             'CHIME_VOLUME', 'CHIME_PITCH', 'CHIME_PROGRAM', 'CHIME_THEME',
             'CUSTOM_CHIMES', 'CHIME_AUDIO_SETTINGS',
@@ -9838,6 +9973,13 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         # the wake word again triggers on_stop instead of on_wake
         self._pause_wake_word_listener()
 
+        # Reduce Mac volume to avoid speaker bleed into microphone
+        if S.VOLUME_REDUCTION_ENABLED:
+            vol = get_mac_volume()
+            if vol is not None:
+                self._original_volume = vol
+                set_mac_volume(int(vol * S.VOLUME_REDUCTION_PERCENT / 100))
+
         self.audio_chunks = []
         if pre_buffer is not None and len(pre_buffer) > 0:
             self.audio_chunks.append(pre_buffer)
@@ -9873,7 +10015,14 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         self.update_timer.start(8)
         self.tray_icon_timer.start(50)  # ~20 FPS for smooth animation
 
+    def _restore_volume(self):
+        """Restore Mac volume if it was reduced for recording."""
+        if self._original_volume is not None:
+            set_mac_volume(self._original_volume)
+            self._original_volume = None
+
     def stop_recording(self):
+        self._restore_volume()
         if self.stream:
             self.stream.stop()
             self.stream.close()
