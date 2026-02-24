@@ -2988,7 +2988,7 @@ class TmuxSelectionDialog(DraggableDialog):
         self._last_preview_html = None  # For avoiding redundant UI updates
         self._poll_stop = threading.Event()
         self._poll_thread = None
-        self._preview_changed.connect(self._on_preview_changed)
+        self._preview_changed.connect(self._on_preview_changed, Qt.ConnectionType.QueuedConnection)
         # Auto-refresh timer for pane list (every 5 seconds)
         self._auto_refresh_timer = QTimer(self)
         self._auto_refresh_timer.timeout.connect(self._auto_refresh_panes)
@@ -3521,6 +3521,7 @@ done
                     stderr=subprocess.DEVNULL,
                     text=True,
                     bufsize=1,  # Line buffered
+                    close_fds=False,  # Force posix_spawn instead of fork on macOS (avoids SIGBUS)
                 )
 
                 buffer = []
@@ -3604,12 +3605,12 @@ done
     def showEvent(self, event):
         """Start polling when dialog is shown."""
         super().showEvent(event)
-        # Defer poll start: subprocess.Popen calls fork(), which is unsafe on macOS while
-        # Cocoa/AppKit is mid-render (causes SIGBUS). QTimer(0) runs after queued paint events.
+        # Defer poll start so the first Popen doesn't overlap with the showEvent paint cycle.
+        # (The Popen itself now uses close_fds=False to force posix_spawn instead of fork.)
         QTimer.singleShot(0, self._deferred_poll_start)
 
     def _deferred_poll_start(self):
-        """Start polling after pending paint events are processed (avoids fork-during-paint SIGBUS)."""
+        """Start polling after pending paint events are processed."""
         self._start_polling()
         self._last_pane_ids = {p['pane_id'] for p in self._pane_data}
         self._auto_refresh_timer.start(5000)
