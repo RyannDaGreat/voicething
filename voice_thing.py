@@ -2071,7 +2071,7 @@ class HelpDialog(DraggableDialog):
             f"Wake word (J): Say a start phrase to begin recording hands-free! "
             f"Say a stop phrase to finish recording.\n\n"
             "Tmux mode (⇧U to toggle, U to open pane manager): "
-            "Paste directly into your active tmux pane instead of ⌘V.\n\n"
+            "Say a pane's magic phrase to route transcriptions directly to it.\n\n"
             "100% keyboard-driven - no mouse needed! (hover buttons to see shortcuts)\n\n"
             "Small mode (E or green button): Compact view with just status and timer - "
             "great for keeping visible while using keyboard shortcuts.\n\n"
@@ -2396,6 +2396,53 @@ AI_CODER_PROCESSES = ['claude', 'opencode', 'gemini', 'aider', 'cursor']
 # Cache of rendered HTML for each pane (pane_id -> html)
 # Polling thread writes to this, UI reads from it for instant display
 _pane_html_cache = {}
+
+
+def _strip_emoji(text: str) -> str:
+    """
+    Pure function. Replace emoji and pictographic characters with '?'.
+
+    Not currently called — kept as a utility. The SIGBUS crash was caused by
+    fork() racing with Cocoa paint events, not emoji rendering.
+
+    >>> _strip_emoji("hello ⭐ world")
+    'hello ? world'
+    >>> _strip_emoji("plain text")
+    'plain text'
+    """
+    import re
+    return re.sub(
+        '['
+        '\U0001F600-\U0001F64F'  # emoticons
+        '\U0001F300-\U0001F5FF'  # misc symbols & pictographs
+        '\U0001F680-\U0001F6FF'  # transport & map
+        '\U0001F1E0-\U0001F1FF'  # flags
+        '\U0001F900-\U0001F9FF'  # supplemental symbols
+        '\U0001FA00-\U0001FA6F'  # chess symbols
+        '\U0001FA70-\U0001FAFF'  # symbols extended-A
+        '\U00002702-\U000027B0'  # dingbats
+        '\U0000FE00-\U0000FE0F'  # variation selectors
+        '\U0000200D'             # zero-width joiner
+        '\U00002600-\U000026FF'  # misc symbols (⭐ etc.)
+        '\U0000231A-\U0000231B'  # watch, hourglass
+        '\U00002934-\U00002935'  # arrows
+        '\U000025AA-\U000025AB'  # squares
+        '\U000025FB-\U000025FE'  # squares
+        '\U00002B05-\U00002B07'  # arrows
+        '\U00002B1B-\U00002B1C'  # squares
+        '\U00002B50'             # star
+        '\U00002B55'             # circle
+        '\U0000274C'             # cross mark ❌
+        '\U0000274E'             # cross mark
+        '\U00002753-\U00002755'  # question marks
+        '\U00002795-\U00002797'  # plus/minus/divide
+        '\U000023CF'             # eject
+        '\U000023E9-\U000023F3'  # various
+        '\U000023F8-\U000023FA'  # various
+        ']+',
+        '?',
+        text
+    )
 
 
 def _ansi_to_html(text: str, cursor_info=None, scrollback_lines=50, ansi_colors=True) -> str:
@@ -5023,9 +5070,9 @@ class PrefsDialog(DraggableDialog):
         row2.addWidget(tmux_icon_label)
         self._paste_icon_labels.append(tmux_icon_label)
         self.tmux_checkbox = make_checkbox("Tmux paste", S.TMUX_MODE,
-            "Paste directly into active tmux pane using send-keys.\n\n"
-            "Requires 'Copy to clipboard' to be enabled.\n"
-            "When enabled, replaces ⌘V paste.",
+            "Route transcriptions to tmux panes by voice.\n\n"
+            "Say a pane's magic phrase in your recording to send\n"
+            "the text directly to that pane instead of ⌘V.",
             self._on_tmux_pref_changed)
         row2.addWidget(self.tmux_checkbox)
 
@@ -9229,6 +9276,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
     def toggle_recording(self):
         if self.state == "idle":
             self._recording_from_wake_word = False
+            self._tmux_wake_prefix = None  # Only wake word sets this, not keyboard
             self.start_recording()
         elif self.state == "recording":
             self.stop_recording()
@@ -9238,6 +9286,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
     def cancel_recording(self):
         if self.state != "recording":
             return
+        self._tmux_wake_prefix = None
         self._restore_volume()
         self._cleanup()
         self._set_state("idle")
