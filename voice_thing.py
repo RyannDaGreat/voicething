@@ -2408,6 +2408,21 @@ def _strip_sbix_emoji(text: str) -> str:
     without VS16) are kept — they render as vector outlines from the text font
     and never touch ImageIO.
 
+    Background: Apple Color Emoji uses sbix (Standard Bitmap Graphics) tables
+    with 'emjc' (LZFSE-compressed) bitmaps. CoreText decodes these via
+    CopyEmojiImage -> IIOReadPlugin::callInitialize, which can SIGBUS at
+    0xBAD4007 (dyld poison sentinel) on Apple Silicon due to race conditions.
+    The Emoji_Presentation property (Unicode UTS #51) determines which chars
+    default to the bitmap path vs text-glyph path.
+
+    Sources:
+        - HarfBuzz #2808: Apple Color Emoji 'emjc' graphicType
+        - Electron #48025: EXC_BAD_ACCESS 0xBAD4007 in Skia glyph rasterization
+        - wxWidgets #23547: ImageIO PNGReadPlugin crash at 0xbad4007
+        - Qt Forum #135220: Random crash on Apple Silicon M1, Qt 6.2.3
+        - Unicode UTS #51 (unicode.org/reports/tr51): Emoji_Presentation property
+        - Qt Blog "Emoji in Qt 6.9": emoji segmenter and font selection
+
     Args:
         text: Input text potentially containing emoji
 
