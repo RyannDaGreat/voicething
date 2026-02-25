@@ -2398,47 +2398,93 @@ AI_CODER_PROCESSES = ['claude', 'opencode', 'gemini', 'aider', 'cursor']
 _pane_html_cache = {}
 
 
-def _strip_emoji(text: str) -> str:
+def _strip_sbix_emoji(text: str) -> str:
     """
-    Pure function. Replace emoji and pictographic characters with '?'.
+    Pure function. Strip emoji that render via Apple Color Emoji's sbix bitmap
+    path (which goes through ImageIO and can trigger SIGBUS on Apple Silicon).
 
-    Not currently called — kept as a utility. The SIGBUS crash was caused by
-    fork() racing with Cocoa paint events, not emoji rendering.
+    Only strips characters with Emoji_Presentation=Yes and VS16 (U+FE0F) which
+    forces bitmap rendering. Text-presentation symbols (✓, ★, arrows, hearts
+    without VS16) are kept — they render as vector outlines from the text font
+    and never touch ImageIO.
 
-    >>> _strip_emoji("hello ⭐ world")
-    'hello ? world'
-    >>> _strip_emoji("plain text")
-    'plain text'
+    Args:
+        text: Input text potentially containing emoji
+
+    Returns:
+        str: Text with bitmap-path emoji replaced by '?'
+
+    Examples:
+        >>> _strip_sbix_emoji("hello ⭐ world")
+        'hello ? world'
+        >>> _strip_sbix_emoji("check ✓ and star ★")
+        'check ✓ and star ★'
+        >>> _strip_sbix_emoji("plain text")
+        'plain text'
     """
     import re
+    # Step 1: Remove VS16 (U+FE0F) to prevent dual-mode chars from going bitmap
+    text = text.replace('\uFE0F', '')
+    # Step 2: Strip characters with Emoji_Presentation=Yes (always go through sbix)
     return re.sub(
         '['
-        '\U0001F600-\U0001F64F'  # emoticons
-        '\U0001F300-\U0001F5FF'  # misc symbols & pictographs
-        '\U0001F680-\U0001F6FF'  # transport & map
-        '\U0001F1E0-\U0001F1FF'  # flags
-        '\U0001F900-\U0001F9FF'  # supplemental symbols
-        '\U0001FA00-\U0001FA6F'  # chess symbols
-        '\U0001FA70-\U0001FAFF'  # symbols extended-A
-        '\U00002702-\U000027B0'  # dingbats
-        '\U0000FE00-\U0000FE0F'  # variation selectors
-        '\U0000200D'             # zero-width joiner
-        '\U00002600-\U000026FF'  # misc symbols (⭐ etc.)
+        # Supplementary emoji planes (all sbix bitmap)
+        '\U0001F000-\U0001FAFF'
+        # Skin tone modifiers
+        '\U0001F3FB-\U0001F3FF'
+        # BMP codepoints with Emoji_Presentation=Yes
         '\U0000231A-\U0000231B'  # watch, hourglass
-        '\U00002934-\U00002935'  # arrows
-        '\U000025AA-\U000025AB'  # squares
-        '\U000025FB-\U000025FE'  # squares
-        '\U00002B05-\U00002B07'  # arrows
-        '\U00002B1B-\U00002B1C'  # squares
-        '\U00002B50'             # star
-        '\U00002B55'             # circle
+        '\U000023E9-\U000023EC'  # double arrows
+        '\U000023F0'             # alarm clock
+        '\U000023F3'             # hourglass flowing
+        '\U000025FD-\U000025FE'  # squares
+        '\U00002614-\U00002615'  # umbrella, hot beverage
+        '\U00002648-\U00002653'  # zodiac
+        '\U0000267F'             # wheelchair
+        '\U00002693'             # anchor
+        '\U000026A1'             # high voltage
+        '\U000026AA-\U000026AB'  # circles
+        '\U000026BD-\U000026BE'  # sports balls
+        '\U000026C4-\U000026C5'  # snowman, sun/cloud
+        '\U000026CE'             # ophiuchus
+        '\U000026D4'             # no entry
+        '\U000026EA'             # church
+        '\U000026F2-\U000026F3'  # fountain, golf
+        '\U000026F5'             # sailboat
+        '\U000026FA'             # tent
+        '\U000026FD'             # fuel pump
+        '\U00002702'             # scissors (Emoji_Presentation in some versions)
+        '\U00002705'             # white check mark
+        '\U00002708-\U0000270D'  # airplane..writing hand
+        '\U0000270F'             # pencil
+        '\U00002712'             # black nib
+        '\U00002714'             # heavy check mark
+        '\U00002716'             # heavy multiplication x
+        '\U0000271D'             # latin cross
+        '\U00002721'             # star of david
+        '\U00002728'             # sparkles
+        '\U00002733-\U00002734'  # eight spoked/pointed star
+        '\U00002744'             # snowflake
+        '\U00002747'             # sparkle
         '\U0000274C'             # cross mark ❌
-        '\U0000274E'             # cross mark
-        '\U00002753-\U00002755'  # question marks
-        '\U00002795-\U00002797'  # plus/minus/divide
-        '\U000023CF'             # eject
-        '\U000023E9-\U000023F3'  # various
-        '\U000023F8-\U000023FA'  # various
+        '\U0000274E'             # cross mark variant
+        '\U00002753-\U00002755'  # question/exclamation marks
+        '\U00002757'             # heavy exclamation
+        '\U00002763-\U00002764'  # heart exclamation, heavy heart
+        '\U00002795-\U00002797'  # plus, minus, divide
+        '\U000027A1'             # right arrow
+        '\U000027B0'             # curly loop
+        '\U000027BF'             # double curly loop
+        '\U00002934-\U00002935'  # arrows
+        '\U00002B05-\U00002B07'  # arrows
+        '\U00002B1B-\U00002B1C'  # large squares
+        '\U00002B50'             # star ⭐
+        '\U00002B55'             # heavy circle
+        '\U00003030'             # wavy dash
+        '\U0000303D'             # part alternation mark
+        '\U00003297'             # circled ideograph congratulation
+        '\U00003299'             # circled ideograph secret
+        '\U0000200D'             # ZWJ (used in compound emoji sequences)
         ']+',
         '?',
         text
@@ -2465,6 +2511,9 @@ def _ansi_to_html(text: str, cursor_info=None, scrollback_lines=50, ansi_colors=
     """
     import html as html_module
     import re
+
+    # Strip bitmap emoji to avoid macOS CoreText sbix → ImageIO crash path
+    text = _strip_sbix_emoji(text)
 
     # Insert cursor placeholder in RAW text before any HTML conversion
     # This way we count raw characters, not HTML entities
