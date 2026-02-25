@@ -2398,54 +2398,6 @@ AI_CODER_PROCESSES = ['claude', 'opencode', 'gemini', 'aider', 'cursor']
 _pane_html_cache = {}
 
 
-def _strip_emoji(text: str) -> str:
-    """
-    Pure function. Replace emoji and pictographic characters with '?'.
-
-    Prevents macOS CoreText/ImageIO crash (SIGBUS in CopyEmojiImage) when
-    Qt renders emoji glyphs via the sbix bitmap path on Apple Silicon.
-
-    >>> _strip_emoji("hello ⭐ world")
-    'hello ? world'
-    >>> _strip_emoji("plain text")
-    'plain text'
-    """
-    import re
-    # Covers Emoji_Presentation, Emoji_Modifier, dingbats, symbols, pictographs, flags
-    return re.sub(
-        '['
-        '\U0001F600-\U0001F64F'  # emoticons
-        '\U0001F300-\U0001F5FF'  # misc symbols & pictographs
-        '\U0001F680-\U0001F6FF'  # transport & map
-        '\U0001F1E0-\U0001F1FF'  # flags
-        '\U0001F900-\U0001F9FF'  # supplemental symbols
-        '\U0001FA00-\U0001FA6F'  # chess symbols
-        '\U0001FA70-\U0001FAFF'  # symbols extended-A
-        '\U00002702-\U000027B0'  # dingbats
-        '\U0000FE00-\U0000FE0F'  # variation selectors
-        '\U0000200D'             # zero-width joiner
-        '\U00002600-\U000026FF'  # misc symbols (⭐ etc.)
-        '\U0000231A-\U0000231B'  # watch, hourglass
-        '\U00002934-\U00002935'  # arrows
-        '\U000025AA-\U000025AB'  # squares
-        '\U000025FB-\U000025FE'  # squares
-        '\U00002B05-\U00002B07'  # arrows
-        '\U00002B1B-\U00002B1C'  # squares
-        '\U00002B50'             # star
-        '\U00002B55'             # circle
-        '\U0000274C'             # cross mark ❌
-        '\U0000274E'             # cross mark
-        '\U00002753-\U00002755'  # question marks
-        '\U00002795-\U00002797'  # plus/minus/divide
-        '\U000023CF'             # eject
-        '\U000023E9-\U000023F3'  # various
-        '\U000023F8-\U000023FA'  # various
-        ']+',
-        '?',
-        text
-    )
-
-
 def _ansi_to_html(text: str, cursor_info=None, scrollback_lines=50, ansi_colors=True) -> str:
     """Convert ANSI escape sequences to HTML for QTextEdit.
 
@@ -2466,9 +2418,6 @@ def _ansi_to_html(text: str, cursor_info=None, scrollback_lines=50, ansi_colors=
     """
     import html as html_module
     import re
-
-    # Strip emoji to prevent macOS CoreText SIGBUS crash (CopyEmojiImage)
-    text = _strip_emoji(text)
 
     # Insert cursor placeholder in RAW text before any HTML conversion
     # This way we count raw characters, not HTML entities
