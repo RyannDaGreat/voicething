@@ -383,7 +383,7 @@ class TeeOutput:
 # =============================================================================
 
 # Default wake word phrases (single source of truth)
-DEFAULT_WAKEWORD_PHRASES = 'jarvis, roger'
+DEFAULT_WAKEWORD_PHRASES = 'jarvis, roger, netbook, record'
 DEFAULT_WAKEWORD_STOP_PHRASES = 'over'
 DEFAULT_WAKEWORD_CANCEL_PHRASES = 'cancel, never mind'
 DEFAULT_OPENWAKEWORD_MODEL = 'computer'
@@ -414,7 +414,7 @@ class Settings(dict):
 
 DEFAULTS = dict(
     ENTER_DELAY=0.1,
-    CUSTOM_WORDS="",
+    CUSTOM_WORDS="Claude, Haiku, Veo, Git, tmux, pane, jsonnet. ",
     AUTO_HIDE=False,
     SOUND_ENABLED=True,
     LLM_ENABLED=False,
@@ -427,7 +427,7 @@ DEFAULTS = dict(
     # Wake word engine selection and per-engine settings
     WAKEWORD_ENGINE='openwakeword',  # 'openwakeword' or 'macos'
     WAKEWORD_OPENWAKEWORD={'model': DEFAULT_OPENWAKEWORD_MODEL, 'sensitivity': DEFAULT_OPENWAKEWORD_SENSITIVITY},
-    WAKEWORD_MACOS={'phrases': DEFAULT_WAKEWORD_PHRASES, 'stop_phrases': DEFAULT_WAKEWORD_STOP_PHRASES, 'cancel_phrases': DEFAULT_WAKEWORD_CANCEL_PHRASES},
+    WAKEWORD_MACOS={'phrases': DEFAULT_WAKEWORD_PHRASES, 'stop_phrases': DEFAULT_WAKEWORD_STOP_PHRASES, 'cancel_phrases': DEFAULT_WAKEWORD_CANCEL_PHRASES, 'use_tmux_phrases': True},
     TMUX_MODE=False,
     TMUX_TARGET='%',  # Tmux pane target (% = current pane)
     TMUX_PANE_NAMES={},  # pane_id -> {phrase: str}
@@ -455,10 +455,17 @@ DEFAULTS = dict(
     # Per-theme audio settings (reverb, chorus) keyed by chime theme name
     CHIME_AUDIO_SETTINGS={
         '_default': {'reverb': 0.4, 'chorus': 0.3},  # Fallback for themes without settings
+        'bright': {'reverb': 0.93, 'chorus': 1.0},
     },
     # Custom chime patterns keyed by chime name
     # Format: {chime_name: {'pattern': [[semitones], ...], 'duration': float}}
-    CUSTOM_CHIMES={},
+    CUSTOM_CHIMES={
+        'focus':         {'pattern': [[4, 9]] + [[]] * 59, 'duration': 0.05},
+        'pre_cancel':    {'pattern': [[-20, -17, -10, -5, -1]] + [[]] * 15, 'duration': 0.05},
+        'boot':          {'pattern': [[0], [4], [7], [11], [16], [0, 4, 7, 11, 16]] + [[]] * 49, 'duration': 0.06},
+        'auto_enter_on': {'pattern': [[2, 9], [6, 14, 16], [9, 18], [7, 16, 21], [6, 14, 18, 21, 26]] + [[]] * 11, 'duration': 0.08711429988156041},
+        'tmux_send':     {'pattern': [[-17, -5, 7], [-13, -1, 11], [-10, 14], [-5, 19]] + [[]] * 12, 'duration': 0.06843836142250373},
+    },
     RECORDINGS_DIR=DEFAULT_RECORDINGS_DIR,  # Folder for audio recordings and transcripts
     TRANSCRIPTIONS_DIR=DEFAULT_TRANSCRIPTIONS_DIR,  # Permanent folder for text transcriptions (persists across reboots)
     ALWAYS_ON_TOP=True,  # Keep window above other windows
@@ -470,7 +477,7 @@ DEFAULTS = dict(
     SPEAK_BACK_APPEND_INSTRUCTION=True,  # Append TTS instruction to transcriptions
     SPEAK_BACK_TMUX_ONLY=False,  # Only append TTS instruction when sending to tmux (not paste)
     SPEAK_BACK_WAKE_ONLY=False,  # Only append TTS instruction when recording started by wake word
-    SPEAK_BACK_INSTRUCTION_TEMPLATE="Please speak back with ({command} &)",
+    SPEAK_BACK_INSTRUCTION_TEMPLATE="Reply in chat first as you would normally. Then speak of pure english via (curl -s -d 'SUMMARY' ntfy.sh/etch_tank > /dev/null & ) , only 1-2 sentences unless asked for more as it will be played as audio.",
     # NTFY remote TTS settings
     NTFY_ENABLED=False,  # Enable NTFY listener for remote TTS
     NTFY_TOPIC='',  # Topic to listen on (empty = generate random on first enable)
