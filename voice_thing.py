@@ -477,7 +477,7 @@ DEFAULTS = dict(
     SPEAK_BACK_APPEND_INSTRUCTION=True,  # Append TTS instruction to transcriptions
     SPEAK_BACK_TMUX_ONLY=False,  # Only append TTS instruction when sending to tmux (not paste)
     SPEAK_BACK_WAKE_ONLY=False,  # Only append TTS instruction when recording started by wake word
-    SPEAK_BACK_INSTRUCTION_TEMPLATE="Reply in chat first as you would normally. Then speak of pure english via (curl -s -d 'SUMMARY' ntfy.sh/etch_tank > /dev/null & ) , only 1-2 sentences unless asked for more as it will be played as audio.",
+    SPEAK_BACK_INSTRUCTION_TEMPLATE="Please speak back with ({command} &)",
     # NTFY remote TTS settings
     NTFY_ENABLED=False,  # Enable NTFY listener for remote TTS
     NTFY_TOPIC='',  # Topic to listen on (empty = generate random on first enable)
@@ -644,7 +644,21 @@ def make_traffic_light_close(on_click):
 
 
 def build_tts_command():
-    """Build the TTS command string based on current voice settings."""
+    """Build the TTS command string based on current voice settings.
+
+    When NTFY is enabled with a topic, returns the ntfy send command
+    (curl or rp) instead of a local TTS command.
+
+    Examples:
+        >>> # With NTFY enabled + curl: "curl -s -d 'YOUR_MESSAGE_HERE' ntfy.sh/my_topic"
+        >>> # With NTFY enabled - curl: "python3 -m rp call ntfy_send --- 'YOUR_MESSAGE_HERE' ---topic 'my_topic'"
+        >>> # Without NTFY:             "say -r 175 'YOUR_MESSAGE_HERE'"
+    """
+    if S.NTFY_ENABLED and S.NTFY_TOPIC:
+        if S.NTFY_USE_CURL:
+            return f"curl -s -d 'YOUR_MESSAGE_HERE' ntfy.sh/{S.NTFY_TOPIC}"
+        else:
+            return f"python3 -m rp call ntfy_send --- 'YOUR_MESSAGE_HERE' ---topic '{S.NTFY_TOPIC}'"
     backend = S.SPEAK_BACK_VOICE
     if backend == 'say':
         cfg = S.TTS_SAY
@@ -4495,8 +4509,12 @@ class TTSSettingsWidget(QWidget):
         if not topic:
             return
         def _send():
-            import rp
-            rp.ntfy_send(S.TTS_TEST_PHRASE, topic=topic)
+            if S.NTFY_USE_CURL:
+                subprocess.run(['curl', '-s', '-d', S.TTS_TEST_PHRASE, f'ntfy.sh/{topic}'],
+                               stdout=subprocess.DEVNULL)
+            else:
+                import rp
+                rp.ntfy_send(S.TTS_TEST_PHRASE, topic=topic)
         threading.Thread(target=_send, daemon=True).start()
 
     def _edit_instruction(self):
