@@ -9816,6 +9816,11 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         self._prefs_dialog.raise_()
         self._prefs_dialog.activateWindow()
 
+    def closeEvent(self, event):
+        """Save settings on app close."""
+        self._save_settings()
+        super().closeEvent(event)
+
     def _on_prefs_closed(self, result):
         """Handle prefs dialog closed - null the reference so it gets recreated next time."""
         self._prefs_dialog = None
