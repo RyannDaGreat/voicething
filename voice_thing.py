@@ -477,7 +477,7 @@ DEFAULTS = dict(
     SPEAK_BACK_APPEND_INSTRUCTION=True,  # Append TTS instruction to transcriptions
     SPEAK_BACK_TMUX_ONLY=False,  # Only append TTS instruction when sending to tmux (not paste)
     SPEAK_BACK_WAKE_ONLY=False,  # Only append TTS instruction when recording started by wake word
-    SPEAK_BACK_INSTRUCTION_TEMPLATE="Please speak back with ({command} &)",
+    SPEAK_BACK_INSTRUCTION_TEMPLATE="Reply in chat first as you would normally. Then speak of pure english via ({command} > /dev/null & ) , only 1-2 sentences unless asked for more as it will be played as audio.",
     # NTFY remote TTS settings
     NTFY_ENABLED=False,  # Enable NTFY listener for remote TTS
     NTFY_TOPIC='',  # Topic to listen on (empty = generate random on first enable)
@@ -4004,7 +4004,7 @@ class TTSInstructionDialog(DraggableDialog):
     """Dialog to edit the TTS instruction template."""
     window_name = "tts_instruction"
 
-    DEFAULT_TEMPLATE = "Please speak back with ({command} &)"
+    DEFAULT_TEMPLATE = DEFAULTS['SPEAK_BACK_INSTRUCTION_TEMPLATE']
 
     def __init__(self, current_text, parent=None):
         super().__init__(parent)
