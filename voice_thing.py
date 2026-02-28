@@ -1631,12 +1631,16 @@ def _get_menubar_icon(hue=None):
 
 
 WHISPER_MODELS = [
+    ("A", "macos", "Apple Speech Recognition (free, no download)"),
     ("T", "tiny", "Fastest, least accurate (~1GB VRAM)"),
     ("B", "base", "Fast, basic accuracy (~1GB VRAM)"),
     ("S", "small", "Balanced speed/accuracy (~2GB VRAM)"),
     ("M", "medium", "Good accuracy, slower (~5GB VRAM)"),
     ("L", "large-v3", "Best accuracy, slowest (~10GB VRAM)"),
 ]
+
+MACOS_MODEL = "macos"
+
 
 # Action definitions: (id, key, icon_name, description, menu_text or None)
 # Single source of truth for buttons, keyboard shortcuts, help dialog, and menu items
@@ -9977,6 +9981,13 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
 
     def _change_model(self, new_model):
         """Load a new Whisper model in background thread."""
+        if new_model == MACOS_MODEL:
+            # No model to download — just switch
+            S.WHISPER_MODEL = new_model
+            print(f"Switched to macOS Speech Recognition")
+            play_chime('loading_done')
+            return
+
         self._set_state("transcribing", f"Loading {new_model}...")
         self._switch_tab(0)
 
@@ -10037,13 +10048,17 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
     def _transcribe_file_thread(self, path):
         try:
             print(f"Transcribing file: {path}")
-            initial_prompt = self._get_initial_prompt()
-            # Note: carry_initial_prompt not yet exposed in pywhispercpp C bindings
-            result = rp.transcribe_audio_file_via_whisper(
-                path, model=S.WHISPER_MODEL, show_progress=True,
-                initial_prompt=initial_prompt
-            )
-            self._handle_transcription_result(result.text, audio_path=path)
+            if S.WHISPER_MODEL == MACOS_MODEL:
+                text = rp.transcribe_audio_file_via_macos(path).text
+            else:
+                initial_prompt = self._get_initial_prompt()
+                # Note: carry_initial_prompt not yet exposed in pywhispercpp C bindings
+                result = rp.transcribe_audio_file_via_whisper(
+                    path, model=S.WHISPER_MODEL, show_progress=True,
+                    initial_prompt=initial_prompt
+                )
+                text = result.text
+            self._handle_transcription_result(text, audio_path=path)
         except Exception as e:
             print(f"Transcription error: {e}")
             raise
@@ -10208,13 +10223,17 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
 
             scipy.io.wavfile.write(wav_path, SAMPLE_RATE, (audio * 32767).astype(np.int16))
             self.last_audio_path = wav_path
-            initial_prompt = self._get_initial_prompt()
-            # Note: carry_initial_prompt not yet exposed in pywhispercpp C bindings
-            result = rp.transcribe_audio_file_via_whisper(
-                wav_path, model=S.WHISPER_MODEL, show_progress=True,
-                initial_prompt=initial_prompt
-            )
-            self._handle_transcription_result(result.text, txt_path, audio_path=wav_path, archive_txt_path=archive_txt_path)
+            if S.WHISPER_MODEL == MACOS_MODEL:
+                text = rp.transcribe_audio_file_via_macos(wav_path).text
+            else:
+                initial_prompt = self._get_initial_prompt()
+                # Note: carry_initial_prompt not yet exposed in pywhispercpp C bindings
+                result = rp.transcribe_audio_file_via_whisper(
+                    wav_path, model=S.WHISPER_MODEL, show_progress=True,
+                    initial_prompt=initial_prompt
+                )
+                text = result.text
+            self._handle_transcription_result(text, txt_path, audio_path=wav_path, archive_txt_path=archive_txt_path)
         except Exception as e:
             print(f"Transcription error: {e}")
             raise
