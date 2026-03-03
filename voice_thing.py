@@ -4295,8 +4295,8 @@ class TTSSettingsWidget(QWidget):
         ntfy_topic_layout.addWidget(self._ntfy_test_btn)
         tts_sub.addWidget(self._ntfy_topic_widget)
 
-        # Use curl checkbox (same indent as topic)
-        ntfy_curl_row = indented_row(level=2)
+        # Use curl checkbox (same indent as topic, hidden when NTFY disabled)
+        self._ntfy_curl_widget, ntfy_curl_layout = indented_widget(level=2)
         self._ntfy_curl_checkbox = make_checkbox("Use curl",
             S.NTFY_USE_CURL,
             "Use curl instead of rp ntfy_send.\n\n"
@@ -4304,11 +4304,12 @@ class TTSSettingsWidget(QWidget):
             "rp: python3 -m rp call ntfy_send --- 'msg' ---topic 'topic'\n\n"
             "curl is more portable (no rp dependency).",
             self._on_ntfy_curl_changed)
-        ntfy_curl_row.addWidget(self._ntfy_curl_checkbox)
-        ntfy_curl_row.addStretch()
-        tts_sub.addLayout(ntfy_curl_row)
+        ntfy_curl_layout.addWidget(self._ntfy_curl_checkbox)
+        ntfy_curl_layout.addStretch()
+        tts_sub.addWidget(self._ntfy_curl_widget)
 
         self._ntfy_topic_widget.setVisible(S.NTFY_ENABLED)
+        self._ntfy_curl_widget.setVisible(S.NTFY_ENABLED)
 
         self._layout.addWidget(self._tts_sub_options)
         self._tts_sub_options.setVisible(S.SPEAK_BACK_APPEND_INSTRUCTION)
@@ -4484,6 +4485,7 @@ class TTSSettingsWidget(QWidget):
     def _on_ntfy_changed(self, state):
         enabled = state == Qt.CheckState.Checked.value
         self._ntfy_topic_widget.setVisible(enabled)
+        self._ntfy_curl_widget.setVisible(enabled)
         if enabled and not S.NTFY_TOPIC:
             self._on_ntfy_dice()
         S.set('NTFY_ENABLED', enabled)
