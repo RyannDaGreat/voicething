@@ -1632,6 +1632,7 @@ def _get_menubar_icon(hue=None):
 
 WHISPER_MODELS = [
     ("A", "macos", "Apple Speech Recognition (free, no download)"),
+    ("V", "voxtral", "Voxtral Mini 3B 4-bit via MLX (~5GB RAM)"),
     ("T", "tiny", "Fastest, least accurate (~1GB VRAM)"),
     ("B", "base", "Fast, basic accuracy (~1GB VRAM)"),
     ("S", "small", "Balanced speed/accuracy (~2GB VRAM)"),
@@ -1640,6 +1641,7 @@ WHISPER_MODELS = [
 ]
 
 MACOS_MODEL = "macos"
+VOXTRAL_MODEL = "voxtral"
 
 
 # Action definitions: (id, key, icon_name, description, menu_text or None)
@@ -9990,6 +9992,28 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
             play_chime('loading_done')
             return
 
+        if new_model == VOXTRAL_MODEL:
+            # Load Voxtral model (downloads on first use)
+            self._set_state("transcribing", f"Loading Voxtral...")
+            self._switch_tab(0)
+
+            def load_voxtral():
+                try:
+                    play_chime('loading_start')
+                    print("Loading Voxtral model...")
+                    rp.r._get_voxtral_model_and_processor()
+                    S.WHISPER_MODEL = new_model
+                    print("Voxtral model loaded")
+                    play_chime('loading_done')
+                except Exception as e:
+                    print(f"Failed to load Voxtral: {e}")
+                    raise
+                finally:
+                    self.finish_signal.emit()
+
+            threading.Thread(target=load_voxtral, daemon=True).start()
+            return
+
         self._set_state("transcribing", f"Loading {new_model}...")
         self._switch_tab(0)
 
@@ -10051,13 +10075,15 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         try:
             print(f"Transcribing file: {path}")
             if S.WHISPER_MODEL == MACOS_MODEL:
-                text = rp.transcribe_audio_file_via_macos(path).text
+                text = rp.transcribe_audio_file_via_macos(path, as_string=False).text
+            elif S.WHISPER_MODEL == VOXTRAL_MODEL:
+                text = rp.transcribe_audio_file_via_voxtral(path, as_string=False).text
             else:
                 initial_prompt = self._get_initial_prompt()
                 # Note: carry_initial_prompt not yet exposed in pywhispercpp C bindings
                 result = rp.transcribe_audio_file_via_whisper(
                     path, model=S.WHISPER_MODEL, show_progress=True,
-                    initial_prompt=initial_prompt
+                    initial_prompt=initial_prompt, as_string=False,
                 )
                 text = result.text
             self._handle_transcription_result(text, audio_path=path)
@@ -10226,13 +10252,15 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
             scipy.io.wavfile.write(wav_path, SAMPLE_RATE, (audio * 32767).astype(np.int16))
             self.last_audio_path = wav_path
             if S.WHISPER_MODEL == MACOS_MODEL:
-                text = rp.transcribe_audio_file_via_macos(wav_path).text
+                text = rp.transcribe_audio_file_via_macos(wav_path, as_string=False).text
+            elif S.WHISPER_MODEL == VOXTRAL_MODEL:
+                text = rp.transcribe_audio_file_via_voxtral(wav_path, as_string=False).text
             else:
                 initial_prompt = self._get_initial_prompt()
                 # Note: carry_initial_prompt not yet exposed in pywhispercpp C bindings
                 result = rp.transcribe_audio_file_via_whisper(
                     wav_path, model=S.WHISPER_MODEL, show_progress=True,
-                    initial_prompt=initial_prompt
+                    initial_prompt=initial_prompt, as_string=False,
                 )
                 text = result.text
             self._handle_transcription_result(text, txt_path, audio_path=wav_path, archive_txt_path=archive_txt_path)
