@@ -14,3 +14,5 @@ lazy-loader
 tqdm
 platformdirs
 ollama
+pyfluidsynth
+pedalboard

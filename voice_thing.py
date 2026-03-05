@@ -438,6 +438,7 @@ DEFAULTS = dict(
     TMUX_AUTO_SCROLL=True,  # Auto-scroll to bottom on update (False = preserve position)
     TMUX_PHRASES_AS_CONTEXT=True,  # Include tmux phrases in context words
     TMUX_ANNOUNCE_PANE=False,  # Announce pane names via TTS when sending
+    TMUX_ANNOUNCE_DELAY=500,  # ms to wait after TTS before resuming wake word (0-5000)
     AUTO_COPY=True,   # Copy transcription to clipboard before paste
     AUTO_PASTE=True,  # Use ⌘V to paste after copying
     RESTORE_CLIPBOARD=False,  # Restore original clipboard contents after paste
@@ -4335,6 +4336,32 @@ class TTSSettingsWidget(QWidget):
         announce_row.addStretch()
         self._layout.addLayout(announce_row)
 
+        # Announce delay slider (visible only when announce is enabled)
+        self._announce_delay_row = QWidget()
+        delay_layout = QHBoxLayout(self._announce_delay_row)
+        delay_layout.setContentsMargins(20, 0, 0, 0)  # Indent under checkbox
+        delay_layout.setSpacing(8)
+        announce_delay_label = QLabel("Resume Delay:")
+        announce_delay_label.setStyleSheet(get_pref_label_css())
+        set_tooltip(announce_delay_label,
+            "Milliseconds to wait after TTS announcement\n"
+            "before resuming wake word detection.\n\n"
+            "Prevents the spoken pane name from\n"
+            "re-triggering wake word detection.")
+        delay_layout.addWidget(announce_delay_label)
+        self._announce_delay_slider = NoScrollSlider(Qt.Orientation.Horizontal)
+        self._announce_delay_slider.setRange(0, 5000)
+        self._announce_delay_slider.setSingleStep(50)
+        self._announce_delay_slider.setValue(S.TMUX_ANNOUNCE_DELAY)
+        self._announce_delay_slider.setStyleSheet(get_slider_css())
+        self._announce_delay_slider.valueChanged.connect(self._on_announce_delay_changed)
+        delay_layout.addWidget(self._announce_delay_slider, 1)
+        self._announce_delay_value = QLabel(f"{S.TMUX_ANNOUNCE_DELAY}ms")
+        self._announce_delay_value.setStyleSheet(get_pref_label_css() + " min-width: 45px;")
+        delay_layout.addWidget(self._announce_delay_value)
+        self._layout.addWidget(self._announce_delay_row)
+        self._announce_delay_row.setVisible(S.TMUX_ANNOUNCE_PANE)
+
     def _get_backend(self):
         return self._backend_combo.currentData()
 
@@ -4487,7 +4514,13 @@ class TTSSettingsWidget(QWidget):
         S.set('SPEAK_BACK_WAKE_ONLY', state == Qt.CheckState.Checked.value)
 
     def _on_announce_changed(self, state):
-        S.set('TMUX_ANNOUNCE_PANE', state == Qt.CheckState.Checked.value)
+        enabled = state == Qt.CheckState.Checked.value
+        S.set('TMUX_ANNOUNCE_PANE', enabled)
+        self._announce_delay_row.setVisible(enabled)
+
+    def _on_announce_delay_changed(self, value):
+        S.set('TMUX_ANNOUNCE_DELAY', value)
+        self._announce_delay_value.setText(f"{value}ms")
 
     def _on_ntfy_curl_changed(self, state):
         S.set('NTFY_USE_CURL', state == Qt.CheckState.Checked.value)
@@ -8808,7 +8841,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         self.cancel_signal.connect(self.cancel_recording)
         self._select_tmux_pane_signal.connect(self._select_tmux_pane_on_main_thread)
         self._delayed_wake_resume_signal.connect(
-            lambda: QTimer.singleShot(500, self._resume_wake_word_listener))
+            lambda: QTimer.singleShot(S.TMUX_ANNOUNCE_DELAY, self._resume_wake_word_listener))
 
         self.update_timer = QTimer()
         self.update_timer.timeout.connect(self._update_display)
@@ -9145,7 +9178,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         def speak_and_resume():
             do_tts(text, block=True)
             if needs_pause:
-                # Signal main thread to resume wakeword after 500ms delay
+                # Signal main thread to resume wakeword after configured delay
                 # (can't call QTimer.singleShot from background thread)
                 self._delayed_wake_resume_signal.emit()
 
@@ -9894,7 +9927,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
             'CUSTOM_CHIMES', 'CHIME_AUDIO_SETTINGS',
             # Tmux
             'TMUX_MODE', 'TMUX_TARGET', 'TMUX_PANE_NAMES',
-            'TMUX_PHRASES_AS_CONTEXT', 'TMUX_ANNOUNCE_PANE',
+            'TMUX_PHRASES_AS_CONTEXT', 'TMUX_ANNOUNCE_PANE', 'TMUX_ANNOUNCE_DELAY',
             # TTS / speak-back
             'SPEAK_BACK_VOICE', 'TTS_SAY', 'TTS_SUPERTONIC', 'TTS_KITTEN',
             'SPEAK_BACK_APPEND_INSTRUCTION', 'SPEAK_BACK_TMUX_ONLY', 'SPEAK_BACK_WAKE_ONLY',
