@@ -1632,16 +1632,24 @@ def _get_menubar_icon(hue=None):
 
 WHISPER_MODELS = [
     ("A", "macos", "Apple Speech Recognition (free, no download)"),
-    ("V", "voxtral", "Voxtral Mini 3B 4-bit via MLX (~5GB RAM)"),
-    ("T", "tiny", "Fastest, least accurate (~1GB VRAM)"),
-    ("B", "base", "Fast, basic accuracy (~1GB VRAM)"),
-    ("S", "small", "Balanced speed/accuracy (~2GB VRAM)"),
-    ("M", "medium", "Good accuracy, slower (~5GB VRAM)"),
-    ("L", "large-v3", "Best accuracy, slowest (~10GB VRAM)"),
+    ("V", "voxtral-mini-4bit", "Voxtral Mini 3B 4-bit (~3.2GB, ~5GB RAM)"),
+    ("X", "voxtral-mini-8bit", "Voxtral Mini 3B 8-bit (~5.3GB, ~7GB RAM)"),
+    ("Z", "voxtral-small-4bit", "Voxtral Small 24B 4-bit (~13GB, ~16GB RAM)"),
+    ("T", "tiny", "Whisper tiny (~1GB VRAM)"),
+    ("B", "base", "Whisper base (~1GB VRAM)"),
+    ("S", "small", "Whisper small (~2GB VRAM)"),
+    ("M", "medium", "Whisper medium (~5GB VRAM)"),
+    ("L", "large-v3", "Whisper large-v3 (~10GB VRAM)"),
 ]
 
 MACOS_MODEL = "macos"
-VOXTRAL_MODEL = "voxtral"
+VOXTRAL_MODELS = {"voxtral-mini-4bit", "voxtral-mini-8bit", "voxtral-small-4bit"}
+
+VOXTRAL_HF_MODELS = {
+    "voxtral-mini-4bit":  "mzbac/voxtral-mini-3b-4bit-mixed",
+    "voxtral-mini-8bit":  "mzbac/voxtral-mini-3b-8bit",
+    "voxtral-small-4bit": "VincentGOURBIN/voxtral-small-4bit-mixed",
+}
 
 
 # Action definitions: (id, key, icon_name, description, menu_text or None)
@@ -9992,18 +10000,18 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
             play_chime('loading_done')
             return
 
-        if new_model == VOXTRAL_MODEL:
-            # Load Voxtral model (downloads on first use)
-            self._set_state("transcribing", f"Loading Voxtral...")
+        if new_model in VOXTRAL_MODELS:
+            hf_model = VOXTRAL_HF_MODELS[new_model]
+            self._set_state("transcribing", f"Loading {new_model}...")
             self._switch_tab(0)
 
             def load_voxtral():
                 try:
                     play_chime('loading_start')
-                    print("Loading Voxtral model...")
-                    rp.r._get_voxtral_model_and_processor()
+                    print(f"Loading Voxtral model: {hf_model}")
+                    rp.r._get_voxtral_model_and_processor(hf_model)
                     S.WHISPER_MODEL = new_model
-                    print("Voxtral model loaded")
+                    print(f"Voxtral model loaded: {new_model}")
                     play_chime('loading_done')
                 except Exception as e:
                     print(f"Failed to load Voxtral: {e}")
@@ -10076,8 +10084,9 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
             print(f"Transcribing file: {path}")
             if S.WHISPER_MODEL == MACOS_MODEL:
                 text = rp.transcribe_audio_file_via_macos(path, as_string=False).text
-            elif S.WHISPER_MODEL == VOXTRAL_MODEL:
-                text = rp.transcribe_audio_file_via_voxtral(path, as_string=False).text
+            elif S.WHISPER_MODEL in VOXTRAL_MODELS:
+                hf_model = VOXTRAL_HF_MODELS[S.WHISPER_MODEL]
+                text = rp.transcribe_audio_file_via_voxtral(path, model=hf_model, as_string=False).text
             else:
                 initial_prompt = self._get_initial_prompt()
                 # Note: carry_initial_prompt not yet exposed in pywhispercpp C bindings
@@ -10253,8 +10262,9 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
             self.last_audio_path = wav_path
             if S.WHISPER_MODEL == MACOS_MODEL:
                 text = rp.transcribe_audio_file_via_macos(wav_path, as_string=False).text
-            elif S.WHISPER_MODEL == VOXTRAL_MODEL:
-                text = rp.transcribe_audio_file_via_voxtral(wav_path, as_string=False).text
+            elif S.WHISPER_MODEL in VOXTRAL_MODELS:
+                hf_model = VOXTRAL_HF_MODELS[S.WHISPER_MODEL]
+                text = rp.transcribe_audio_file_via_voxtral(wav_path, model=hf_model, as_string=False).text
             else:
                 initial_prompt = self._get_initial_prompt()
                 # Note: carry_initial_prompt not yet exposed in pywhispercpp C bindings
