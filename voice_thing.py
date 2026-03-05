@@ -1632,15 +1632,16 @@ def _get_menubar_icon(hue=None):
 
 
 WHISPER_MODELS = [
-    ("A", "macos", "Apple Speech Recognition (free, no download)"),
-    ("V", "voxtral-mini-4bit", "Voxtral Mini 3B 4-bit (~3.2GB, ~5GB RAM)"),
-    ("X", "voxtral-mini-8bit", "Voxtral Mini 3B 8-bit (~5.3GB, ~7GB RAM)"),
-    ("Z", "voxtral-small-4bit", "Voxtral Small 24B 4-bit (~13GB, ~16GB RAM)"),
-    ("T", "tiny", "Whisper tiny (~1GB VRAM)"),
-    ("B", "base", "Whisper base (~1GB VRAM)"),
-    ("S", "small", "Whisper small (~2GB VRAM)"),
-    ("M", "medium", "Whisper medium (~5GB VRAM)"),
-    ("L", "large-v3", "Whisper large-v3 (~10GB VRAM)"),
+    # (key, value, description, download_gb, vram_gb)
+    ("A", "macos",              "Apple Speech Recognition (free, no download)", 0,    0),
+    ("V", "voxtral-mini-4bit",  "Voxtral Mini 3B 4-bit",                       3.2,  5),
+    ("X", "voxtral-mini-8bit",  "Voxtral Mini 3B 8-bit",                       5.3,  7),
+    ("Z", "voxtral-small-4bit", "Voxtral Small 24B 4-bit",                     13,   16),
+    ("T", "tiny",               "Whisper tiny",                                 0.1,  1),
+    ("B", "base",               "Whisper base",                                 0.15, 1),
+    ("S", "small",              "Whisper small",                                0.5,  2),
+    ("M", "medium",             "Whisper medium",                               1.5,  5),
+    ("L", "large-v3",           "Whisper large-v3",                             3.0,  10),
 ]
 
 MACOS_MODEL = "macos"
@@ -2204,11 +2205,106 @@ class HelpDialog(DraggableDialog):
             super().keyPressEvent(e)
 
 
-class ModelDialog(OptionsDialog):
-    """Dialog to select Whisper model with keyboard shortcuts."""
+def _is_whisper_model_downloaded(model_value):
+    """Check if a whisper/voxtral model is already downloaded."""
+    if model_value == "macos":
+        return True
+    if model_value in VOXTRAL_MODELS:
+        hf_id = VOXTRAL_HF_MODELS[model_value]
+        try:
+            from huggingface_hub import scan_cache_dir
+            for repo in scan_cache_dir().repos:
+                if repo.repo_id == hf_id and repo.size_on_disk > 1024 * 1024:
+                    return True
+        except Exception:
+            pass
+        return False
+    # Whisper model via pywhispercpp
+    try:
+        from pywhispercpp.constants import MODELS_DIR
+        import os
+        # pywhispercpp stores as ggml-{name}.bin
+        for suffix in [f"ggml-{model_value}.bin", f"ggml-{model_value}.en.bin"]:
+            if os.path.isfile(os.path.join(MODELS_DIR, suffix)):
+                return True
+    except Exception:
+        pass
+    return False
+
+
+class ModelDialog(DraggableDialog):
+    """Dialog to select Whisper model with keyboard shortcuts and stats."""
 
     def __init__(self, current_model, parent=None):
-        super().__init__("Select Whisper Model", WHISPER_MODELS, current_model, parent, show_value_in_button=True)
+        super().__init__(parent)
+        self.selected_value = None
+        self._key_map = {}
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(DIALOG_MARGIN, DIALOG_MARGIN, DIALOG_MARGIN, DIALOG_MARGIN)
+        layout.setSpacing(8)
+
+        layout.addWidget(make_title("Select Whisper Model"))
+
+        for key, value, desc, download_gb, vram_gb in WHISPER_MODELS:
+            btn = QPushButton()
+            btn_layout = QHBoxLayout()
+            btn_layout.setContentsMargins(BTN_PADDING_H, BTN_PADDING_V, BTN_PADDING_H, BTN_PADDING_V)
+            btn_layout.setSpacing(8)
+
+            # Key badge + model name (left side)
+            key_label = QLabel(key)
+            key_label.setFixedWidth(16)
+            key_label.setStyleSheet(f"color: {CYAN_CSS}; font-weight: bold; font-size: 12px;")
+            btn_layout.addWidget(key_label)
+
+            name_label = QLabel(value)
+            name_label.setStyleSheet(f"color: {TEXT_PRIMARY}; font-size: 11px;")
+            btn_layout.addWidget(name_label, 1)
+
+            # Right-aligned stats
+            downloaded = _is_whisper_model_downloaded(value)
+            if download_gb > 0:
+                if downloaded:
+                    stats_text = f"{vram_gb}GB RAM"
+                else:
+                    dl_str = f"{download_gb:.1f}GB" if download_gb >= 1 else f"{int(download_gb * 1000)}MB"
+                    stats_text = f"{dl_str} dl  ·  {vram_gb}GB RAM"
+                stats_label = QLabel(stats_text)
+                stats_color = TEXT_SECONDARY if downloaded else "#e8a838"
+                stats_label.setStyleSheet(f"color: {stats_color}; font-size: 10px;")
+                stats_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                btn_layout.addWidget(stats_label)
+
+            btn_widget = QWidget()
+            btn_widget.setLayout(btn_layout)
+            btn.setLayout(QVBoxLayout())
+            btn.layout().setContentsMargins(0, 0, 0, 0)
+            btn.layout().addWidget(btn_widget)
+
+            btn.setStyleSheet(get_btn_css())
+            btn.setToolTip(desc)
+            if value == current_model:
+                btn.setStyleSheet(get_btn_css() + f"QPushButton {{ border: 2px solid {CYAN_CSS}; }}")
+            btn.clicked.connect(lambda checked, v=value: self._select(v))
+            layout.addWidget(btn)
+            self._key_map[getattr(Qt.Key, f"Key_{key.upper()}")] = value
+
+        layout.addWidget(make_close_btn("Esc  Cancel", self.reject))
+        self.setMinimumWidth(300)
+
+    def _select(self, value):
+        self.selected_value = value
+        self.accept()
+
+    def keyPressEvent(self, e):
+        key = e.key()
+        if key in self._key_map:
+            self._select(self._key_map[key])
+        elif key == Qt.Key.Key_Escape:
+            self.reject()
+        else:
+            super().keyPressEvent(e)
 
     @property
     def selected_model(self):
