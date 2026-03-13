@@ -7632,6 +7632,31 @@ class TranscriptionRow(QFrame):
         # Set initial HTML (unhighlighted)
         self._set_diff_highlight(False)
 
+        # Shortcut and menu buttons — built dynamically, can be rebuilt
+        self._shortcut_btns = []
+        self._menu_btn = None
+        self._build_action_buttons()
+
+        # Apply initial button styles
+        self._update_button_styles()
+        self._update_bg(False)
+
+    def _build_action_buttons(self):
+        """Build shortcut buttons + hamburger menu button from current S.TRANSCRIPTION_SHORTCUTS."""
+        layout = self.layout()
+
+        # Remove old shortcut buttons and menu button
+        for btn in self._shortcut_btns:
+            layout.removeWidget(btn)
+            btn.deleteLater()
+            self._buttons.remove(btn)
+        self._shortcut_btns.clear()
+        if self._menu_btn is not None:
+            layout.removeWidget(self._menu_btn)
+            self._menu_btn.deleteLater()
+            self._buttons.remove(self._menu_btn)
+            self._menu_btn = None
+
         # Dynamic shortcut buttons based on S.TRANSCRIPTION_SHORTCUTS
         shortcut_btn_size = ICON_BTN_SIZE_SMALL - 2  # Slightly smaller to match row height
         for action_key in S.TRANSCRIPTION_SHORTCUTS:
@@ -7647,6 +7672,7 @@ class TranscriptionRow(QFrame):
             btn.icon_name = icon_name
             layout.addWidget(btn, 0, Qt.AlignmentFlag.AlignTop)
             self._buttons.append(btn)
+            self._shortcut_btns.append(btn)
 
         # Hamburger menu button (for all actions)
         menu_btn = QPushButton()
@@ -7657,10 +7683,9 @@ class TranscriptionRow(QFrame):
         menu_btn.icon_name = "more"
         layout.addWidget(menu_btn, 0, Qt.AlignmentFlag.AlignTop)
         self._buttons.append(menu_btn)
+        self._menu_btn = menu_btn
 
-        # Apply initial button styles
         self._update_button_styles()
-        self._update_bg(False)
 
     def _on_shortcut_click(self, action_key):
         """Handle a shortcut button click by emitting the appropriate signal."""
@@ -7686,6 +7711,10 @@ class TranscriptionRow(QFrame):
         for btn in self._buttons:
             btn.setStyleSheet(btn_style)
             btn.setIcon(load_icon(btn.icon_name, color=icon_color))
+
+    def rebuild_shortcuts(self):
+        """Rebuild shortcut buttons from current S.TRANSCRIPTION_SHORTCUTS."""
+        self._build_action_buttons()
 
     def update_style(self):
         """Called when global style changes - refresh all style-dependent properties."""
@@ -7886,6 +7915,13 @@ class TranscriptionItem(QFrame):
         for row in self.diff_rows:
             row.set_diff_highlight(hovered)
 
+    def rebuild_shortcuts(self):
+        """Rebuild shortcut buttons on all child rows."""
+        for row in self.diff_rows:
+            row.rebuild_shortcuts()
+        if self.first_row and self.first_row not in self.diff_rows:
+            self.first_row.rebuild_shortcuts()
+
     def update_style(self):
         """Update style on all child rows."""
         for row in self.diff_rows:
@@ -7933,6 +7969,13 @@ class TranscriptionList(QScrollArea):
             item = self._layout.itemAt(i)
             if item and item.widget():
                 item.widget().update_style()
+
+    def rebuild_shortcuts(self):
+        """Rebuild shortcut buttons on all transcription items."""
+        for i in range(self._layout.count() - 1):  # Skip the stretch
+            item = self._layout.itemAt(i)
+            if item and item.widget():
+                item.widget().rebuild_shortcuts()
 
     def _connect_item_signals(self, item):
         """Connect all signals from a TranscriptionItem."""
@@ -9166,6 +9209,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         S.hooks['TMUX_MODE'] = self._on_tmux_mode_changed
         S.hooks['SIMPLE_MODE'] = self._on_simple_mode_changed
         S.hooks['ALWAYS_ON_TOP'] = self._on_always_on_top_setting_changed
+        S.hooks['TRANSCRIPTION_SHORTCUTS'] = lambda _: self.transcriptions_panel.rebuild_shortcuts()
 
         # Pet container - floats absolutely, not in any layout
         self.pet_container = PetContainer(self)
