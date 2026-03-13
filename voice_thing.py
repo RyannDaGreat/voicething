@@ -7577,17 +7577,17 @@ def word_diff_html(old_text, new_text, is_old, highlight=False):
     return ' '.join(result)
 
 
-    # Map action key → (icon_name, label, signal_name)
-    ACTION_INFO = {
-        'C': ('copy', 'Copy', 'copy_clicked'),
-        'B': ('clipboard-plus', 'Append Copy', 'append_copy_clicked'),
-        'T': ('tmux', 'Send to Tmux', 'tmux_clicked'),
-        'P': ('play', 'Play Audio', 'play_clicked'),
-        'R': ('refresh', 'Re-transcribe', 'retranscribe_clicked'),
-        'L': ('robot', 'Run LLM', 'deramble_clicked'),
-        'A': ('file-audio', 'Open Audio', 'open_audio_clicked'),
-        'O': ('file-text', 'Open Transcript', 'open_transcript_clicked'),
-    }
+# Map action key → (icon_name, label, signal_name)
+ACTION_INFO = {
+    'C': ('copy', 'Copy', 'copy_clicked'),
+    'B': ('clipboard-plus', 'Append Copy', 'append_copy_clicked'),
+    'T': ('tmux', 'Send to Tmux', 'tmux_clicked'),
+    'P': ('play', 'Play Audio', 'play_clicked'),
+    'R': ('refresh', 'Re-transcribe', 'retranscribe_clicked'),
+    'L': ('robot', 'Run LLM', 'deramble_clicked'),
+    'A': ('file-audio', 'Open Audio', 'open_audio_clicked'),
+    'O': ('file-text', 'Open Transcript', 'open_transcript_clicked'),
+}
 
 class TranscriptionRow(QFrame):
     """Clickable row for a single transcription text."""
