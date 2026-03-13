@@ -7,19 +7,26 @@
 # the dynamic linker loads Homebrew's libpng for ImageIO's PNG plugin, causing
 # SIGBUS at 0x0BAD4007 (corrupted PNGReadPlugin vtable). This is the root cause
 # of wxWidgets #23547, Electron #48025, dotnet/sdk #44425, and Tauri #7351.
-# Fix: strip /opt/homebrew/lib from DYLD_LIBRARY_PATH and re-exec before any
-# libraries are loaded. DYLD vars are only read at process start by the linker.
+# Fix: move /opt/homebrew/lib from DYLD_LIBRARY_PATH to DYLD_FALLBACK_LIBRARY_PATH,
+# then re-exec. FALLBACK is searched AFTER framework rpaths, so ImageIO loads
+# Apple's private libpng first, but FluidSynth etc. still find their .dylibs.
 import os as _os, sys as _sys
 _HOMEBREW_LIB = "/opt/homebrew/lib"
 _dyld_path = _os.environ.get("DYLD_LIBRARY_PATH", "")
 if _HOMEBREW_LIB in _dyld_path:
-    _cleaned = ":".join(
-        p for p in _dyld_path.split(":") if p and not p.startswith(_HOMEBREW_LIB)
-    )
+    _homebrew_paths = [p for p in _dyld_path.split(":") if p and p.startswith(_HOMEBREW_LIB)]
+    _cleaned = ":".join(p for p in _dyld_path.split(":") if p and not p.startswith(_HOMEBREW_LIB))
     if _cleaned:
         _os.environ["DYLD_LIBRARY_PATH"] = _cleaned
     else:
-        del _os.environ["DYLD_LIBRARY_PATH"]
+        _os.environ.pop("DYLD_LIBRARY_PATH", None)
+    # Move homebrew paths to FALLBACK so libraries like FluidSynth still resolve
+    _fallback = _os.environ.get("DYLD_FALLBACK_LIBRARY_PATH", "")
+    _fallback_parts = [p for p in _fallback.split(":") if p] if _fallback else []
+    for p in _homebrew_paths:
+        if p not in _fallback_parts:
+            _fallback_parts.append(p)
+    _os.environ["DYLD_FALLBACK_LIBRARY_PATH"] = ":".join(_fallback_parts)
     _os.execv(_sys.executable, [_sys.executable] + _sys.argv)
 # ─────────────────────────────────────────────────────────────────────────────
 

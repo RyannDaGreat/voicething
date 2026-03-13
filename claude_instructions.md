@@ -9,7 +9,8 @@ VoiceThing is a keyboard-driven voice transcription app for macOS built with PyQ
 - **tray icon cycling**: During recording, the menu bar icon animates by cycling through hue values at 20 FPS (every 50ms via QTimer)
 - **DraggableResizableMixin**: Mixin class providing frameless window drag/resize via mouse events; changes cursor shape at window edges
 - **ImageIO**: macOS system framework for image encoding/decoding. Qt on macOS uses it internally for PNG decoding (`QPixmap.loadFromData`) and cursor bundle loading (`setCursorFromBundle`)
-- **DYLD_LIBRARY_PATH**: macOS environment variable that overrides the dynamic linker's library search path. When it includes `/opt/homebrew/lib`, Homebrew's libpng gets loaded instead of Apple's private copy, causing ImageIO SIGBUS crashes. VoiceThing has a startup guard that strips this and re-execs.
+- **DYLD_LIBRARY_PATH**: macOS environment variable that overrides the dynamic linker's library search path. When it includes `/opt/homebrew/lib`, Homebrew's libpng gets loaded instead of Apple's private copy, causing ImageIO SIGBUS crashes. VoiceThing has a startup guard that moves this to `DYLD_FALLBACK_LIBRARY_PATH` and re-execs.
+- **DYLD_FALLBACK_LIBRARY_PATH**: Searched *after* framework rpaths. Safe for Homebrew libs — ImageIO loads Apple's libpng first, FluidSynth still finds its dylib as a fallback.
 - **0xBAD4007**: The crash address in the SIGBUS bug. It's a corrupted function pointer in ImageIO's `PNGReadPlugin` vtable, caused by Homebrew libpng ABI mismatch.
 
 ## Key Files
@@ -35,7 +36,7 @@ VoiceThing is a keyboard-driven voice transcription app for macOS built with PyQ
 **Reproduced**: `DYLD_LIBRARY_PATH=/opt/homebrew/lib python3.10 stress_test.py` → SIGBUS 3/3 runs. Without it: 0 crashes in 500k+ operations. User confirmed resizing windows (especially to zero size) triggers the crash.
 
 **Fix (three layers)**:
-1. **DYLD_LIBRARY_PATH startup guard** (top of voice_thing.py): Strips `/opt/homebrew/lib` from `DYLD_LIBRARY_PATH` and `os.execv()` re-execs before any libraries load. This is the primary fix.
+1. **DYLD_LIBRARY_PATH startup guard** (top of voice_thing.py): Moves `/opt/homebrew/lib` from `DYLD_LIBRARY_PATH` to `DYLD_FALLBACK_LIBRARY_PATH` and `os.execv()` re-execs. FALLBACK is searched after framework rpaths, so ImageIO loads Apple's libpng first but FluidSynth still resolves.
 2. **`_get_menubar_icon`**: QImage + QPainter compositing instead of PIL→PNG→loadFromData. No ImageIO involved. (Defense-in-depth.)
 3. **Cursor deduplication**: `_current_edge` in `mouseMoveEvent`, `_table_ibeam` in `eventFilter`. (Defense-in-depth.)
 

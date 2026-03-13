@@ -64,7 +64,7 @@ This is AppKit's own cursor management, triggered during window resize. Our curs
 
 ### Fix (Complete — three layers of defense)
 
-1. **`DYLD_LIBRARY_PATH` startup guard** (PRIMARY FIX): At the very top of `voice_thing.py`, before any imports, strip `/opt/homebrew/lib` from `DYLD_LIBRARY_PATH` and `os.execv()` re-exec the process. This prevents the dynamic linker from ever loading Homebrew's libpng for ImageIO. DYLD vars are only read at process start, so the re-exec ensures clean library resolution.
+1. **`DYLD_LIBRARY_PATH` startup guard** (PRIMARY FIX): At the very top of `voice_thing.py`, before any imports, move `/opt/homebrew/lib` from `DYLD_LIBRARY_PATH` to `DYLD_FALLBACK_LIBRARY_PATH` and `os.execv()` re-exec the process. `FALLBACK` is searched after framework rpaths, so ImageIO loads Apple's private libpng first, but FluidSynth etc. still find their `.dylib` files. DYLD vars are only read at process start, so the re-exec ensures clean library resolution. (Initial version deleted the var entirely, which broke FluidSynth on the other laptop — WOM bug.)
 2. **`_get_menubar_icon`**: Eliminated ImageIO entirely. Base icon loaded once via `QImage(path)` and cached in `_tray_icon_base`. Hue cycling done via `QPainter` with `CompositionMode_SourceAtop` — pure Qt compositor, no PNG encode/decode. Also ~100x faster per call. (Defense-in-depth.)
 3. **Cursor deduplication**: `DraggableResizableMixin.mouseMoveEvent` tracks `_current_edge`, `TmuxSelectionDialog.eventFilter` tracks `_table_ibeam` — skip redundant `setCursor` calls. (Defense-in-depth.)
 
