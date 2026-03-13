@@ -9373,7 +9373,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
 
     def _append_to_clipboard(self, text):
         """Append text to current clipboard contents with a newline separator."""
-        existing = rp.clipboard_to_string() or ""
+        existing = rp.string_from_clipboard() or ""
         combined = existing + "\n" + text if existing else text
         rp.string_to_clipboard(combined)
         self.pet_container.trigger_copy()
