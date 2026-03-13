@@ -1,7 +1,44 @@
 """Base style - just a plain class with defaults. Override what you need."""
 
 import os
+import re
 from pathlib import Path
+
+
+def _mirror_scrollbar_css(vertical_css):
+    """
+    Pure function. Convert vertical scrollbar CSS to horizontal equivalent.
+
+    Swaps orientation keywords and dimensional properties so that a single
+    vertical scrollbar definition produces matching horizontal rules.
+
+    Args:
+        vertical_css (str): CSS containing QScrollBar:vertical rules
+
+    Returns:
+        str: CSS with equivalent QScrollBar:horizontal rules
+
+    Examples:
+        >>> 'horizontal' in _mirror_scrollbar_css('QScrollBar:vertical { width: 14px; }')
+        True
+        >>> 'height: 14px' in _mirror_scrollbar_css('QScrollBar:vertical { width: 14px; }')
+        True
+    """
+    h = vertical_css
+    h = h.replace(':vertical', ':horizontal')
+    h = h.replace('vertical', 'horizontal')
+    # Swap width↔height for the scrollbar track dimensions
+    h = re.sub(r'(?<![-])\bwidth:', '_W_PLACEHOLDER_:', h)
+    h = re.sub(r'(?<![-])\bheight:', 'width:', h)
+    h = h.replace('_W_PLACEHOLDER_:', 'height:')
+    # Swap min-width↔min-height for handle minimum size
+    h = h.replace('min-height:', '_MH_PLACEHOLDER_:')
+    h = h.replace('min-width:', 'min-height:')
+    h = h.replace('_MH_PLACEHOLDER_:', 'min-width:')
+    # Rotate gradients 90°: x2:1,y2:0 → x2:0,y2:1
+    h = re.sub(r'x2:\s*1\s*,\s*y2:\s*0', 'x2:0, y2:1', h)
+    h = re.sub(r'x2:\s*0\s*,\s*y2:\s*1(?!\.)', 'x2:0, y2:1', h)
+    return h
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QPixmap
@@ -151,7 +188,22 @@ class BaseStyle:
     # Subclasses override these
     def button_css(self): return ""
     def menu_css(self): return ""
-    def scrollbar_css(self): return ""
+
+    def scrollbar_css(self):
+        """Return scrollbar CSS for both orientations.
+
+        Subclasses override _scrollbar_vertical_css() with vertical-only rules.
+        This method mirrors them to horizontal automatically.
+        """
+        vertical = self._scrollbar_vertical_css()
+        if not vertical:
+            return ""
+        horizontal = _mirror_scrollbar_css(vertical)
+        return vertical + horizontal
+
+    def _scrollbar_vertical_css(self):
+        """Override in subclasses. Return vertical scrollbar CSS only."""
+        return ""
     def panel_bg_css(self): return ""
     def panel_bg_flat_css(self): return ""
 

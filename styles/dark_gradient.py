@@ -142,7 +142,7 @@ class DarkGradientStyle(BaseStyle):
             f"QMenu::separator {{ height: 1px; background: {WHITE_20}; margin: 4px 8px; }}"
         )
 
-    def scrollbar_css(self):
+    def _scrollbar_vertical_css(self):
         return (
             "QScrollBar:vertical { width: 10px; background: transparent; margin: 2px; border: none; }"
             "QScrollBar::handle:vertical { "

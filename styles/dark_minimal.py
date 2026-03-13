@@ -96,7 +96,7 @@ class DarkMinimalStyle(BaseStyle):
             f"QMenu::separator {{ height: 1px; background: {WHITE_20}; margin: 4px 8px; }}"
         )
 
-    def scrollbar_css(self):
+    def _scrollbar_vertical_css(self):
         return (
             f"QScrollBar:vertical {{ width: 10px; background: {WHITE_5}; margin: 2px; border: none; border-radius: 5px; }}"
             f"QScrollBar::handle:vertical {{ background: {WHITE_20}; border-radius: 5px; min-height: 30px; margin: 0px; }}"

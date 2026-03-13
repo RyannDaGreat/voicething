@@ -164,7 +164,7 @@ class MacOS2005Style(BaseStyle):
             f"QMenu::separator {{ height: 1px; background: {MENU_SEPARATOR}; margin: 4px 8px; }}"
         )
 
-    def scrollbar_css(self):
+    def _scrollbar_vertical_css(self):
         # Authentic macOS Aqua scrollbar - glossy blue capsule pill, no arrows
         # Reference: Image 2 - white track, blue glossy cylindrical handle
         return (

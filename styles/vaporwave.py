@@ -135,7 +135,7 @@ class VaporwaveStyle(BaseStyle):
             f"QMenu::separator {{ height: 1px; background: rgb(100,60,140); margin: 4px 8px; }}"
         )
 
-    def scrollbar_css(self):
+    def _scrollbar_vertical_css(self):
         return (
             f"QScrollBar:vertical {{ width: 12px; background: rgb(48,3,80); margin: 2px; border: none; border-radius: 6px; }}"
             f"QScrollBar::handle:vertical {{ "

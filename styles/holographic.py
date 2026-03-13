@@ -249,7 +249,7 @@ class HolographicStyle(BaseStyle):
             f"QMenu::separator {{ height: 1px; background: {BORDER_DARK}; margin: 4px 8px; }}"
         )
 
-    def scrollbar_css(self):
+    def _scrollbar_vertical_css(self):
         return (
             f"QScrollBar:vertical {{ width: 14px; background: {BG_MID}; "
             f"border: 1px solid {BORDER_DARK}; border-radius: 7px; margin: 0px; }}"

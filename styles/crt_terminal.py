@@ -470,7 +470,7 @@ class CRTTerminalStyle(BaseStyle):
             f"margin: 4px 8px; }}"
         )
 
-    def scrollbar_css(self):
+    def _scrollbar_vertical_css(self):
         return (
             f"QScrollBar:vertical {{ width: 12px; background: rgb(5,10,5); "
             f"border: 1px solid rgb(10,21,10); border-radius: 6px; margin: 0px; }}"

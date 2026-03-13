@@ -150,7 +150,7 @@ class Y2KWinampStyle(BaseStyle):
             f"stop:0 {WIN95_SHADOW}, stop:1 {WIN95_HIGHLIGHT}); margin: 2px 4px; }}"
         )
 
-    def scrollbar_css(self):
+    def _scrollbar_vertical_css(self):
         return (
             f"QScrollBar:vertical {{ width: 16px; background: {WIN95_FACE}; margin: 0; "
             f"border: 1px solid {WIN95_SHADOW}; }}"

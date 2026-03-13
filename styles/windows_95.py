@@ -177,7 +177,7 @@ class Windows95Style(BaseStyle):
             f"stop:0 {SHADOW_CSS}, stop:1 {HIGHLIGHT_CSS}); margin: 2px 2px; }}"
         )
 
-    def scrollbar_css(self):
+    def _scrollbar_vertical_css(self):
         # Authentic Windows 95 scrollbar - gray beveled, no rounded corners
         return (
             # Track - gray with inset bevel

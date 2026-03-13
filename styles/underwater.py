@@ -170,7 +170,7 @@ class UnderwaterStyle(BaseStyle):
             f"QMenu::separator {{ height: 1px; background: rgb(18,40,65); margin: 4px 8px; }}"
         )
 
-    def scrollbar_css(self):
+    def _scrollbar_vertical_css(self):
         return (
             f"QScrollBar:vertical {{ width: 12px; background: rgb(10,24,40); "
             f"border: none; border-radius: 6px; margin: 2px; }}"

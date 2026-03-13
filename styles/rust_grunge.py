@@ -148,7 +148,7 @@ class RustGrungeStyle(BaseStyle):
             f"QMenu::separator {{ height: 2px; background: {BORDER_DARK}; margin: 4px 8px; }}"
         )
 
-    def scrollbar_css(self):
+    def _scrollbar_vertical_css(self):
         # Rusty pipe scrollbar
         return (
             f"QScrollBar:vertical {{ width: 16px; background: {METAL_DARK}; "

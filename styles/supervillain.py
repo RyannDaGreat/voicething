@@ -143,7 +143,7 @@ class SupervillainStyle(BaseStyle):
             f"QMenu::separator {{ height: 2px; background: {BORDER_BLOOD}; margin: 4px 8px; }}"
         )
 
-    def scrollbar_css(self):
+    def _scrollbar_vertical_css(self):
         # Blood-red scrollbar
         return (
             f"QScrollBar:vertical {{ width: 14px; background: {BLACK_DEEP}; "

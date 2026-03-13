@@ -153,7 +153,7 @@ class NeonSignStyle(BaseStyle):
             f"QMenu::separator {{ height: 1px; background: rgb(80, 30, 50); margin: 4px 8px; }}"
         )
 
-    def scrollbar_css(self):
+    def _scrollbar_vertical_css(self):
         return (
             f"QScrollBar:vertical {{ width: 12px; background: rgb(26, 16, 16); "
             f"margin: 2px; border: none; border-radius: 6px; }}"

@@ -144,7 +144,7 @@ class CyberpunkMetalStyle(BaseStyle):
             f"QMenu::separator {{ height: 1px; background: {BORDER_DARK}; margin: 4px 8px; }}"
         )
 
-    def scrollbar_css(self):
+    def _scrollbar_vertical_css(self):
         # Dark scrollbar with cyan handle
         return (
             f"QScrollBar:vertical {{ width: 14px; background: {DARK_GRAY}; "

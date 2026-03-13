@@ -146,7 +146,7 @@ class BarbieJellyStyle(BaseStyle):
             f"QMenu::separator {{ height: 2px; background: {BORDER_PINK}; margin: 4px 8px; }}"
         )
 
-    def scrollbar_css(self):
+    def _scrollbar_vertical_css(self):
         # Pink jelly scrollbar
         return (
             f"QScrollBar:vertical {{ width: 16px; "

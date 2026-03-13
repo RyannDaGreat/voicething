@@ -163,7 +163,7 @@ class ChalkboardStyle(BaseStyle):
             f"QMenu::separator {{ height: 2px; background: {BORDER_FRAME}; margin: 4px 8px; }}"
         )
 
-    def scrollbar_css(self):
+    def _scrollbar_vertical_css(self):
         return (
             f"QScrollBar:vertical {{ width: 14px; background: {BOARD_DARK}; "
             f"border: 1px solid {BORDER_DARK}; border-radius: 4px; margin: 0px; }}"

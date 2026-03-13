@@ -153,7 +153,7 @@ class MahoganyWoodStyle(BaseStyle):
             f"QMenu::separator {{ height: 2px; background: {BORDER_MID}; margin: 4px 8px; }}"
         )
 
-    def scrollbar_css(self):
+    def _scrollbar_vertical_css(self):
         # Wood-grain scrollbar
         return (
             f"QScrollBar:vertical {{ width: 14px; background: {MAHOGANY_DARK}; "
