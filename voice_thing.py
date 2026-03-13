@@ -1,6 +1,28 @@
 #!/usr/bin/env python3
 """Voice transcription: double-tap Option to record, transcribe, and type."""
 
+# ── Sanitize DYLD_LIBRARY_PATH to prevent macOS ImageIO SIGBUS crash ────────
+# Homebrew's libpng in /opt/homebrew/lib has an ABI mismatch with Apple's
+# internal ImageIO libpng. When DYLD_LIBRARY_PATH includes /opt/homebrew/lib,
+# the dynamic linker loads Homebrew's libpng for ImageIO's PNG plugin, causing
+# SIGBUS at 0x0BAD4007 (corrupted PNGReadPlugin vtable). This is the root cause
+# of wxWidgets #23547, Electron #48025, dotnet/sdk #44425, and Tauri #7351.
+# Fix: strip /opt/homebrew/lib from DYLD_LIBRARY_PATH and re-exec before any
+# libraries are loaded. DYLD vars are only read at process start by the linker.
+import os as _os, sys as _sys
+_HOMEBREW_LIB = "/opt/homebrew/lib"
+_dyld_path = _os.environ.get("DYLD_LIBRARY_PATH", "")
+if _HOMEBREW_LIB in _dyld_path:
+    _cleaned = ":".join(
+        p for p in _dyld_path.split(":") if p and not p.startswith(_HOMEBREW_LIB)
+    )
+    if _cleaned:
+        _os.environ["DYLD_LIBRARY_PATH"] = _cleaned
+    else:
+        del _os.environ["DYLD_LIBRARY_PATH"]
+    _os.execv(_sys.executable, [_sys.executable] + _sys.argv)
+# ─────────────────────────────────────────────────────────────────────────────
+
 import difflib
 import json
 import math
@@ -30,7 +52,7 @@ from AppKit import NSWorkspace, NSApplicationActivateIgnoringOtherApps
 from pynput import keyboard
 from pynput.keyboard import Controller as KeyboardController, Key
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QSize, QPointF, QRect, QRectF, QEvent, QSortFilterProxyModel
-from PyQt6.QtGui import QPainter, QColor, QPen, QIcon, QFont, QFontDatabase, QPolygonF, QLinearGradient, QRadialGradient, QBrush, QPixmap, QCursor
+from PyQt6.QtGui import QPainter, QColor, QPen, QIcon, QFont, QFontDatabase, QPolygonF, QLinearGradient, QRadialGradient, QBrush, QPixmap, QCursor, QImage
 from PyQt6.QtSvg import QSvgRenderer
 from PyQt6.QtWidgets import (
     QApplication,
@@ -1581,8 +1603,17 @@ def _is_menubar_dark():
     return 'Dark' in name
 
 
+# Cache for _get_menubar_icon — loaded once, reused every frame.
+# Using QImage (not QPixmap) avoids macOS ImageIO PNG codec entirely.
+# See concerns.md: "SIGBUS crash in macOS ImageIO during setCursor"
+_tray_icon_base = None
+
 def _get_menubar_icon(hue=None):
-    """Create menu bar icon from app icon.
+    """Create menu bar icon from app icon using QPainter compositing.
+
+    Uses QImage + QPainter instead of PIL→PNG→QPixmap.loadFromData to avoid
+    macOS ImageIO PNG codec, which causes SIGBUS (0x0BAD4007) when interleaved
+    with setCursor's cursor bundle loading at high frequency.
 
     Args:
         hue: If None, creates template icon (auto light/dark).
@@ -1590,40 +1621,47 @@ def _get_menubar_icon(hue=None):
              In dark mode, hue colors are mixed 50% with white.
              In light mode, hue colors are mixed 50% with black.
     """
-    from PIL import Image
     import colorsys
-    import numpy as np
+    global _tray_icon_base
+
     icon_path = os.path.join(ASSETS_DIR, "icon.png")
     if not os.path.exists(icon_path):
         return load_icon("mic")  # Fallback
-    img = Image.open(icon_path).convert('RGBA')
-    img = img.resize((TRAY_ICON_SIZE, TRAY_ICON_SIZE), Image.Resampling.LANCZOS)
-    data = np.array(img)
-    alpha = data[:, :, 3]
+
+    # Load base icon once — QImage(path) on macOS uses ImageIO only at startup,
+    # not on the 20 FPS hot path. Cached after first call.
+    if _tray_icon_base is None:
+        base = QImage(icon_path)
+        if base.isNull():
+            return load_icon("mic")
+        _tray_icon_base = base.scaled(
+            TRAY_ICON_SIZE, TRAY_ICON_SIZE,
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation,
+        ).convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
+
+    img = QImage(_tray_icon_base)  # Copy cached base
 
     if hue is None:
-        # Template: black with alpha
-        data[:, :, :3] = 0
+        # Template: fill with black, preserving alpha
+        p = QPainter(img)
+        p.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceAtop)
+        p.fillRect(img.rect(), QColor(0, 0, 0))
+        p.end()
     else:
-        # Recolor entire icon with cycling hue
+        # Recolor with cycling hue via QPainter compositing (no ImageIO)
         r, g, b = colorsys.hsv_to_rgb(hue / 360.0, 0.8, 1.0)
         r, g, b = int(r * 255), int(g * 255), int(b * 255)
-        # Mix with white in dark mode (pastel), black in light mode (deeper)
         if _is_menubar_dark():
             r, g, b = (r + 255) // 2, (g + 255) // 2, (b + 255) // 2
         else:
             r, g, b = r // 2, g // 2, b // 2
-        data[:, :, 0] = r
-        data[:, :, 1] = g
-        data[:, :, 2] = b
-    data[:, :, 3] = alpha
+        p = QPainter(img)
+        p.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceAtop)
+        p.fillRect(img.rect(), QColor(r, g, b))
+        p.end()
 
-    from io import BytesIO
-    buf = BytesIO()
-    Image.fromarray(data).save(buf, format='PNG')
-    buf.seek(0)
-    pixmap = QPixmap()
-    pixmap.loadFromData(buf.read())
+    pixmap = QPixmap.fromImage(img)  # Pure Qt, no ImageIO PNG codec
     pixmap.setDevicePixelRatio(2.0)
     icon = QIcon(pixmap)
     if hue is None:
@@ -1754,6 +1792,7 @@ class DraggableResizableMixin:
         self.drag_pos = None
         self.resize_edge = None
         self.resize_start_geo = None  # Geometry when resize started
+        self._current_edge = None  # Cursor dedup: skip redundant setCursor calls
         self.resize_start_pos = None  # Mouse position when resize started
         self._pre_maximize_geometry = None  # For maximize toggle
         self.setMouseTracking(True)
@@ -1837,20 +1876,25 @@ class DraggableResizableMixin:
                 self.move(e.globalPosition().toPoint() - self.drag_pos)
         else:
             edge = self._edge_at(e.position().toPoint())
-            if edge:
-                cursors = {
-                    "t": Qt.CursorShape.SizeVerCursor,
-                    "b": Qt.CursorShape.SizeVerCursor,
-                    "l": Qt.CursorShape.SizeHorCursor,
-                    "r": Qt.CursorShape.SizeHorCursor,
-                    "tl": Qt.CursorShape.SizeFDiagCursor,
-                    "br": Qt.CursorShape.SizeFDiagCursor,
-                    "tr": Qt.CursorShape.SizeBDiagCursor,
-                    "bl": Qt.CursorShape.SizeBDiagCursor,
-                }
-                self.setCursor(cursors.get(edge, Qt.CursorShape.ArrowCursor))
-            else:
-                self.unsetCursor()
+            # Deduplicate setCursor calls — each one triggers macOS ImageIO
+            # cursor bundle loading, which corrupts ImageIO state when
+            # interleaved with PNG decode (see concerns.md: SIGBUS 0x0BAD4007)
+            if edge != self._current_edge:
+                self._current_edge = edge
+                if edge:
+                    cursors = {
+                        "t": Qt.CursorShape.SizeVerCursor,
+                        "b": Qt.CursorShape.SizeVerCursor,
+                        "l": Qt.CursorShape.SizeHorCursor,
+                        "r": Qt.CursorShape.SizeHorCursor,
+                        "tl": Qt.CursorShape.SizeFDiagCursor,
+                        "br": Qt.CursorShape.SizeFDiagCursor,
+                        "tr": Qt.CursorShape.SizeBDiagCursor,
+                        "bl": Qt.CursorShape.SizeBDiagCursor,
+                    }
+                    self.setCursor(cursors.get(edge, Qt.CursorShape.ArrowCursor))
+                else:
+                    self.unsetCursor()
 
     def mouseReleaseEvent(self, e):
         self.drag_pos = self.resize_edge = None
@@ -3177,6 +3221,7 @@ class TmuxSelectionDialog(DraggableDialog):
         self.selected_target = current_target
         self._hover_pane_id = None
         self._selected_pane_id = None
+        self._table_ibeam = None  # Cursor dedup for table viewport (avoids ImageIO churn)
         self._pane_data = []  # List of {address, pane_id, process, target}
         self._orig_tmux_mode = S.TMUX_MODE  # Store original for cancel
         self._last_preview_html = None  # For avoiding redundant UI updates
@@ -3646,11 +3691,14 @@ class TmuxSelectionDialog(DraggableDialog):
                 pos = event.position().toPoint()
                 row = self.table.rowAt(pos.y())
                 col = self.table.columnAt(pos.x())
-                # Update cursor for phrase column
-                if col == self.COL_PHRASE and row >= 0:
-                    self.table.viewport().setCursor(Qt.CursorShape.IBeamCursor)
-                else:
-                    self.table.viewport().setCursor(Qt.CursorShape.ArrowCursor)
+                # Update cursor for phrase column (deduplicated to avoid ImageIO churn)
+                want_ibeam = col == self.COL_PHRASE and row >= 0
+                if want_ibeam != self._table_ibeam:
+                    self._table_ibeam = want_ibeam
+                    if want_ibeam:
+                        self.table.viewport().setCursor(Qt.CursorShape.IBeamCursor)
+                    else:
+                        self.table.viewport().setCursor(Qt.CursorShape.ArrowCursor)
                 # Hover preview
                 if row >= 0 and row < len(self._pane_data):
                     pane_id = self._pane_data[row]['pane_id']
