@@ -496,6 +496,7 @@ DEFAULTS = dict(
         'auto_enter_on': {'pattern': [[2, 9], [6, 14, 16], [9, 18], [7, 16, 21], [6, 14, 18, 21, 26]] + [[]] * 11, 'duration': 0.08711429988156041},
         'tmux_send':     {'pattern': [[-17, -5, 7], [-13, -1, 11], [-10, 14], [-5, 19]] + [[]] * 12, 'duration': 0.06843836142250373},
     },
+    TRANSCRIPTION_SHORTCUTS=['L'],  # Action keys shown as quick buttons on each transcription row
     RECORDINGS_DIR=DEFAULT_RECORDINGS_DIR,  # Folder for audio recordings and transcripts
     TRANSCRIPTIONS_DIR=DEFAULT_TRANSCRIPTIONS_DIR,  # Permanent folder for text transcriptions (persists across reboots)
     ALWAYS_ON_TOP=False,  # Keep window above other windows
@@ -2415,6 +2416,7 @@ class TranscriptionActionsDialog(DraggableDialog):
     # Action: (key, icon, label, description)
     ACTIONS = [
         ('C', 'copy', 'Copy', 'Copy transcription to clipboard'),
+        ('B', 'clipboard-plus', 'Append Copy', 'Append transcription to clipboard'),
         ('T', 'tmux', 'Send to Tmux', 'Send to a tmux pane via magic phrase'),
         ('P', 'play', 'Play Audio', 'Play the original audio recording'),
         ('R', 'refresh', 'Re-transcribe', 'Re-transcribe with current model'),
@@ -2428,12 +2430,15 @@ class TranscriptionActionsDialog(DraggableDialog):
         super().__init__(parent)
         self.selected_action = None
         self._key_map = {}
+        self._shortcut_toggles = {}  # key -> toggle_btn
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(DIALOG_MARGIN_COMPACT, DIALOG_MARGIN_COMPACT, DIALOG_MARGIN_COMPACT, DIALOG_MARGIN_COMPACT)
         layout.setSpacing(6)
 
         layout.addWidget(make_title("Actions"))
+
+        current_shortcuts = list(S.TRANSCRIPTION_SHORTCUTS)
 
         for key, icon_name, label, desc in self.ACTIONS:
             # Disable options that require files that don't exist
@@ -2442,6 +2447,10 @@ class TranscriptionActionsDialog(DraggableDialog):
                 enabled = False
             if icon_name == 'file-text' and not has_transcript:
                 enabled = False
+
+            row_layout = QHBoxLayout()
+            row_layout.setContentsMargins(0, 0, 0, 0)
+            row_layout.setSpacing(4)
 
             btn = QPushButton()
             btn_layout = QHBoxLayout()
@@ -2478,10 +2487,49 @@ class TranscriptionActionsDialog(DraggableDialog):
             if enabled:
                 btn.clicked.connect(lambda checked, a=key: self._select(a))
                 self._key_map[getattr(Qt.Key, f"Key_{key.upper()}")] = key
-            layout.addWidget(btn)
+            row_layout.addWidget(btn, 1)
+
+            # Shortcut toggle — don't show for Hide action
+            if key != 'H':
+                is_shortcut = key in current_shortcuts
+                toggle_btn = QPushButton()
+                toggle_btn.setFixedSize(ICON_BTN_SIZE_SMALL, ICON_BTN_SIZE_SMALL)
+                toggle_btn.setIconSize(QSize(ICON_SIZE_SMALL, ICON_SIZE_SMALL))
+                toggle_btn.setCheckable(True)
+                toggle_btn.setChecked(is_shortcut)
+                toggle_btn.setToolTip("Show as shortcut button on transcriptions")
+                self._update_shortcut_toggle_style(toggle_btn, icon_name, is_shortcut)
+                toggle_btn.clicked.connect(lambda checked, k=key, t=toggle_btn, i=icon_name: self._on_shortcut_toggle(k, t, i))
+                row_layout.addWidget(toggle_btn, 0, Qt.AlignmentFlag.AlignVCenter)
+                self._shortcut_toggles[key] = toggle_btn
+
+            row_widget = QWidget()
+            row_widget.setLayout(row_layout)
+            layout.addWidget(row_widget)
 
         layout.addWidget(make_close_btn("Esc  Cancel", self.reject))
-        self.setMinimumWidth(200)
+        self.setMinimumWidth(220)
+
+    def _update_shortcut_toggle_style(self, toggle_btn, icon_name, is_on):
+        """Update toggle button appearance: opaque when on, dim when off."""
+        opacity = "1.0" if is_on else "0.2"
+        color = CYAN_CSS if is_on else STYLE.icon_color_muted
+        toggle_btn.setIcon(load_icon(icon_name, color=color))
+        toggle_btn.setStyleSheet(
+            f"QPushButton {{ background: transparent; border: none; border-radius: 4px; opacity: {opacity}; }} "
+            f"QPushButton:hover {{ background: rgba(255,255,255,0.1); }}"
+        )
+
+    def _on_shortcut_toggle(self, key, toggle_btn, icon_name):
+        """Toggle an action's shortcut status and save to settings."""
+        is_on = toggle_btn.isChecked()
+        self._update_shortcut_toggle_style(toggle_btn, icon_name, is_on)
+        shortcuts = list(S.TRANSCRIPTION_SHORTCUTS)
+        if is_on and key not in shortcuts:
+            shortcuts.append(key)
+        elif not is_on and key in shortcuts:
+            shortcuts.remove(key)
+        S.set('TRANSCRIPTION_SHORTCUTS', shortcuts)
 
     def _select(self, action):
         self.selected_action = action
@@ -7529,12 +7577,26 @@ def word_diff_html(old_text, new_text, is_old, highlight=False):
     return ' '.join(result)
 
 
+    # Map action key → (icon_name, label, signal_name)
+    ACTION_INFO = {
+        'C': ('copy', 'Copy', 'copy_clicked'),
+        'B': ('clipboard-plus', 'Append Copy', 'append_copy_clicked'),
+        'T': ('tmux', 'Send to Tmux', 'tmux_clicked'),
+        'P': ('play', 'Play Audio', 'play_clicked'),
+        'R': ('refresh', 'Re-transcribe', 'retranscribe_clicked'),
+        'L': ('robot', 'Run LLM', 'deramble_clicked'),
+        'A': ('file-audio', 'Open Audio', 'open_audio_clicked'),
+        'O': ('file-text', 'Open Transcript', 'open_transcript_clicked'),
+    }
+
 class TranscriptionRow(QFrame):
     """Clickable row for a single transcription text."""
     clicked = pyqtSignal(str)  # Copy action (for backwards compat)
     deramble_clicked = pyqtSignal(str)
+    append_copy_clicked = pyqtSignal(str)  # Append text to clipboard
     hover_changed = pyqtSignal(bool)  # Emitted when hover state changes
     menu_clicked = pyqtSignal()  # Hamburger menu clicked
+    shortcut_action = pyqtSignal(str, str)  # (action_key, text) — generic shortcut action
 
     @staticmethod
     def _btn_style():
@@ -7570,15 +7632,21 @@ class TranscriptionRow(QFrame):
         # Set initial HTML (unhighlighted)
         self._set_diff_highlight(False)
 
-        # Robot button for quick LLM de-ramble (left of hamburger)
-        robot_btn = QPushButton()
-        robot_btn.setFixedSize(ICON_BTN_SIZE_SMALL, ICON_BTN_SIZE_SMALL)
-        robot_btn.setIconSize(QSize(ICON_SIZE, ICON_SIZE))
-        robot_btn.setToolTip("Run LLM de-ramble (L)")
-        robot_btn.clicked.connect(lambda: self.deramble_clicked.emit(self.text))
-        robot_btn.icon_name = "robot"
-        layout.addWidget(robot_btn, 0, Qt.AlignmentFlag.AlignTop)
-        self._buttons.append(robot_btn)
+        # Dynamic shortcut buttons based on S.TRANSCRIPTION_SHORTCUTS
+        shortcut_btn_size = ICON_BTN_SIZE_SMALL - 2  # Slightly smaller to match row height
+        for action_key in S.TRANSCRIPTION_SHORTCUTS:
+            info = ACTION_INFO.get(action_key)
+            if not info:
+                continue
+            icon_name, label, _ = info
+            btn = QPushButton()
+            btn.setFixedSize(shortcut_btn_size, shortcut_btn_size)
+            btn.setIconSize(QSize(ICON_SIZE_SMALL, ICON_SIZE_SMALL))
+            btn.setToolTip(f"{label} ({action_key})")
+            btn.clicked.connect(lambda checked, k=action_key: self._on_shortcut_click(k))
+            btn.icon_name = icon_name
+            layout.addWidget(btn, 0, Qt.AlignmentFlag.AlignTop)
+            self._buttons.append(btn)
 
         # Hamburger menu button (for all actions)
         menu_btn = QPushButton()
@@ -7593,6 +7661,17 @@ class TranscriptionRow(QFrame):
         # Apply initial button styles
         self._update_button_styles()
         self._update_bg(False)
+
+    def _on_shortcut_click(self, action_key):
+        """Handle a shortcut button click by emitting the appropriate signal."""
+        if action_key == 'L':
+            self.deramble_clicked.emit(self.text)
+        elif action_key == 'C':
+            self.clicked.emit(self.text)
+        elif action_key == 'B':
+            self.append_copy_clicked.emit(self.text)
+        else:
+            self.shortcut_action.emit(action_key, self.text)
 
     def _update_label_style(self):
         """Update label text color from current style."""
@@ -7693,6 +7772,7 @@ class TranscriptionRow(QFrame):
 class TranscriptionItem(QFrame):
     """Single transcription entry with one or two rows."""
     copy_clicked = pyqtSignal(str)
+    append_copy_clicked = pyqtSignal(str)  # Append text to clipboard
     deramble_clicked = pyqtSignal(int, str)  # (index, raw_text)
     tmux_clicked = pyqtSignal(str, str)  # (pane_id, text) - send to tmux pane
     play_clicked = pyqtSignal(str)  # audio_path
@@ -7718,15 +7798,19 @@ class TranscriptionItem(QFrame):
         if processed_text:
             raw_row = TranscriptionRow(raw_text, dimmed=True, other_text=processed_text, is_raw=True)
             raw_row.clicked.connect(self.copy_clicked.emit)
+            raw_row.append_copy_clicked.connect(self.append_copy_clicked.emit)
             raw_row.deramble_clicked.connect(lambda _: self.deramble_clicked.emit(self.index, self.raw_text))
             raw_row.menu_clicked.connect(lambda: self._show_actions_menu(raw_text))
+            raw_row.shortcut_action.connect(lambda k, t: self._handle_shortcut_action(k, t))
             raw_row.hover_changed.connect(self._on_hover_changed)
             layout.addWidget(raw_row)
 
             proc_row = TranscriptionRow(processed_text, dimmed=False, other_text=raw_text, is_raw=False)
             proc_row.clicked.connect(self.copy_clicked.emit)
+            proc_row.append_copy_clicked.connect(self.append_copy_clicked.emit)
             proc_row.deramble_clicked.connect(lambda _: self.deramble_clicked.emit(self.index, self.raw_text))
             proc_row.menu_clicked.connect(lambda: self._show_actions_menu(processed_text))
+            proc_row.shortcut_action.connect(lambda k, t: self._handle_shortcut_action(k, t))
             proc_row.hover_changed.connect(self._on_hover_changed)
             layout.addWidget(proc_row)
 
@@ -7735,8 +7819,10 @@ class TranscriptionItem(QFrame):
         else:
             row = TranscriptionRow(raw_text, dimmed=False, show_deramble=False)
             row.clicked.connect(self.copy_clicked.emit)
+            row.append_copy_clicked.connect(self.append_copy_clicked.emit)
             row.deramble_clicked.connect(lambda _: self.deramble_clicked.emit(self.index, self.raw_text))
             row.menu_clicked.connect(lambda: self._show_actions_menu(raw_text))
+            row.shortcut_action.connect(lambda k, t: self._handle_shortcut_action(k, t))
             layout.addWidget(row)
             self.first_row = row
 
@@ -7753,6 +7839,8 @@ class TranscriptionItem(QFrame):
             action = dialog.selected_action
             if action == 'C':
                 self.copy_clicked.emit(text)
+            elif action == 'B':
+                self.append_copy_clicked.emit(text)
             elif action == 'T':
                 self._show_tmux_selector(text)
             elif action == 'P' and self.audio_path:
@@ -7775,6 +7863,19 @@ class TranscriptionItem(QFrame):
         if dialog.exec() == QDialog.DialogCode.Accepted and dialog.selected_pane_id:
             self.tmux_clicked.emit(dialog.selected_pane_id, text)
 
+    def _handle_shortcut_action(self, action_key, text):
+        """Handle shortcut button actions that aren't Copy/AppendCopy/LLM."""
+        if action_key == 'T':
+            self._show_tmux_selector(text)
+        elif action_key == 'P' and self.audio_path:
+            self.play_clicked.emit(self.audio_path)
+        elif action_key == 'R' and self.audio_path:
+            self.retranscribe_clicked.emit(self.audio_path)
+        elif action_key == 'A' and self.audio_path:
+            self.open_audio_clicked.emit(self.audio_path)
+        elif action_key == 'O' and self.transcript_path:
+            self.open_transcript_clicked.emit(self.transcript_path)
+
     def set_top_radius(self, radius):
         """Set rounded top corners on the first row."""
         if self.first_row:
@@ -7796,6 +7897,7 @@ class TranscriptionItem(QFrame):
 class TranscriptionList(QScrollArea):
     """Scrollable list of transcription items."""
     copy_requested = pyqtSignal(str)
+    append_copy_requested = pyqtSignal(str)  # Append text to clipboard
     deramble_requested = pyqtSignal(int, str)  # (index, raw_text)
     tmux_requested = pyqtSignal(str, str)  # (pane_id, text) - send to tmux pane
     play_requested = pyqtSignal(str)  # audio_path
@@ -7835,6 +7937,7 @@ class TranscriptionList(QScrollArea):
     def _connect_item_signals(self, item):
         """Connect all signals from a TranscriptionItem."""
         item.copy_clicked.connect(self.copy_requested.emit)
+        item.append_copy_clicked.connect(self.append_copy_requested.emit)
         item.deramble_clicked.connect(self.deramble_requested.emit)
         item.tmux_clicked.connect(self.tmux_requested.emit)
         item.play_clicked.connect(self.play_requested.emit)
@@ -9009,6 +9112,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         self.output_panel = TextPanel(selectable=True)
         self.transcriptions_panel = TranscriptionList()
         self.transcriptions_panel.copy_requested.connect(self._copy_to_clipboard)
+        self.transcriptions_panel.append_copy_requested.connect(self._append_to_clipboard)
         self.transcriptions_panel.deramble_requested.connect(self._deramble_transcription)
         self.transcriptions_panel.tmux_requested.connect(self._send_to_tmux_pane)
         self.transcriptions_panel.play_requested.connect(self._play_audio_file)
@@ -9222,6 +9326,14 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         rp.string_to_clipboard(text)
         self.pet_container.trigger_copy()
         play_chime('copy')  # E key: copy
+
+    def _append_to_clipboard(self, text):
+        """Append text to current clipboard contents with a newline separator."""
+        existing = rp.clipboard_to_string() or ""
+        combined = existing + "\n" + text if existing else text
+        rp.string_to_clipboard(combined)
+        self.pet_container.trigger_copy()
+        play_chime('copy')
 
     def _deramble_transcription(self, index, raw_text):
         """Process a transcription with LLM and update it in place."""
@@ -10150,6 +10262,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
             # UI / layout
             'PET_TYPES', 'RECORDINGS_DIR', 'TRANSCRIPTIONS_DIR',
             'RESTORE_WINDOW_GEOMETRY', 'WINDOW_GEOMETRY',
+            'TRANSCRIPTION_SHORTCUTS',
         ]
         for key in all_keys:
             if key in data:
