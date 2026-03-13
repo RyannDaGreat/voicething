@@ -506,7 +506,7 @@ DEFAULTS = dict(
     TTS_KITTEN={'voice': DEFAULT_TTS_KITTEN_VOICE, 'speed': DEFAULT_TTS_KITTEN_SPEED},
     SPEAK_BACK_APPEND_INSTRUCTION=True,  # Append TTS instruction to transcriptions
     SPEAK_BACK_TMUX_ONLY=False,  # Only append TTS instruction when sending to tmux (not paste)
-    SPEAK_BACK_WAKE_ONLY=False,  # Only append TTS instruction when recording started by wake word
+    SPEAK_BACK_WAKE_ONLY=True,  # Only append TTS instruction when recording started by wake word
     SPEAK_BACK_INSTRUCTION_TEMPLATE="Reply in chat first as you would normally. Then speak of pure english via ({command} > /dev/null & ) , only 1-2 sentences unless asked for more as it will be played as audio.",
     # NTFY remote TTS settings
     NTFY_ENABLED=True,  # Enable NTFY listener for remote TTS
@@ -1633,7 +1633,10 @@ def _is_menubar_dark():
 # See concerns.md: "SIGBUS crash in macOS ImageIO during setCursor"
 _tray_icon_base = None
 
-def _get_menubar_icon(hue=None):
+TRAY_STRIPE_WIDTH = 4   # Stripe thickness in pixels (at 2x retina)
+TRAY_STRIPE_SPEED = 2   # Pixels to shift per frame
+
+def _get_menubar_icon(hue=None, stripe_offset=None):
     """Create menu bar icon from app icon using QPainter compositing.
 
     Uses QImage + QPainter instead of PIL→PNG→QPixmap.loadFromData to avoid
@@ -1645,6 +1648,9 @@ def _get_menubar_icon(hue=None):
              If float 0-360, recolors entire icon with that hue.
              In dark mode, hue colors are mixed 50% with white.
              In light mode, hue colors are mixed 50% with black.
+        stripe_offset: If not None, draw animated diagonal stripes over the
+             icon to indicate transcription in progress. Value is the pixel
+             offset for animation (increments each frame).
     """
     import colorsys
     global _tray_icon_base
@@ -1667,7 +1673,24 @@ def _get_menubar_icon(hue=None):
 
     img = QImage(_tray_icon_base)  # Copy cached base
 
-    if hue is None:
+    if stripe_offset is not None:
+        # Transcribing: alternating stripes of dark/light moving downward
+        dark = _is_menubar_dark()
+        fg = QColor(255, 255, 255) if dark else QColor(0, 0, 0)
+        dim = QColor(255, 255, 255, 80) if dark else QColor(0, 0, 0, 80)
+        p = QPainter(img)
+        p.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceAtop)
+        h = img.height()
+        w = TRAY_STRIPE_WIDTH
+        cycle = w * 2
+        offset = int(stripe_offset) % cycle
+        y = -cycle + offset
+        while y < h + cycle:
+            in_bright = ((y // w) % 2) == 0
+            p.fillRect(0, y, img.width(), w, fg if in_bright else dim)
+            y += w
+        p.end()
+    elif hue is None:
         # Template: fill with black, preserving alpha
         p = QPainter(img)
         p.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceAtop)
@@ -1689,7 +1712,7 @@ def _get_menubar_icon(hue=None):
     pixmap = QPixmap.fromImage(img)  # Pure Qt, no ImageIO PNG codec
     pixmap.setDevicePixelRatio(2.0)
     icon = QIcon(pixmap)
-    if hue is None:
+    if hue is None and stripe_offset is None:
         icon.setIsMask(True)
     return icon
 
@@ -9080,6 +9103,8 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         self.tray.setIcon(_get_menubar_icon())
         # Tray icon animation state
         self.tray_hue = 0.0
+        self.tray_stripe_offset = 0.0
+        self.tray_animation_mode = None  # None, 'recording', or 'transcribing'
         self.tray_icon_timer = QTimer(self)
         self.tray_icon_timer.timeout.connect(self._update_tray_icon)
         menu = QMenu()
@@ -9106,9 +9131,20 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         self.tray.show()
 
     def _update_tray_icon(self):
-        """Update tray icon with cycling hue."""
-        self.tray_hue = (self.tray_hue + 2) % 360
-        self.tray.setIcon(_get_menubar_icon(hue=self.tray_hue))
+        """Update tray icon animation (hue cycling during recording, stripes during transcription)."""
+        if self.tray_animation_mode == 'transcribing':
+            self.tray_stripe_offset += TRAY_STRIPE_SPEED
+            self.tray.setIcon(_get_menubar_icon(stripe_offset=self.tray_stripe_offset))
+        else:
+            self.tray_hue = (self.tray_hue + 2) % 360
+            self.tray.setIcon(_get_menubar_icon(hue=self.tray_hue))
+
+    def _start_transcribing_animation(self):
+        """Start the stripe animation on the tray icon for transcription/loading."""
+        self.tray_animation_mode = 'transcribing'
+        self.tray_stripe_offset = 0.0
+        if not self.tray_icon_timer.isActive():
+            self.tray_icon_timer.start(50)
 
     def _maybe_hide(self):
         if not S.AUTO_HIDE:
@@ -9606,6 +9642,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         self.waveform.set_samples(np.array([]))
         self.pet_container.set_listening(False)  # Stop pet animation
         self.tray_icon_timer.stop()
+        self.tray_animation_mode = None
         self.tray.setIcon(_get_menubar_icon())  # Reset to template icon
         play_chime('cancel')  # Minor: cancel
         # Resume wake word listener (resets _is_recording flag so it can detect wake words again)
@@ -10210,6 +10247,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         if new_model in VOXTRAL_MODELS:
             hf_model = VOXTRAL_HF_MODELS[new_model]
             self._set_state("transcribing", f"Loading {new_model}...")
+            self._start_transcribing_animation()
             self._switch_tab(0)
 
             def load_voxtral():
@@ -10230,6 +10268,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
             return
 
         self._set_state("transcribing", f"Loading {new_model}...")
+        self._start_transcribing_animation()
         self._switch_tab(0)
 
         def load():
@@ -10269,6 +10308,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         """Transcribe an audio file."""
         self.show()
         self._set_state("transcribing", "Transcribing...")
+        self._start_transcribing_animation()
         self._switch_tab(0)
         play_chime('start_rec')  # D key
         self.last_audio_path = path
@@ -10365,6 +10405,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         )
         self.stream.start()
         self.update_timer.start(8)
+        self.tray_animation_mode = 'recording'
         self.tray_icon_timer.start(50)  # ~20 FPS for smooth animation
 
     def _restore_volume(self):
@@ -10379,8 +10420,9 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
             self.stream.stop()
             self.stream.close()
             self.stream = None
-        self.tray_icon_timer.stop()
-        self.tray.setIcon(_get_menubar_icon())  # Reset to template icon
+        self.tray_animation_mode = 'transcribing'
+        self.tray_stripe_offset = 0.0
+        # Timer keeps running — switches from hue cycling to stripe animation
         self._set_state("transcribing", "Transcribing...")
         self.pet_container.set_listening(False)
         self.pet_container.set_processing(True)  # Emmy: record spin while transcribing
@@ -10489,6 +10531,9 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
 
     def _finish(self):
         self._cleanup()
+        self.tray_icon_timer.stop()
+        self.tray_animation_mode = None
+        self.tray.setIcon(_get_menubar_icon())  # Reset to template icon
         self.pet_container.set_processing(False)  # Emmy: stop record spin
         self._set_state("idle")
         # Resume wake word listener (resets _is_recording flag)
