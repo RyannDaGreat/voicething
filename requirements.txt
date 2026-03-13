@@ -16,3 +16,4 @@ platformdirs
 ollama
 pyfluidsynth
 pedalboard
+hf-xet>=1.4.2

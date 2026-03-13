@@ -1722,10 +1722,8 @@ WHISPER_MODELS = [
     # (key, value, description, download_gb, vram_gb)
     ("A", "macos",              "Apple Speech Recognition (free, no download)", 0,    0),
     ("V", "voxtral-mini-4bit",  "Voxtral Mini 3B 4-bit",                       3.2,  5),
-    # Disabled: HF downloads hang on these larger models (reproduced on 2 separate
-    # computers on separate networks — suspected hf_xet / huggingface_hub bug)
-    # ("X", "voxtral-mini-8bit",  "Voxtral Mini 3B 8-bit",                       5.3,  7),
-    # ("Z", "voxtral-small-4bit", "Voxtral Small 24B 4-bit",                     13,   16),
+    ("X", "voxtral-mini-8bit",  "Voxtral Mini 3B 8-bit",                       5.3,  7),
+    ("Z", "voxtral-small-4bit", "Voxtral Small 24B 4-bit",                     13,   16),
     ("T", "tiny",               "Whisper tiny",                                 0.1,  1),
     ("B", "base",               "Whisper base",                                 0.15, 1),
     ("S", "small",              "Whisper small",                                0.5,  2),
