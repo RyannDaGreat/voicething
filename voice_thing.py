@@ -508,7 +508,7 @@ DEFAULTS = dict(
     SPEAK_BACK_APPEND_INSTRUCTION=True,  # Append TTS instruction to transcriptions
     SPEAK_BACK_TMUX_ONLY=False,  # Only append TTS instruction when sending to tmux (not paste)
     SPEAK_BACK_WAKE_ONLY=True,  # Only append TTS instruction when recording started by wake word
-    SPEAK_BACK_INSTRUCTION_TEMPLATE="Reply in chat first as you would normally. Then speak of pure english via ({command} > /dev/null & ) , only 1-2 sentences unless asked for more as it will be played as audio.",
+    SPEAK_BACK_INSTRUCTION_TEMPLATE="Reply in chat first as you would normally. Then speak in pure English via ({command} > /dev/null &), only 1-2 sentences unless asked for more as it will be played as audio.",
     # NTFY remote TTS settings
     NTFY_ENABLED=True,  # Enable NTFY listener for remote TTS
     NTFY_TOPIC='',  # Topic to listen on (empty = generate random on first enable)
