@@ -175,3 +175,15 @@ When clearing transcriptions via Preferences > "Clear Transcriptions", items rea
 ### Lesson
 
 UI clear operations must also clear the backing data source, not just the display widgets. Otherwise any refresh/update cycle will repopulate from stale data.
+
+---
+
+## 2026-03-13: Wrong rp function name — `clipboard_to_string` doesn't exist
+
+### The Bug
+
+`_append_to_clipboard` called `rp.clipboard_to_string()` which doesn't exist. The correct function is `rp.string_from_clipboard()`.
+
+### Lesson
+
+Always check actual rp API with grep before guessing function names. The rp clipboard convention is `string_to_clipboard` / `string_from_clipboard`, not the reverse naming.
