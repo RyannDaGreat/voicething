@@ -442,7 +442,7 @@ class Settings(dict):
                 self.set(k, v)
 
 DEFAULTS = dict(
-    ENTER_DELAY=0.1,
+    ENTER_DELAY=1.0,
     CUSTOM_WORDS="Claude, Haiku, Veo, Git, tmux, pane, jsonnet. ",
     AUTO_HIDE=False,
     SOUND_ENABLED=True,
@@ -454,10 +454,10 @@ DEFAULTS = dict(
     WHISPER_MODEL='base',
     THEME='cyberpunk_metal',
     # Wake word engine selection and per-engine settings
-    WAKEWORD_ENGINE='openwakeword',  # 'openwakeword' or 'macos'
+    WAKEWORD_ENGINE='macos',  # 'openwakeword' or 'macos'
     WAKEWORD_OPENWAKEWORD={'model': DEFAULT_OPENWAKEWORD_MODEL, 'sensitivity': DEFAULT_OPENWAKEWORD_SENSITIVITY},
     WAKEWORD_MACOS={'phrases': DEFAULT_WAKEWORD_PHRASES, 'stop_phrases': DEFAULT_WAKEWORD_STOP_PHRASES, 'cancel_phrases': DEFAULT_WAKEWORD_CANCEL_PHRASES, 'use_tmux_phrases': True},
-    TMUX_MODE=False,
+    TMUX_MODE=True,
     TMUX_TARGET='%',  # Tmux pane target (% = current pane)
     TMUX_PANE_NAMES={},  # pane_id -> {phrase: str}
     TMUX_PREVIEW_DARK_MODE=True,  # Dark/light terminal preview background
@@ -472,9 +472,9 @@ DEFAULTS = dict(
     AUTO_PASTE=True,  # Use ⌘V to paste after copying
     RESTORE_CLIPBOARD=False,  # Restore original clipboard contents after paste
     LLM_MODEL='OLLAMA:qwen2.5:7b',
-    LLM_PREFIX='Claude Haiku Veo',  # Empty means use default
-    SILENCE_SKIP_ENABLED=False,  # Skip recording during silence
-    SILENCE_THRESHOLD=-65,  # dB threshold below which audio is considered silence
+    LLM_PREFIX='',  # Empty means use DEFAULT_LLM_PREFIX (light derambling)
+    SILENCE_SKIP_ENABLED=True,  # Skip recording during silence
+    SILENCE_THRESHOLD=-70,  # dB threshold below which audio is considered silence
     VOLUME_REDUCTION_ENABLED=False,  # Reduce Mac volume while recording
     VOLUME_REDUCTION_PERCENT=50,  # Target % of original volume (0=mute, 100=no change)
     CHIME_VOLUME=0.5,  # Volume for chimes (0.0 to 1.0)
@@ -498,7 +498,7 @@ DEFAULTS = dict(
     },
     RECORDINGS_DIR=DEFAULT_RECORDINGS_DIR,  # Folder for audio recordings and transcripts
     TRANSCRIPTIONS_DIR=DEFAULT_TRANSCRIPTIONS_DIR,  # Permanent folder for text transcriptions (persists across reboots)
-    ALWAYS_ON_TOP=True,  # Keep window above other windows
+    ALWAYS_ON_TOP=False,  # Keep window above other windows
     SPEAK_BACK_VOICE='say',  # TTS backend: 'say', 'supertonic', or 'kitten'
     # Per-backend TTS settings (each backend remembers its own settings)
     TTS_SAY={'voice': DEFAULT_TTS_SAY_VOICE, 'speed': DEFAULT_TTS_SAY_SPEED},
@@ -509,12 +509,12 @@ DEFAULTS = dict(
     SPEAK_BACK_WAKE_ONLY=False,  # Only append TTS instruction when recording started by wake word
     SPEAK_BACK_INSTRUCTION_TEMPLATE="Reply in chat first as you would normally. Then speak of pure english via ({command} > /dev/null & ) , only 1-2 sentences unless asked for more as it will be played as audio.",
     # NTFY remote TTS settings
-    NTFY_ENABLED=False,  # Enable NTFY listener for remote TTS
+    NTFY_ENABLED=True,  # Enable NTFY listener for remote TTS
     NTFY_TOPIC='',  # Topic to listen on (empty = generate random on first enable)
     NTFY_USE_CURL=True,  # Use curl instead of rp ntfy_send for NTFY instructions
     TTS_TEST_PHRASE="Testing 1, 2, 3",  # Phrase spoken by TTS/NTFY test buttons
     # Window geometry settings
-    RESTORE_WINDOW_GEOMETRY=True,  # Restore window positions/sizes on startup
+    RESTORE_WINDOW_GEOMETRY=False,  # Restore window positions/sizes on startup
     WINDOW_GEOMETRY={},  # window_name -> {x, y, width, height}
 )
 S = Settings(**DEFAULTS)
@@ -1603,11 +1603,29 @@ def load_icon(name, color=None):
     return QIcon(pixmap)
 
 
+_menubar_appearance_probe = None
+
 def _is_menubar_dark():
-    """Check if macOS menu bar is in dark mode."""
-    from AppKit import NSApplication
-    name = NSApplication.sharedApplication().effectiveAppearance().name()
-    return 'Dark' in name
+    """Check if macOS menu bar is in dark mode based on actual menu bar appearance.
+
+    Uses a hidden NSStatusItem's button.effectiveAppearance, which reflects
+    the actual menu bar appearance (driven by wallpaper brightness), NOT the
+    system-wide dark mode setting. Falls back to NSApplication appearance if
+    the probe fails.
+    """
+    global _menubar_appearance_probe
+    try:
+        from AppKit import NSStatusBar, NSVariableStatusItemLength
+        if _menubar_appearance_probe is None:
+            _menubar_appearance_probe = NSStatusBar.systemStatusBar().statusItemWithLength_(NSVariableStatusItemLength)
+            _menubar_appearance_probe.button().setTitle_("")
+            _menubar_appearance_probe.setVisible_(False)
+        name = _menubar_appearance_probe.button().effectiveAppearance().name()
+        return 'dark' in name.lower()
+    except Exception:
+        from AppKit import NSApplication
+        name = NSApplication.sharedApplication().effectiveAppearance().name()
+        return 'Dark' in name
 
 
 # Cache for _get_menubar_icon — loaded once, reused every frame.
@@ -5839,6 +5857,7 @@ class PrefsDialog(DraggableDialog):
         )
         if dialog.exec() == QDialog.DialogCode.Accepted and dialog.confirmed:
             MAIN_WINDOW.transcriptions_panel.clear()
+            MAIN_WINDOW.transcriptions = []
 
     def _clear_console(self):
         """Clear the console output with confirmation."""
@@ -5849,6 +5868,8 @@ class PrefsDialog(DraggableDialog):
         )
         if dialog.exec() == QDialog.DialogCode.Accepted and dialog.confirmed:
             MAIN_WINDOW.output_panel.clear()
+            MAIN_WINDOW.tee._buf.clear()
+            MAIN_WINDOW._last_log_buf_len = 0
 
     def _on_auto_copy_pref_changed(self, state):
         S.set('AUTO_COPY', state == Qt.CheckState.Checked.value)
