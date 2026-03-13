@@ -131,3 +131,47 @@ Launch any PyQt6 app with `DYLD_LIBRARY_PATH="/opt/homebrew/lib"` and resize the
 - `tests/test_sigbus_repro.py`: **Reproduces the actual SIGBUS crash** via subprocess with `DYLD_LIBRARY_PATH=/opt/homebrew/lib`. 3 tests: (1) crash WITH libpng mismatch, (2) no crash WITHOUT, (3) startup guard strips the env var.
 - `tests/test_cursor_crash.py`: Proves old code uses ImageIO (loadFromData), new code avoids it entirely. Also verifies cursor deduplication and icon validity. 5 test cases.
 - `tests/test_menubar_icon.py`: Verifies refactored `_get_menubar_icon` produces valid icons at all hue values with correct sizing.
+
+---
+
+## 2026-03-13: Menu bar dark mode detection wrong — using app appearance instead of status item
+
+### The Bug
+
+`_is_menubar_dark()` used `NSApplication.sharedApplication().effectiveAppearance()` which returns the system-wide dark mode setting, not the actual menu bar appearance. On macOS, the menu bar can be light even when the system is in dark mode — this happens when the desktop wallpaper behind the menu bar area is light. The result: tray icon colors were wrong (too bright/dark) when the menu bar appearance differed from the system setting.
+
+### Root Cause
+
+macOS Big Sur+ makes the menu bar translucent and determines its appearance (light/dark) based on the wallpaper brightness behind it, per display. `NSApplication.effectiveAppearance` only reflects the system-wide setting.
+
+### Fix
+
+Use a hidden `NSStatusItem` probe: `NSStatusBar.systemStatusBar().statusItemWithLength_(NSVariableStatusItemLength)` with `setVisible_(False)`. Its `button().effectiveAppearance()` reflects the actual menu bar appearance. Cached globally in `_menubar_appearance_probe`. Falls back to the old method if PyObjC fails.
+
+### External References
+
+- [yujitach/nsstatusitem-lightdark-detect](https://github.com/yujitach/nsstatusitem-lightdark-detect)
+- [wxWidgets #19269](https://github.com/wxWidgets/wxWidgets/issues/19269)
+- [Apple Developer Forums thread 652540](https://developer.apple.com/forums/thread/652540)
+
+---
+
+## 2026-03-13: Clear transcriptions/console — items reappear after clearing
+
+### The Bug
+
+When clearing transcriptions via Preferences > "Clear Transcriptions", items reappeared as soon as a new transcription was added. Same issue with "Clear Console".
+
+### Root Cause
+
+- **Transcriptions**: `TranscriptionList.clear()` removed widgets from the UI but did not clear `VoiceThingWindow.transcriptions` list (the in-memory data). When `add_transcription_signal` fired, the UI was rebuilt from this still-populated list.
+- **Console**: `output_panel.clear()` cleared the QTextEdit text, but `_update_log()` (called on a timer) immediately repopulated it from `TeeOutput._buf` — the captured stdout buffer was never cleared.
+
+### Fix
+
+- `_clear_transcriptions`: now also clears `MAIN_WINDOW.transcriptions = []`
+- `_clear_console`: now also clears `MAIN_WINDOW.tee._buf.clear()` and resets `MAIN_WINDOW._last_log_buf_len = 0`
+
+### Lesson
+
+UI clear operations must also clear the backing data source, not just the display widgets. Otherwise any refresh/update cycle will repopulate from stale data.

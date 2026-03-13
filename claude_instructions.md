@@ -7,11 +7,15 @@ VoiceThing is a keyboard-driven voice transcription app for macOS built with PyQ
 ## Glossary
 
 - **tray icon cycling**: During recording, the menu bar icon animates by cycling through hue values at 20 FPS (every 50ms via QTimer)
+- **tray icon stripes**: During transcription/model loading, the menu bar icon shows animated horizontal stripes moving downward at 20 FPS
 - **DraggableResizableMixin**: Mixin class providing frameless window drag/resize via mouse events; changes cursor shape at window edges
 - **ImageIO**: macOS system framework for image encoding/decoding. Qt on macOS uses it internally for PNG decoding (`QPixmap.loadFromData`) and cursor bundle loading (`setCursorFromBundle`)
 - **DYLD_LIBRARY_PATH**: macOS environment variable that overrides the dynamic linker's library search path. When it includes `/opt/homebrew/lib`, Homebrew's libpng gets loaded instead of Apple's private copy, causing ImageIO SIGBUS crashes. VoiceThing has a startup guard that moves this to `DYLD_FALLBACK_LIBRARY_PATH` and re-execs.
 - **DYLD_FALLBACK_LIBRARY_PATH**: Searched *after* framework rpaths. Safe for Homebrew libs — ImageIO loads Apple's libpng first, FluidSynth still finds its dylib as a fallback.
 - **0xBAD4007**: The crash address in the SIGBUS bug. It's a corrupted function pointer in ImageIO's `PNGReadPlugin` vtable, caused by Homebrew libpng ABI mismatch.
+- **TRANSCRIPTION_SHORTCUTS**: Settings key storing a list of action keys (e.g. `['L', 'C']`) that appear as quick-access buttons on each transcription row. Configurable via toggle buttons in the actions dialog.
+- **ACTION_INFO**: Module-level dict mapping action keys to `(icon_name, label, signal_name)` tuples. Used by both `TranscriptionActionsDialog` and `TranscriptionRow` to dynamically build shortcut buttons.
+- **Append Copy**: Action that appends transcription text to the clipboard (with newline separator) rather than replacing it. Key: B, icon: clipboard-plus.
 
 ## Key Files
 
@@ -26,6 +30,7 @@ VoiceThing is a keyboard-driven voice transcription app for macOS built with PyQ
 | `tests/test_sigbus_repro.py` | Reproduces the SIGBUS crash via subprocess with DYLD_LIBRARY_PATH |
 | `tests/test_cursor_crash.py` | Verifies ImageIO is bypassed in icon pipeline + cursor dedup |
 | `tests/test_menubar_icon.py` | Verifies menubar icon at all hue values |
+| `assets/clipboard-plus.svg` | Copy icon with plus symbol for "Append Copy" action |
 
 ## Known Crash: macOS ImageIO SIGBUS (Reproduced & Fixed 2026-03-13)
 
@@ -41,6 +46,36 @@ VoiceThing is a keyboard-driven voice transcription app for macOS built with PyQ
 3. **Cursor deduplication**: `_current_edge` in `mouseMoveEvent`, `_table_ibeam` in `eventFilter`. (Defense-in-depth.)
 
 **Verification**: `tests/test_sigbus_repro.py` reproduces the actual SIGBUS crash in a subprocess, then verifies the guard prevents it. `tests/test_cursor_crash.py` verifies ImageIO is bypassed in the icon pipeline.
+
+## Tray Icon Animation States
+
+The menu bar tray icon has three visual states:
+
+| State | Visual | Timer |
+|-------|--------|-------|
+| Idle | Static template icon (auto light/dark via `setIsMask`) | Stopped |
+| Recording | Hue cycling rainbow animation (2°/frame at 20 FPS) | Running (50ms) |
+| Transcribing | Horizontal stripes moving downward | Running (50ms) |
+
+`_is_menubar_dark()` uses a hidden `NSStatusItem` probe to detect the actual menu bar appearance (wallpaper-dependent), not the system-wide dark mode setting.
+
+## Transcription Actions & Shortcuts
+
+Actions available per transcription item (via hamburger menu):
+
+| Key | Icon | Action |
+|-----|------|--------|
+| C | copy | Copy to clipboard |
+| B | clipboard-plus | Append to clipboard |
+| T | tmux | Send to tmux pane |
+| P | play | Play audio recording |
+| R | refresh | Re-transcribe with current model |
+| L | robot | Run LLM de-ramble |
+| A | file-audio | Open audio file in Finder |
+| O | file-text | Open transcript file in Finder |
+| H | eye-off | Hide/remove from list |
+
+Users can toggle which actions appear as **shortcut buttons** on each transcription row (next to the hamburger menu). Toggle controls are in the actions dialog. Stored in `S.TRANSCRIPTION_SHORTCUTS` (default: `['L']`).
 
 ## Constraints
 
