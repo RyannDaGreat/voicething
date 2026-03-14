@@ -9349,6 +9349,8 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         self._select_tmux_pane_signal.connect(self._select_tmux_pane_on_main_thread)
         self._delayed_wake_resume_signal.connect(
             lambda: QTimer.singleShot(S.TMUX_ANNOUNCE_DELAY, self._resume_wake_word_listener))
+        self._cooldown_start_signal.connect(self._start_cooldown_animation)
+        self._cooldown_stop_signal.connect(self._stop_cooldown_animation)
 
         self.update_timer = QTimer()
         self.update_timer.timeout.connect(self._update_display)
@@ -9456,6 +9458,25 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         self.tray_stripe_offset = 0.0
         if not self.tray_icon_timer.isActive():
             self.tray_icon_timer.start(50)
+
+    def _start_cooldown_animation(self, delay_ms):
+        """Start stripe animation during announcement cooldown, auto-stop after delay."""
+        # Only show cooldown stripes if we're idle (don't override recording/transcribing)
+        if self.state != "idle":
+            return
+        self.tray_animation_mode = 'transcribing'
+        self.tray_stripe_offset = 0.0
+        if not self.tray_icon_timer.isActive():
+            self.tray_icon_timer.start(50)
+        QTimer.singleShot(delay_ms, self._stop_cooldown_animation)
+
+    def _stop_cooldown_animation(self):
+        """Stop cooldown stripe animation and reset tray icon."""
+        # Only reset if we're still in the cooldown animation (not recording/transcribing)
+        if self.tray_animation_mode == 'transcribing' and self.state == "idle":
+            self.tray_icon_timer.stop()
+            self.tray_animation_mode = None
+            self.tray.setIcon(_get_menubar_icon())
 
     def _maybe_hide(self):
         if not S.AUTO_HIDE:
@@ -9701,8 +9722,11 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         def speak_and_resume():
             do_tts(text, block=True)
             # Now we know TTS is done — suppress for the configured delay
-            delay_sec = S.TMUX_ANNOUNCE_DELAY / 1000.0
-            self._wake_suppressed_until = time.time() + delay_sec
+            delay_ms = S.TMUX_ANNOUNCE_DELAY
+            self._wake_suppressed_until = time.time() + delay_ms / 1000.0
+            # Show stripe animation during cooldown (signal main thread)
+            if delay_ms > 0:
+                self._cooldown_start_signal.emit(delay_ms)
 
         threading.Thread(target=speak_and_resume, daemon=True).start()
 
