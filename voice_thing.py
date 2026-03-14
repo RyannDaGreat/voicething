@@ -423,6 +423,29 @@ DEFAULT_TTS_SUPERTONIC_VOICE = 'F1'
 DEFAULT_TTS_SUPERTONIC_SPEED = 1.0
 DEFAULT_TTS_KITTEN_VOICE = 'expr-voice-3-f'
 DEFAULT_TTS_KITTEN_SPEED = 1.0
+DEFAULT_TTS_SIRI_VOICE = 'Aaron'
+DEFAULT_TTS_SIRI_RATE = 1.0
+
+def _detect_default_tts_backend():
+    """
+    Query, specific. Returns 'siri' if Siri TTS voices are available, else 'say'.
+
+    Siri TTS requires macOS with SiriTTSService.framework (typically macOS 13+)
+    and pyobjc. Falls back to 'say' on older systems or if enumeration fails.
+
+    Examples:
+        >>> _detect_default_tts_backend() in ('siri', 'say')
+        True
+    """
+    try:
+        voices = rp.get_siri_voices()
+        if voices:
+            return 'siri'
+    except Exception:
+        pass
+    return 'say'
+
+DEFAULT_TTS_BACKEND = _detect_default_tts_backend()
 
 
 class Settings(dict):
@@ -500,11 +523,12 @@ DEFAULTS = dict(
     RECORDINGS_DIR=DEFAULT_RECORDINGS_DIR,  # Folder for audio recordings and transcripts
     TRANSCRIPTIONS_DIR=DEFAULT_TRANSCRIPTIONS_DIR,  # Permanent folder for text transcriptions (persists across reboots)
     ALWAYS_ON_TOP=False,  # Keep window above other windows
-    SPEAK_BACK_VOICE='say',  # TTS backend: 'say', 'supertonic', or 'kitten'
+    SPEAK_BACK_VOICE=DEFAULT_TTS_BACKEND,  # TTS backend: 'say', 'supertonic', 'kitten', or 'siri'
     # Per-backend TTS settings (each backend remembers its own settings)
     TTS_SAY={'voice': DEFAULT_TTS_SAY_VOICE, 'speed': DEFAULT_TTS_SAY_SPEED},
     TTS_SUPERTONIC={'voice': DEFAULT_TTS_SUPERTONIC_VOICE, 'speed': DEFAULT_TTS_SUPERTONIC_SPEED, 'volume': 1.0, 'steps': 5},
     TTS_KITTEN={'voice': DEFAULT_TTS_KITTEN_VOICE, 'speed': DEFAULT_TTS_KITTEN_SPEED},
+    TTS_SIRI={'voice': DEFAULT_TTS_SIRI_VOICE, 'rate': DEFAULT_TTS_SIRI_RATE},
     SPEAK_BACK_APPEND_INSTRUCTION=True,  # Append TTS instruction to transcriptions
     SPEAK_BACK_TMUX_ONLY=False,  # Only append TTS instruction when sending to tmux (not paste)
     SPEAK_BACK_WAKE_ONLY=True,  # Only append TTS instruction when recording started by wake word
@@ -706,6 +730,13 @@ def build_tts_command():
             f"---text 'YOUR_MESSAGE_HERE' ---voice '{cfg.get('voice', DEFAULT_TTS_KITTEN_VOICE)}' "
             f"--speed {cfg.get('speed', DEFAULT_TTS_KITTEN_SPEED)} --block True"
         )
+    elif backend == 'siri':
+        cfg = S.TTS_SIRI
+        return (
+            f"{sys.executable} -m rp call text_to_speech_via_siri "
+            f"---text 'YOUR_MESSAGE_HERE' ---voice '{cfg.get('voice', DEFAULT_TTS_SIRI_VOICE)}' "
+            f"--rate {cfg.get('rate', DEFAULT_TTS_SIRI_RATE)}"
+        )
     else:  # supertonic
         cfg = S.TTS_SUPERTONIC
         return (
@@ -719,7 +750,7 @@ def build_tts_command():
 def do_tts(text, block=True):
     """Speak text using the configured TTS backend.
 
-    Uses per-backend settings from S.TTS_SAY, S.TTS_SUPERTONIC, S.TTS_KITTEN.
+    Uses per-backend settings from S.TTS_SAY, S.TTS_SUPERTONIC, S.TTS_KITTEN, S.TTS_SIRI.
 
     Args:
         text: Text to speak
@@ -744,6 +775,13 @@ def do_tts(text, block=True):
                 voice=cfg.get('voice', DEFAULT_TTS_KITTEN_VOICE),
                 speed=cfg.get('speed', DEFAULT_TTS_KITTEN_SPEED),
                 block=True
+            )
+        elif backend == 'siri':
+            cfg = S.TTS_SIRI
+            rp.text_to_speech_via_siri(
+                text,
+                voice=cfg.get('voice', DEFAULT_TTS_SIRI_VOICE),
+                rate=cfg.get('rate', DEFAULT_TTS_SIRI_RATE),
             )
         elif backend == 'supertonic':
             cfg = S.TTS_SUPERTONIC
@@ -4392,6 +4430,7 @@ class TTSSettingsWidget(QWidget):
         ('say', 'macOS Say'),
         ('supertonic', 'Supertonic'),
         ('kitten', 'Kitten TTS'),
+        ('siri', 'Siri'),
     ]
 
     # Supertonic voice options
@@ -4425,7 +4464,7 @@ class TTSSettingsWidget(QWidget):
         backend_row.setSpacing(8)
         backend_label = QLabel("Engine:")
         backend_label.setStyleSheet(get_pref_label_css())
-        set_tooltip(backend_label, "TTS engine:\n\nmacOS Say = Built-in system voices\nSupertonic = Fast neural TTS (66M params)\nKitten = Lightweight neural TTS (25MB)")
+        set_tooltip(backend_label, "TTS engine:\n\nmacOS Say = Built-in system voices\nSupertonic = Fast neural TTS (66M params)\nKitten = Lightweight neural TTS (25MB)\nSiri = Apple Siri neural voices (XPC)")
         backend_row.addWidget(backend_label)
         self._backend_combo = QComboBox()
         self._backend_combo.setStyleSheet(get_combobox_css())
@@ -4480,7 +4519,7 @@ class TTSSettingsWidget(QWidget):
         self._voice_explore = QPushButton("⋯")
         self._voice_explore.setFixedSize(ICON_BTN_SIZE_SMALL, ICON_BTN_SIZE_SMALL)
         self._voice_explore.setStyleSheet(nav_btn_css)
-        set_tooltip(self._voice_explore, "Browse all macOS voices\n(installed + downloadable)")
+        set_tooltip(self._voice_explore, "Browse all available voices")
         self._voice_explore.clicked.connect(self._open_voice_explorer)
         self._voice_row.addWidget(self._voice_explore)
         self._layout.addLayout(self._voice_row)
@@ -4673,6 +4712,8 @@ class TTSSettingsWidget(QWidget):
             return S.TTS_SAY
         elif backend == 'supertonic':
             return S.TTS_SUPERTONIC
+        elif backend == 'siri':
+            return S.TTS_SIRI
         else:
             return S.TTS_KITTEN
 
@@ -4686,6 +4727,8 @@ class TTSSettingsWidget(QWidget):
             S.set('TTS_SAY', cfg)
         elif backend == 'supertonic':
             S.set('TTS_SUPERTONIC', cfg)
+        elif backend == 'siri':
+            S.set('TTS_SIRI', cfg)
         else:
             S.set('TTS_KITTEN', cfg)
 
@@ -4728,6 +4771,14 @@ class TTSSettingsWidget(QWidget):
             current = cfg.get('voice', DEFAULT_TTS_SUPERTONIC_VOICE)
             idx = [v for v, _ in self.SUPERTONIC_VOICES].index(current) if current in [v for v, _ in self.SUPERTONIC_VOICES] else 0
             self._voice_combo.setCurrentIndex(idx)
+        elif backend == 'siri':
+            siri_voices = rp.get_siri_voices()
+            for name in siri_voices:
+                self._voice_combo.addItem(name, name)
+            current = cfg.get('voice', DEFAULT_TTS_SIRI_VOICE)
+            idx = siri_voices.index(current) if current in siri_voices else 0
+            self._voice_combo.setCurrentIndex(idx)
+            make_combobox_searchable(self._voice_combo)
         else:  # kitten
             for value, label in self.KITTEN_VOICES:
                 self._voice_combo.addItem(label, value)
@@ -4737,21 +4788,28 @@ class TTSSettingsWidget(QWidget):
         self._voice_combo.blockSignals(False)
 
         # Update speed slider
-        speed = cfg.get('speed', DEFAULT_TTS_SAY_SPEED if backend == 'say' else DEFAULT_TTS_SUPERTONIC_SPEED)
         if backend == 'say':
+            speed = cfg.get('speed', DEFAULT_TTS_SAY_SPEED)
             self._speed_slider.setRange(90, 400)
             self._speed_slider.setValue(int(speed))
             self._speed_value.setText(f"{int(speed)} WPM")
             set_tooltip(self._speed_label, "Speech rate in words per minute (90-400)")
+        elif backend == 'siri':
+            rate = cfg.get('rate', DEFAULT_TTS_SIRI_RATE)
+            self._speed_slider.setRange(5, 20)
+            self._speed_slider.setValue(int(rate * 10))
+            self._speed_value.setText(f"{rate:.1f}x")
+            set_tooltip(self._speed_label, "Speech rate multiplier (0.5x–2.0x)")
         else:
+            speed = cfg.get('speed', DEFAULT_TTS_SUPERTONIC_SPEED)
             min_spd = 5 if backend == 'kitten' else 7
             self._speed_slider.setRange(min_spd, 20)
             self._speed_slider.setValue(int(speed * 10))
             self._speed_value.setText(f"{speed:.1f}x")
             set_tooltip(self._speed_label, "Speech speed multiplier")
 
-        # Show/hide voice explorer (say only) and volume/quality (supertonic only)
-        self._voice_explore.setVisible(backend == 'say')
+        # Show/hide voice explorer (say + siri) and volume/quality (supertonic only)
+        self._voice_explore.setVisible(backend in ('say', 'siri'))
         is_supertonic = (backend == 'supertonic')
         self._vol_widget.setVisible(is_supertonic)
         self._qual_widget.setVisible(is_supertonic)
@@ -4798,7 +4856,7 @@ class TTSSettingsWidget(QWidget):
         """Command, specific. Opens VoiceExplorerDialog and applies selection to combo."""
         from voice_explorer import VoiceExplorerDialog
         current = self._voice_combo.currentData() or ""
-        dlg = VoiceExplorerDialog(current_voice=current, parent=self.window())
+        dlg = VoiceExplorerDialog(current_voice=current, parent=self.window(), backend=self._get_backend())
         if dlg.exec() and dlg.selected_voice:
             # Find the voice in the combo box by data value
             for i in range(self._voice_combo.count()):
@@ -4812,6 +4870,9 @@ class TTSSettingsWidget(QWidget):
         if backend == 'say':
             self._save_cfg('speed', value)
             self._speed_value.setText(f"{value} WPM")
+        elif backend == 'siri':
+            self._save_cfg('rate', value / 10.0)
+            self._speed_value.setText(f"{value/10:.1f}x")
         else:
             self._save_cfg('speed', value / 10.0)
             self._speed_value.setText(f"{value/10:.1f}x")
@@ -4819,10 +4880,14 @@ class TTSSettingsWidget(QWidget):
     def _on_speed_released(self):
         backend = self._get_backend()
         cfg = self._get_cfg()
-        speed = cfg.get('speed', DEFAULT_TTS_SAY_SPEED if backend == 'say' else DEFAULT_TTS_SUPERTONIC_SPEED)
         if backend == 'say':
+            speed = cfg.get('speed', DEFAULT_TTS_SAY_SPEED)
             self._speak_demo(f"{int(speed)} words per minute")
+        elif backend == 'siri':
+            rate = cfg.get('rate', DEFAULT_TTS_SIRI_RATE)
+            self._speak_demo(f"{rate:.1f}x speed")
         else:
+            speed = cfg.get('speed', DEFAULT_TTS_SUPERTONIC_SPEED)
             self._speak_demo(f"{speed:.1f}x speed")
 
     def _on_volume_changed(self, value):
@@ -10391,7 +10456,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
             'TMUX_MODE', 'TMUX_TARGET', 'TMUX_PANE_NAMES',
             'TMUX_PHRASES_AS_CONTEXT', 'TMUX_ANNOUNCE_PANE', 'TMUX_ANNOUNCE_DELAY',
             # TTS / speak-back
-            'SPEAK_BACK_VOICE', 'TTS_SAY', 'TTS_SUPERTONIC', 'TTS_KITTEN',
+            'SPEAK_BACK_VOICE', 'TTS_SAY', 'TTS_SUPERTONIC', 'TTS_KITTEN', 'TTS_SIRI',
             'SPEAK_BACK_APPEND_INSTRUCTION', 'SPEAK_BACK_TMUX_ONLY', 'SPEAK_BACK_WAKE_ONLY',
             'SPEAK_BACK_INSTRUCTION_TEMPLATE', 'TTS_TEST_PHRASE',
             # NTFY (topic before enabled, so listener has topic when it starts)
