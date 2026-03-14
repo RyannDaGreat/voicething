@@ -69,7 +69,7 @@ def _get_delegate_class():
                         print(f"[wakeword] Ignoring stop/cancel phrase (not recording)")
                         return
                     if is_start_phrase or is_tmux_phrase:
-                        _delegate_engine.last_detected_phrase = phrase if is_tmux_phrase else None
+                        _delegate_engine.last_detected_phrase = phrase
                         _delegate_engine.on_wake(np.array([], dtype=np.float32))
 
         _SpeechDelegateClass = SpeechDelegate

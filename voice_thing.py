@@ -529,6 +529,7 @@ DEFAULTS = dict(
     TTS_SUPERTONIC={'voice': DEFAULT_TTS_SUPERTONIC_VOICE, 'speed': DEFAULT_TTS_SUPERTONIC_SPEED, 'volume': 1.0, 'steps': 5},
     TTS_KITTEN={'voice': DEFAULT_TTS_KITTEN_VOICE, 'speed': DEFAULT_TTS_KITTEN_SPEED},
     TTS_SIRI={'voice': DEFAULT_TTS_SIRI_VOICE, 'rate': DEFAULT_TTS_SIRI_RATE},
+    TTS_WAKE_VOICES={},  # Per-wake-word voice overrides: {backend: {phrase_lower: voice_name}}
     SPEAK_BACK_APPEND_INSTRUCTION=True,  # Append TTS instruction to transcriptions
     SPEAK_BACK_TMUX_ONLY=False,  # Only append TTS instruction when sending to tmux (not paste)
     SPEAK_BACK_WAKE_ONLY=True,  # Only append TTS instruction when recording started by wake word
@@ -10480,7 +10481,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
             'TMUX_MODE', 'TMUX_TARGET', 'TMUX_PANE_NAMES',
             'TMUX_PHRASES_AS_CONTEXT', 'TMUX_ANNOUNCE_PANE', 'TMUX_ANNOUNCE_DELAY',
             # TTS / speak-back
-            'SPEAK_BACK_VOICE', 'TTS_SAY', 'TTS_SUPERTONIC', 'TTS_KITTEN', 'TTS_SIRI',
+            'SPEAK_BACK_VOICE', 'TTS_SAY', 'TTS_SUPERTONIC', 'TTS_KITTEN', 'TTS_SIRI', 'TTS_WAKE_VOICES',
             'SPEAK_BACK_APPEND_INSTRUCTION', 'SPEAK_BACK_TMUX_ONLY', 'SPEAK_BACK_WAKE_ONLY',
             'SPEAK_BACK_INSTRUCTION_TEMPLATE', 'TTS_TEST_PHRASE',
             # NTFY (topic before enabled, so listener has topic when it starts)
