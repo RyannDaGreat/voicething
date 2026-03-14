@@ -1189,8 +1189,8 @@ def make_combobox_searchable(combo_box):
     text = STYLE.input_text
     completer.popup().setStyleSheet(
         f"QAbstractItemView {{ background-color: {bg}; color: {text}; "
-        f"selection-background-color: {ACCENT}; selection-color: white; "
-        f"border: 1px solid {BORDER_COLOR}; }}"
+        f"selection-background-color: {STYLE.accent_css}; selection-color: white; "
+        f"border: 1px solid {STYLE.border_color}; border-radius: 4px; padding: 2px; }}"
     )
     combo_box.setCompleter(completer)
 
