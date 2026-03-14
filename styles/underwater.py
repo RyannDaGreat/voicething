@@ -202,7 +202,7 @@ class UnderwaterStyle(BaseStyle):
     #  Procedural caustic texture generation
     # ------------------------------------------------------------------
 
-    def _get_caustic_texture(self, width=256, height=256):
+    def _get_caustic_texture(self, width=512, height=512):
         """Return cached caustic light texture as QPixmap."""
         if UnderwaterStyle._caustic_cache is not None:
             return UnderwaterStyle._caustic_cache
@@ -235,38 +235,57 @@ class UnderwaterStyle(BaseStyle):
         xs = np.linspace(0, 2 * np.pi, width,  endpoint=False)
         xg, yg = np.meshgrid(xs, ys)
 
-        # Axis-aligned gratings at integer frequencies tile perfectly.
-        # Mix of horizontal and vertical waves at different frequencies
-        # creates a convincing caustic web pattern.
-        layers = [
-            (np.sin(xg * 3 + 0.0) + 1.0) * 0.5,
-            (np.sin(yg * 3 + 1.1) + 1.0) * 0.5,
-            (np.sin(xg * 5 + 2.3) + 1.0) * 0.5,
-            (np.sin(yg * 4 + 0.7) + 1.0) * 0.5,
-            (np.sin((xg + yg) * 2 + 0.5) + 1.0) * 0.5,  # diagonal (tiles: integer freq on sum)
-            (np.sin((xg - yg) * 3 + 1.8) + 1.0) * 0.5,  # other diagonal
-        ]
+        # Caustic web = product of sine gratings at diverse angles.
+        # Integer coefficients on (xg, yg) guarantee seamless tiling.
+        # Many layers at varied angles break up grid regularity.
+        def _grating(a, b, freq, phase=0.0):
+            """Tileable sine grating: sin(freq * (a*xg + b*yg) + phase) normalized to 0..1."""
+            return (np.sin(freq * (a * xg + b * yg) + phase) + 1.0) * 0.5
 
-        combined = layers[0]
-        for layer in layers[1:]:
-            combined = combined * layer
+        # Primary pattern: 4 groups of 3 gratings each, multiplied within groups
+        # then blended across groups. More diverse than multiplying all together.
+        group_a = (
+            _grating(1, 0, 3, 0.0)       # horizontal, 3 cycles
+            * _grating(0, 1, 4, 1.1)      # vertical, 4 cycles
+            * _grating(1, 1, 2, 0.5)      # 45° diagonal
+        )
+        group_b = (
+            _grating(1, 0, 5, 2.3)        # horizontal, 5 cycles
+            * _grating(0, 1, 3, 0.7)      # vertical, 3 cycles
+            * _grating(1, -1, 3, 1.8)     # -45° diagonal
+        )
+        group_c = (
+            _grating(2, 1, 2, 0.9)        # ~27° diagonal
+            * _grating(1, 2, 2, 1.5)      # ~63° diagonal
+            * _grating(1, 0, 7, 3.1)      # horizontal, 7 cycles
+        )
+        group_d = (
+            _grating(2, -1, 2, 2.1)       # ~-27° diagonal
+            * _grating(1, -2, 2, 0.3)     # ~-63° diagonal
+            * _grating(0, 1, 6, 1.9)      # vertical, 6 cycles
+        )
 
-        combined = (combined - combined.min()) / (combined.max() - combined.min() + 1e-9)
+        # Normalize each group, apply power curve, then blend
+        groups = [group_a, group_b, group_c, group_d]
+        caustic = np.zeros_like(xg)
+        for g in groups:
+            g = (g - g.min()) / (g.max() - g.min() + 1e-9)
+            caustic += g ** 0.35
+        caustic /= len(groups)
+        caustic = (caustic - caustic.min()) / (caustic.max() - caustic.min() + 1e-9)
 
-        # Power curve concentrates brightness into thin bright ridges
-        caustic = combined ** 0.35
-
-        # Detail pass — finer web lines using higher integer frequencies
+        # Detail pass — fine web lines at high integer frequencies
         detail = (
-            ((np.sin(xg * 7) + 1.0) * 0.5)
-            * ((np.sin(yg * 6) + 1.0) * 0.5)
-            * ((np.sin((xg + yg) * 4 + 1.0) + 1.0) * 0.5)
+            _grating(1, 0, 9, 0.4)
+            * _grating(0, 1, 8, 2.7)
+            * _grating(1, 1, 5, 1.0)
+            * _grating(1, -1, 4, 0.6)
         )
         detail = (detail - detail.min()) / (detail.max() - detail.min() + 1e-9)
         detail = detail ** 0.4
 
         # Blend primary and detail
-        caustic = caustic * 0.7 + detail * 0.3
+        caustic = caustic * 0.65 + detail * 0.35
         caustic = (caustic - caustic.min()) / (caustic.max() - caustic.min() + 1e-9)
 
         # Soft gaussian blur (wrap mode for seamless edges)
@@ -353,17 +372,24 @@ class UnderwaterStyle(BaseStyle):
         clip.addRoundedRect(QRectF(rect), self.corner_radius, self.corner_radius)
         painter.setClipPath(clip)
 
-        # Draw tiled caustic texture at reduced opacity
-        # We paint in horizontal strips with decreasing alpha from top to bottom
-        strips = 12
-        strip_h = max(1, height // strips)
-        for i in range(strips):
-            t = i / (strips - 1) if strips > 1 else 0
-            alpha = alpha_top + (alpha_bottom - alpha_top) * t
-            painter.setOpacity(alpha)
-            strip_rect = QRectF(rect.x(), rect.y() + i * strip_h,
-                                width, strip_h + 1)
-            painter.drawTiledPixmap(strip_rect.toAlignedRect(), caustic)
+        # Draw caustic tiled at full opacity, then overlay a gradient from
+        # transparent to the background color to fade it with depth.
+        # This avoids banding from discrete opacity strips.
+        painter.setOpacity(alpha_top)
+        painter.drawTiledPixmap(rect, caustic)
+        painter.setOpacity(1.0)
+
+        # Fade-out gradient: transparent at top → dark ocean at bottom
+        # This progressively covers the caustic, simulating light fading with depth
+        fade_alpha = int(255 * max(0, 1.0 - alpha_bottom / (alpha_top + 1e-9)))
+        fade = QLinearGradient(0, rect.top(), 0, rect.bottom())
+        fade.setColorAt(0.0, QColor(12, 32, 54, 0))
+        fade.setColorAt(0.3, QColor(10, 28, 46, int(fade_alpha * 0.3)))
+        fade.setColorAt(0.7, QColor(8, 22, 38, int(fade_alpha * 0.7)))
+        fade.setColorAt(1.0, QColor(6, 14, 28, fade_alpha))
+        painter.setBrush(QBrush(fade))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawRoundedRect(QRectF(rect), self.corner_radius, self.corner_radius)
 
         painter.setOpacity(1.0)
         painter.setClipping(False)
