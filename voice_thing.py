@@ -4338,17 +4338,8 @@ class TTSInstructionDialog(DraggableDialog):
 
 
 def _get_macos_voices():
-    """Get list of available macOS voices."""
-    import subprocess
-    result = subprocess.run(['say', '-v', '?'], capture_output=True, text=True)
-    voices = []
-    for line in result.stdout.strip().split('\n'):
-        if line:
-            # Format: "VoiceName  lang  # description"
-            parts = line.split()
-            if parts:
-                voices.append(parts[0])
-    return sorted(set(voices))  # Dedupe and sort
+    """Get list of available macOS voices via rp.get_macos_voices (cached)."""
+    return rp.get_macos_voices()
 
 MACOS_VOICES = None  # Lazy-loaded
 
@@ -4414,14 +4405,36 @@ class TTSSettingsWidget(QWidget):
 
         # Voice selector row (content changes per backend)
         self._voice_row = QHBoxLayout()
-        self._voice_row.setSpacing(8)
+        self._voice_row.setSpacing(4)
         self._voice_label = QLabel("Voice:")
         self._voice_label.setStyleSheet(get_pref_label_css())
         self._voice_row.addWidget(self._voice_label)
+        # Prev button
+        self._voice_prev = QPushButton()
+        self._voice_prev.setFixedSize(ICON_BTN_SIZE_SMALL, ICON_BTN_SIZE_SMALL)
+        minus_icon = load_icon('minus', color=ICON_COLOR_DARK)
+        if minus_icon:
+            self._voice_prev.setIcon(minus_icon)
+            self._voice_prev.setIconSize(QSize(ICON_SIZE_SMALL, ICON_SIZE_SMALL))
+        nav_btn_css = get_btn_css().replace("padding: 3px 8px;", "padding: 0px; margin: 0px;").replace("text-align: left;", "text-align: center;")
+        self._voice_prev.setStyleSheet(nav_btn_css)
+        self._voice_prev.clicked.connect(self._voice_decrement)
+        self._voice_row.addWidget(self._voice_prev)
+        # Combo
         self._voice_combo = QComboBox()
         self._voice_combo.setStyleSheet(get_combobox_css())
         self._voice_combo.currentIndexChanged.connect(self._on_voice_changed)
         self._voice_row.addWidget(self._voice_combo, 1)
+        # Next button
+        self._voice_next = QPushButton()
+        self._voice_next.setFixedSize(ICON_BTN_SIZE_SMALL, ICON_BTN_SIZE_SMALL)
+        plus_icon = load_icon('plus', color=ICON_COLOR_DARK)
+        if plus_icon:
+            self._voice_next.setIcon(plus_icon)
+            self._voice_next.setIconSize(QSize(ICON_SIZE_SMALL, ICON_SIZE_SMALL))
+        self._voice_next.setStyleSheet(nav_btn_css)
+        self._voice_next.clicked.connect(self._voice_increment)
+        self._voice_row.addWidget(self._voice_next)
         self._layout.addLayout(self._voice_row)
 
         # Speed slider (all backends, but different ranges)
@@ -4640,10 +4653,20 @@ class TTSSettingsWidget(QWidget):
         if backend == 'say':
             if MACOS_VOICES is None:
                 MACOS_VOICES = _get_macos_voices()
+            qualities = rp.get_macos_voice_qualities()
+            tier_suffix = {
+                'premium':   ' ★',
+                'personal':  ' ●',
+                'eloquence': ' ◆',
+                'compact':   '',
+                'legacy':    '',
+                'novelty':   ' ♪',
+            }
             # Add "Default" as first option (uses system default voice)
             self._voice_combo.addItem("Default (System)", "")
             for v in MACOS_VOICES:
-                self._voice_combo.addItem(v, v)
+                suffix = tier_suffix.get(qualities.get(v, ''), '')
+                self._voice_combo.addItem(v + suffix, v)
             current = cfg.get('voice', '')
             if current == '' or current not in MACOS_VOICES:
                 idx = 0  # Default
@@ -4709,6 +4732,18 @@ class TTSSettingsWidget(QWidget):
         display_text = self._voice_combo.currentText()
         self._save_cfg('voice', voice)
         self._speak_demo(display_text)
+
+    def _voice_increment(self):
+        """Next voice with wrap-around."""
+        count = self._voice_combo.count()
+        if count > 0:
+            self._voice_combo.setCurrentIndex((self._voice_combo.currentIndex() + 1) % count)
+
+    def _voice_decrement(self):
+        """Previous voice with wrap-around."""
+        count = self._voice_combo.count()
+        if count > 0:
+            self._voice_combo.setCurrentIndex((self._voice_combo.currentIndex() - 1) % count)
 
     def _on_speed_changed(self, value):
         backend = self._get_backend()
