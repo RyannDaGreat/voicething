@@ -699,11 +699,15 @@ def make_traffic_light_close(on_click):
     return btn
 
 
-def build_tts_command():
+def build_tts_command(voice_override=None):
     """Build the TTS command string based on current voice settings.
 
-    When NTFY is enabled with a topic, returns the ntfy send command
-    (curl or rp) instead of a local TTS command.
+    Command, specific. When NTFY is enabled with a topic, returns the ntfy
+    send command (curl or rp) instead of a local TTS command.
+
+    Args:
+        voice_override: If set, use this voice name instead of the configured default.
+            Used for per-wake-word voice overrides.
 
     Examples:
         >>> # With NTFY enabled + curl: "curl -s -d 'YOUR_MESSAGE_HERE' ntfy.sh/my_topic"
@@ -718,7 +722,7 @@ def build_tts_command():
     backend = S.SPEAK_BACK_VOICE
     if backend == 'say':
         cfg = S.TTS_SAY
-        voice = cfg.get('voice', DEFAULT_TTS_SAY_VOICE)
+        voice = voice_override or cfg.get('voice', DEFAULT_TTS_SAY_VOICE)
         rate = cfg.get('speed', DEFAULT_TTS_SAY_SPEED)
         if voice:
             return f"say -v {voice} -r {int(rate)} 'YOUR_MESSAGE_HERE'"
@@ -728,41 +732,43 @@ def build_tts_command():
         cfg = S.TTS_KITTEN
         return (
             f"{sys.executable} -m rp call text_to_speech_via_kitten "
-            f"---text 'YOUR_MESSAGE_HERE' ---voice '{cfg.get('voice', DEFAULT_TTS_KITTEN_VOICE)}' "
+            f"---text 'YOUR_MESSAGE_HERE' ---voice '{voice_override or cfg.get('voice', DEFAULT_TTS_KITTEN_VOICE)}' "
             f"--speed {cfg.get('speed', DEFAULT_TTS_KITTEN_SPEED)} --block True"
         )
     elif backend == 'siri':
         cfg = S.TTS_SIRI
         return (
             f"{sys.executable} -m rp call text_to_speech_via_siri "
-            f"---text 'YOUR_MESSAGE_HERE' ---voice '{cfg.get('voice', DEFAULT_TTS_SIRI_VOICE)}' "
+            f"---text 'YOUR_MESSAGE_HERE' ---voice '{voice_override or cfg.get('voice', DEFAULT_TTS_SIRI_VOICE)}' "
             f"--rate {cfg.get('rate', DEFAULT_TTS_SIRI_RATE)}"
         )
     else:  # supertonic
         cfg = S.TTS_SUPERTONIC
         return (
             f"{sys.executable} -m rp call text_to_speech_via_supertonic "
-            f"---text 'YOUR_MESSAGE_HERE' ---voice '{cfg.get('voice', DEFAULT_TTS_SUPERTONIC_VOICE)}' "
+            f"---text 'YOUR_MESSAGE_HERE' ---voice '{voice_override or cfg.get('voice', DEFAULT_TTS_SUPERTONIC_VOICE)}' "
             f"--speed {cfg.get('speed', DEFAULT_TTS_SUPERTONIC_SPEED)} --volume {cfg.get('volume', 1.0)} "
             f"--steps {cfg.get('steps', 5)} --block True"
         )
 
 
-def do_tts(text, block=True):
+def do_tts(text, block=True, voice_override=None):
     """Speak text using the configured TTS backend.
 
-    Uses per-backend settings from S.TTS_SAY, S.TTS_SUPERTONIC, S.TTS_KITTEN, S.TTS_SIRI.
+    Command, specific. Uses per-backend settings from S.TTS_SAY, S.TTS_SUPERTONIC,
+    S.TTS_KITTEN, S.TTS_SIRI.
 
     Args:
         text: Text to speak
         block: If True, wait for speech to complete. If False, run in background thread.
+        voice_override: If set, use this voice name instead of the configured default.
     """
     def _speak():
         import rp
         backend = S.SPEAK_BACK_VOICE
         if backend == 'say':
             cfg = S.TTS_SAY
-            voice = cfg.get('voice', DEFAULT_TTS_SAY_VOICE)
+            voice = voice_override or cfg.get('voice', DEFAULT_TTS_SAY_VOICE)
             rate = cfg.get('speed', DEFAULT_TTS_SAY_SPEED)
             cmd = ['say', '-r', str(int(rate))]
             if voice:  # Only add -v if not using system default
@@ -773,7 +779,7 @@ def do_tts(text, block=True):
             cfg = S.TTS_KITTEN
             rp.text_to_speech_via_kitten(
                 text,
-                voice=cfg.get('voice', DEFAULT_TTS_KITTEN_VOICE),
+                voice=voice_override or cfg.get('voice', DEFAULT_TTS_KITTEN_VOICE),
                 speed=cfg.get('speed', DEFAULT_TTS_KITTEN_SPEED),
                 block=True
             )
@@ -781,14 +787,14 @@ def do_tts(text, block=True):
             cfg = S.TTS_SIRI
             rp.text_to_speech_via_siri(
                 text,
-                voice=cfg.get('voice', DEFAULT_TTS_SIRI_VOICE),
+                voice=voice_override or cfg.get('voice', DEFAULT_TTS_SIRI_VOICE),
                 rate=cfg.get('rate', DEFAULT_TTS_SIRI_RATE),
             )
         elif backend == 'supertonic':
             cfg = S.TTS_SUPERTONIC
             rp.text_to_speech_via_supertonic(
                 text,
-                voice=cfg.get('voice', DEFAULT_TTS_SUPERTONIC_VOICE),
+                voice=voice_override or cfg.get('voice', DEFAULT_TTS_SUPERTONIC_VOICE),
                 speed=cfg.get('speed', DEFAULT_TTS_SUPERTONIC_SPEED),
                 volume=cfg.get('volume', 1.0),
                 steps=cfg.get('steps', 5),
@@ -895,13 +901,16 @@ def _ntfy_listen_loop(topic, gen):
                 time.sleep(0.1)
 
 
-def build_speak_back_instruction():
+def build_speak_back_instruction(voice_override=None):
     """Build the TTS instruction from the user's template (single source of truth).
 
-    The template in S.SPEAK_BACK_INSTRUCTION_TEMPLATE may use {command} which
-    expands to the local TTS command string.
+    Command, specific. The template in S.SPEAK_BACK_INSTRUCTION_TEMPLATE may use
+    {command} which expands to the local TTS command string.
+
+    Args:
+        voice_override: If set, use this voice in the TTS command instead of default.
     """
-    return S.SPEAK_BACK_INSTRUCTION_TEMPLATE.format(command=build_tts_command())
+    return S.SPEAK_BACK_INSTRUCTION_TEMPLATE.format(command=build_tts_command(voice_override=voice_override))
 
 
 # LLM post-processing models for dropdown (curated list for UI)
@@ -9097,6 +9106,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         # Non-settings instance state
         self.wake_word_engine = None  # Wake word engine instance (from wakeword module)
         self._tmux_wake_prefix = None  # Tmux phrase that triggered recording (for prefix)
+        self._wake_voice_phrase = None  # Phrase that triggered recording (for per-wake-word voice override)
         self._recording_from_wake_word = False  # True when current recording was started by wake word
         self._tmux_dialog = None  # Reference to open TmuxSelectionDialog (if any)
         self._blue_mode_override = False  # True when tmux fullscreen forces always-on-top
@@ -9642,6 +9652,16 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         # Copy to new file and transcribe through normal path
         self._transcribe_file(audio_path)
 
+    def _get_wake_voice_override(self):
+        """Look up per-wake-word voice override for the current recording's trigger phrase.
+
+        Query, specific. Returns voice name string or None (use default).
+        """
+        if not self._wake_voice_phrase:
+            return None
+        backend = S.SPEAK_BACK_VOICE
+        return S.TTS_WAKE_VOICES.get(backend, {}).get(self._wake_voice_phrase.lower())
+
     def _do_paste(self, text):
         # Copy is required for any paste operation
         if not S.AUTO_COPY:
@@ -9649,6 +9669,9 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
 
         # Save clipboard for later restore
         saved_clipboard = QApplication.clipboard().text() if S.RESTORE_CLIPBOARD else None
+
+        # Per-wake-word voice override (looked up once, used in all instruction paths)
+        voice_override = self._get_wake_voice_override()
 
         # Voice routing: if tmux mode enabled, check for first phrase match
         tmux_routed = False
@@ -9659,7 +9682,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
                 # Uses tmux_paste_text() which pipes via stdin, no system clipboard needed
                 tmux_text = text
                 if S.SPEAK_BACK_APPEND_INSTRUCTION and not (S.SPEAK_BACK_WAKE_ONLY and not self._recording_from_wake_word):
-                    tmux_text = text + '\n\n' + build_speak_back_instruction()
+                    tmux_text = text + '\n\n' + build_speak_back_instruction(voice_override=voice_override)
                 play_chime('tmux_send')
                 self._do_tmux_paste_to_target(pane_id, tmux_text)
                 tmux_routed = True
@@ -9669,7 +9692,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
             # Append TTS instruction for paste only if enabled and not tmux-only mode
             paste_text = text
             if S.SPEAK_BACK_APPEND_INSTRUCTION and not S.SPEAK_BACK_TMUX_ONLY and not (S.SPEAK_BACK_WAKE_ONLY and not self._recording_from_wake_word):
-                paste_text = text + '\n\n' + build_speak_back_instruction()
+                paste_text = text + '\n\n' + build_speak_back_instruction(voice_override=voice_override)
             self._copy_to_clipboard(paste_text)
             time.sleep(0.1)
             kb = KeyboardController()
@@ -9962,6 +9985,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         if self.state == "idle":
             self._recording_from_wake_word = False
             self._tmux_wake_prefix = None  # Only wake word sets this, not keyboard
+            self._wake_voice_phrase = None
             self.start_recording()
         elif self.state == "recording":
             self.stop_recording()
@@ -10338,13 +10362,23 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         # start_recording() (which runs on main thread via signal) where the engine's
         # _is_recording is still False, causing stop phrases like "over" to be ignored.
         self._pause_wake_word_listener()
-        # Capture tmux phrase prefix from macOS engine (if any)
+        # Capture detected phrase from macOS engine (for tmux prefix + per-wake-word voice)
         self._tmux_wake_prefix = None
+        self._wake_voice_phrase = None
         if self.wake_word_engine is not None:
-            self._tmux_wake_prefix = getattr(self.wake_word_engine, 'last_detected_phrase', None)
+            detected = getattr(self.wake_word_engine, 'last_detected_phrase', None)
             # Clear it after reading
             if hasattr(self.wake_word_engine, 'last_detected_phrase'):
                 self.wake_word_engine.last_detected_phrase = None
+            # Store for voice override lookup (all phrases)
+            self._wake_voice_phrase = detected
+            # Only set tmux prefix if it's actually a tmux phrase
+            if detected and detected.lower() in {
+                info.get('phrase', '').lower()
+                for info in S.TMUX_PANE_NAMES.values()
+                if info.get('phrase')
+            }:
+                self._tmux_wake_prefix = detected
             # Select matching pane on main thread via signal (not here — wrong thread)
             if self._tmux_wake_prefix:
                 phrase_lower = self._tmux_wake_prefix.lower()
