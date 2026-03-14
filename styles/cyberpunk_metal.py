@@ -190,16 +190,42 @@ class CyberpunkMetalStyle(BaseStyle):
         )
 
     def get_background_pixmap(self, height=512):
-        """Dark brushed metal via noise + motion blur."""
+        """Dark brushed metal via seamless noise + motion blur (seamlessly tileable)."""
         if CyberpunkMetalStyle._metal_cache is not None:
             return CyberpunkMetalStyle._metal_cache
 
         from scipy.ndimage import uniform_filter1d
         width = 256
         np.random.seed(42)
-        noise = np.random.randint(0, 40, size=(height, width)).astype(np.float32)
+
+        def seamless_fractal_noise(h, w, octaves=4, persistence=0.5):
+            """Generate seamless tileable fractal noise via modular coordinate wrapping."""
+            noise = np.zeros((h, w), dtype=np.float32)
+            amplitude = 1.0
+            for octave in range(octaves):
+                freq = 2 ** octave
+                seed_h, seed_w = max(2, h // freq), max(2, w // freq)
+                seed = np.random.random((seed_h, seed_w)).astype(np.float32)
+                layer = np.zeros((h, w), dtype=np.float32)
+                for y in range(h):
+                    for x in range(w):
+                        sy = (y / h) * seed_h
+                        sx = (x / w) * seed_w
+                        y0, x0 = int(sy) % seed_h, int(sx) % seed_w
+                        y1, x1 = (y0 + 1) % seed_h, (x0 + 1) % seed_w
+                        fy, fx = sy - int(sy), sx - int(sx)
+                        layer[y, x] = (seed[y0, x0] * (1 - fx) * (1 - fy) +
+                                       seed[y0, x1] * fx * (1 - fy) +
+                                       seed[y1, x0] * (1 - fx) * fy +
+                                       seed[y1, x1] * fx * fy)
+                noise += layer * amplitude
+                amplitude *= persistence
+            return (noise - noise.min()) / (noise.max() - noise.min() + 1e-6)
+
+        # Seamless noise for brushed metal
+        noise = seamless_fractal_noise(height, width, octaves=3, persistence=0.5) * 40
         blurred = uniform_filter1d(noise, size=40, axis=1, mode='wrap')
-        # Dark metal: base around 35-55 (much darker than light metal's 145-195)
+        # Dark metal: base around 35-55
         values = np.clip(35 + blurred - 20, 25, 55).astype(np.uint8)
 
         img = np.zeros((height, width, 4), dtype=np.uint8)

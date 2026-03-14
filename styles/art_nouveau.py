@@ -215,37 +215,68 @@ class ArtNouveauStyle(BaseStyle):
         return ArtNouveauStyle._texture_cache
 
     def _generate_texture(self, width, height):
-        """Generate dark forest texture with organic swirl pattern."""
+        """Generate dark forest texture with organic swirl pattern (seamlessly tileable)."""
         from scipy.ndimage import gaussian_filter
 
         np.random.seed(1890)  # Art Nouveau birth decade
+
+        def seamless_fractal_noise(h, w, octaves=4, persistence=0.5):
+            """Generate seamless tileable fractal noise via modular coordinate wrapping."""
+            noise = np.zeros((h, w), dtype=np.float32)
+            amplitude = 1.0
+            for octave in range(octaves):
+                freq = 2 ** octave
+                seed_h, seed_w = max(2, h // freq), max(2, w // freq)
+                seed = np.random.random((seed_h, seed_w)).astype(np.float32)
+                layer = np.zeros((h, w), dtype=np.float32)
+                for y in range(h):
+                    for x in range(w):
+                        sy = (y / h) * seed_h
+                        sx = (x / w) * seed_w
+                        y0, x0 = int(sy) % seed_h, int(sx) % seed_w
+                        y1, x1 = (y0 + 1) % seed_h, (x0 + 1) % seed_w
+                        fy, fx = sy - int(sy), sx - int(sx)
+                        layer[y, x] = (seed[y0, x0] * (1 - fx) * (1 - fy) +
+                                       seed[y0, x1] * fx * (1 - fy) +
+                                       seed[y1, x0] * (1 - fx) * fy +
+                                       seed[y1, x1] * fx * fy)
+                noise += layer * amplitude
+                amplitude *= persistence
+            return (noise - noise.min()) / (noise.max() - noise.min() + 1e-6)
 
         img = np.zeros((height, width, 4), dtype=np.uint8)
 
         # Dark forest green base
         base_r, base_g, base_b = 22, 38, 30
 
-        for x in range(width):
-            for y in range(height):
-                # Organic swirl — sine interference creates flowing forms
-                swirl = (
-                    math.sin(x * 0.04 + y * 0.02) * 0.3
-                    + math.sin(y * 0.03 - x * 0.015 + 1.7) * 0.25
-                    + math.sin((x + y) * 0.025) * 0.15
-                )
-                noise = np.random.random() * 0.1
+        # Seamless noise layer for organic grain
+        grain_noise = seamless_fractal_noise(height, width, octaves=4, persistence=0.5)
 
-                grain = 0.5 + swirl + noise
-                variation = 0.75 + grain * 0.5
+        # Coordinate grids for tileable sine swirls (2*pi*x/w wraps seamlessly)
+        xs = np.arange(width)[None, :].astype(np.float64)
+        ys = np.arange(height)[:, None].astype(np.float64)
+        tau_x = 2 * math.pi * xs / width
+        tau_y = 2 * math.pi * ys / height
 
-                img[y, x, 0] = int(np.clip(base_r * variation, 12, 50))
-                img[y, x, 1] = int(np.clip(base_g * variation, 22, 68))
-                img[y, x, 2] = int(np.clip(base_b * variation, 16, 52))
-                img[y, x, 3] = 255
+        # Organic swirl — sine interference at tileable frequencies
+        # ALL frequency multipliers MUST be integers for seamless tiling
+        swirl = (
+            np.sin(tau_x * 2 + tau_y * 1) * 0.3
+            + np.sin(tau_y * 2 - tau_x * 1 + 1.7) * 0.25
+            + np.sin(tau_x * 1 + tau_y * 1) * 0.15
+        )
 
-        # Smooth for organic feel
+        grain = 0.5 + swirl + grain_noise * 0.1
+        variation = 0.75 + grain * 0.5
+
+        img[:, :, 0] = np.clip(base_r * variation, 12, 50).astype(np.uint8)
+        img[:, :, 1] = np.clip(base_g * variation, 22, 68).astype(np.uint8)
+        img[:, :, 2] = np.clip(base_b * variation, 16, 52).astype(np.uint8)
+        img[:, :, 3] = 255
+
+        # Smooth for organic feel (mode='wrap' for seamless tiling)
         for c in range(3):
-            img[:, :, c] = gaussian_filter(img[:, :, c].astype(float), sigma=1.2).astype(np.uint8)
+            img[:, :, c] = gaussian_filter(img[:, :, c].astype(float), sigma=1.2, mode='wrap').astype(np.uint8)
 
         qimg = QImage(img.data, width, height, width * 4, QImage.Format.Format_RGBA8888).copy()
         return QPixmap.fromImage(qimg)

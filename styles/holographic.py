@@ -100,26 +100,50 @@ def _generate_holographic_texture(width, height):
 
     np.random.seed(777)
 
-    # --- Layer 1: Brushed dark metal ---
-    metal_noise = np.random.randint(0, 40, size=(height, width)).astype(np.float32)
+    def seamless_fractal_noise(h, w, octaves=4, persistence=0.5):
+        """Generate seamless tileable fractal noise via modular coordinate wrapping."""
+        noise = np.zeros((h, w), dtype=np.float32)
+        amplitude = 1.0
+        for octave in range(octaves):
+            freq = 2 ** octave
+            seed_h, seed_w = max(2, h // freq), max(2, w // freq)
+            seed = np.random.random((seed_h, seed_w)).astype(np.float32)
+            layer = np.zeros((h, w), dtype=np.float32)
+            for y in range(h):
+                for x in range(w):
+                    sy = (y / h) * seed_h
+                    sx = (x / w) * seed_w
+                    y0, x0 = int(sy) % seed_h, int(sx) % seed_w
+                    y1, x1 = (y0 + 1) % seed_h, (x0 + 1) % seed_w
+                    fy, fx = sy - int(sy), sx - int(sx)
+                    layer[y, x] = (seed[y0, x0] * (1 - fx) * (1 - fy) +
+                                   seed[y0, x1] * fx * (1 - fy) +
+                                   seed[y1, x0] * (1 - fx) * fy +
+                                   seed[y1, x1] * fx * fy)
+            noise += layer * amplitude
+            amplitude *= persistence
+        return (noise - noise.min()) / (noise.max() - noise.min() + 1e-6)
+
+    # --- Layer 1: Brushed dark metal (seamless) ---
+    metal_noise = seamless_fractal_noise(height, width, octaves=3, persistence=0.5) * 40
     metal_blurred = uniform_filter1d(metal_noise, size=50, axis=1, mode='wrap')
     # Dark metal base: values around 25-50
     metal = np.clip(25 + metal_blurred - 15, 18, 52).astype(np.float32)
 
-    # --- Layer 2: Rainbow holographic grain ---
-    holo_noise = np.random.random((height, width)).astype(np.float32)
-    holo_smooth = gaussian_filter(holo_noise, sigma=2.0)
-    # Normalize to 0-1 for hue
-    holo_hue = (holo_smooth - holo_smooth.min()) / (holo_smooth.max() - holo_smooth.min())
+    # --- Layer 2: Rainbow holographic grain (seamless) ---
+    holo_hue = seamless_fractal_noise(height, width, octaves=4, persistence=0.5)
 
     # Convert hue to RGB rainbow colors at low saturation and value
     r_holo, g_holo, b_holo = _hsv_to_rgb(holo_hue, 0.6, 0.15)
 
-    # --- Layer 3: Diagonal iridescent bands (coarse) ---
+    # --- Layer 3: Diagonal iridescent bands (coarse, seamlessly tileable) ---
     yy, xx = np.mgrid[0:height, 0:width]
-    # Diagonal coordinate: top-left to bottom-right
-    diag = (xx.astype(np.float32) + yy.astype(np.float32) * 0.7) / 80.0
-    band_hue = (diag % 1.0).astype(np.float32)
+    # Tileable diagonal: integer frequency multipliers on 2*pi-normalized coords
+    # 3 cycles across width + 2 across height ≈ original 256/80 and 256*0.7/80
+    import math
+    tau_x = 2 * math.pi * xx.astype(np.float32) / width
+    tau_y = 2 * math.pi * yy.astype(np.float32) / height
+    band_hue = ((tau_x * 3 + tau_y * 2) / (2 * math.pi) % 1.0).astype(np.float32)
     r_band, g_band, b_band = _hsv_to_rgb(band_hue, 0.5, 0.08)
 
     # --- Combine: metal grayscale + rainbow grain + diagonal bands ---

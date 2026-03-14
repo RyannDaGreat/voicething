@@ -120,7 +120,7 @@ class CRTTerminalStyle(BaseStyle):
 
     # ── Texture generation ──────────────────────────────────────
 
-    def _get_phosphor_texture(self, width=128, height=128):
+    def _get_phosphor_texture(self, width=126, height=126):
         """Get (or generate and cache) the tileable phosphor dot texture."""
         if CRTTerminalStyle._phosphor_cache is not None:
             return CRTTerminalStyle._phosphor_cache
@@ -133,13 +133,12 @@ class CRTTerminalStyle(BaseStyle):
 
     def _generate_phosphor_texture(self, width, height):
         """
-        Generate a tileable phosphor dot grid texture.
+        Generate a seamlessly tileable phosphor dot grid texture.
 
         Each "phosphor" is a tiny bright spot on a 3-pixel grid with slight
         falloff, creating the authentic CRT subpixel look. Very dark between
-        dots, faint green on dots.
+        dots, faint green on dots. Position-keyed hash ensures tiling.
         """
-        np.random.seed(7)
         img = np.zeros((height, width, 4), dtype=np.uint8)
 
         spacing = 3
@@ -153,13 +152,17 @@ class CRTTerminalStyle(BaseStyle):
                 dx = min(gx, spacing - gx)
                 dist = (dx * dx + dy * dy) ** 0.5
 
+                # Position-keyed hash for tileable per-pixel variation
+                cell_y, cell_x = y // spacing, x // spacing
+                h = ((cell_x * 73856093) ^ (cell_y * 19349663)) & 0xFFFFFFFF
+
                 if dist < 0.8:
                     # Phosphor dot center
-                    brightness = 14 + np.random.randint(0, 4)
+                    brightness = 14 + (h % 4)
                     img[y, x] = [0, brightness, 0, 18]
                 elif dist < 1.5:
                     # Phosphor falloff
-                    brightness = 5 + np.random.randint(0, 3)
+                    brightness = 5 + ((h >> 8) % 3)
                     img[y, x] = [0, brightness, 0, 10]
                 else:
                     # Dark gap between phosphors

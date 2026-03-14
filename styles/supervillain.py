@@ -189,7 +189,7 @@ class SupervillainStyle(BaseStyle):
         )
 
     def get_background_pixmap(self, height=512):
-        """Dark evil brushed metal with red undertones."""
+        """Dark evil brushed metal with red undertones (seamlessly tileable)."""
         if SupervillainStyle._metal_cache is not None:
             return SupervillainStyle._metal_cache
 
@@ -198,13 +198,37 @@ class SupervillainStyle(BaseStyle):
         width = 256
         np.random.seed(666)  # Evil seed
 
-        # Dark metal noise
-        noise = np.random.randint(0, 25, size=(height, width)).astype(np.float32)
+        def seamless_fractal_noise(h, w, octaves=4, persistence=0.5):
+            """Generate seamless tileable fractal noise via modular coordinate wrapping."""
+            noise = np.zeros((h, w), dtype=np.float32)
+            amplitude = 1.0
+            for octave in range(octaves):
+                freq = 2 ** octave
+                seed_h, seed_w = max(2, h // freq), max(2, w // freq)
+                seed = np.random.random((seed_h, seed_w)).astype(np.float32)
+                layer = np.zeros((h, w), dtype=np.float32)
+                for y in range(h):
+                    for x in range(w):
+                        sy = (y / h) * seed_h
+                        sx = (x / w) * seed_w
+                        y0, x0 = int(sy) % seed_h, int(sx) % seed_w
+                        y1, x1 = (y0 + 1) % seed_h, (x0 + 1) % seed_w
+                        fy, fx = sy - int(sy), sx - int(sx)
+                        layer[y, x] = (seed[y0, x0] * (1 - fx) * (1 - fy) +
+                                       seed[y0, x1] * fx * (1 - fy) +
+                                       seed[y1, x0] * (1 - fx) * fy +
+                                       seed[y1, x1] * fx * fy)
+                noise += layer * amplitude
+                amplitude *= persistence
+            return (noise - noise.min()) / (noise.max() - noise.min() + 1e-6)
+
+        # Seamless dark metal noise
+        noise = seamless_fractal_noise(height, width, octaves=3, persistence=0.5) * 25
         blurred = uniform_filter1d(noise, size=45, axis=1, mode='wrap')
 
         # Very dark with slight red tinge
         img = np.zeros((height, width, 4), dtype=np.uint8)
-        base = np.clip(15 + blurred - 12, 8, 30).astype(np.uint8)
+        base = np.clip(15 + blurred - 12, 8, 30).astype(np.float32)
 
         # Add slight red tint
         img[:, :, 0] = np.clip(base * 1.3, 10, 40).astype(np.uint8)  # R - slightly more

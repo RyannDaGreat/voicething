@@ -210,56 +210,81 @@ class MahoganyWoodStyle(BaseStyle):
         return MahoganyWoodStyle._wood_cache
 
     def _generate_wood_texture(self, width, height):
-        """Generate the mahogany wood texture (called on cache miss)."""
+        """Generate the mahogany wood texture (seamlessly tileable)."""
         from scipy.ndimage import gaussian_filter
+        import math
 
         np.random.seed(1842)  # Mahogany discovery year-ish
 
-        # Create wood grain pattern
+        def seamless_fractal_noise(h, w, octaves=4, persistence=0.5):
+            """Generate seamless tileable fractal noise via modular coordinate wrapping."""
+            noise = np.zeros((h, w), dtype=np.float32)
+            amplitude = 1.0
+            for octave in range(octaves):
+                freq = 2 ** octave
+                seed_h, seed_w = max(2, h // freq), max(2, w // freq)
+                seed = np.random.random((seed_h, seed_w)).astype(np.float32)
+                layer = np.zeros((h, w), dtype=np.float32)
+                for y in range(h):
+                    for x in range(w):
+                        sy = (y / h) * seed_h
+                        sx = (x / w) * seed_w
+                        y0, x0 = int(sy) % seed_h, int(sx) % seed_w
+                        y1, x1 = (y0 + 1) % seed_h, (x0 + 1) % seed_w
+                        fy, fx = sy - int(sy), sx - int(sx)
+                        layer[y, x] = (seed[y0, x0] * (1 - fx) * (1 - fy) +
+                                       seed[y0, x1] * fx * (1 - fy) +
+                                       seed[y1, x0] * (1 - fx) * fy +
+                                       seed[y1, x1] * fx * fy)
+                noise += layer * amplitude
+                amplitude *= persistence
+            return (noise - noise.min()) / (noise.max() - noise.min() + 1e-6)
+
         img = np.zeros((height, width, 4), dtype=np.uint8)
 
         # Base wood color (mahogany RGB roughly 92, 52, 36)
         base_r, base_g, base_b = 82, 48, 34
 
-        # Create vertical grain lines with variation
-        for x in range(width):
-            # Grain intensity varies across width
-            grain_phase = np.sin(x * 0.15) * 0.3 + np.sin(x * 0.4 + 1.2) * 0.2
-            grain_intensity = 0.5 + grain_phase
+        # Seamless noise for natural grain texture
+        grain_noise = seamless_fractal_noise(height, width, octaves=4, persistence=0.5)
 
-            for y in range(height):
-                # Vertical grain with subtle waviness
-                wave = np.sin(y * 0.02 + x * 0.1) * 8
-                grain_line = np.sin((x + wave) * 0.3) * 0.4 + 0.5
+        # Coordinate grids for tileable sine patterns
+        xs = np.arange(width)[None, :].astype(np.float64)
+        ys = np.arange(height)[:, None].astype(np.float64)
+        tau_x = 2 * math.pi * xs / width
+        tau_y = 2 * math.pi * ys / height
 
-                # Add some noise for natural texture
-                noise = np.random.random() * 0.15
+        # Grain intensity varies across width (tileable)
+        grain_phase = np.sin(tau_x * 4) * 0.3 + np.sin(tau_x * 10 + 1.2) * 0.2
+        grain_intensity = 0.5 + grain_phase
 
-                # Combine for final grain value
-                grain = grain_line * grain_intensity + noise
+        # Vertical grain with subtle waviness (tileable)
+        wave = np.sin(tau_y * 1 + tau_x * 5) * 8
+        grain_line = np.sin((xs + wave) * 0.3 % (2 * math.pi)) * 0.4 + 0.5
 
-                # Apply to base color with variation
-                variation = 0.7 + grain * 0.6
-                img[y, x, 0] = int(np.clip(base_r * variation, 40, 140))
-                img[y, x, 1] = int(np.clip(base_g * variation, 25, 85))
-                img[y, x, 2] = int(np.clip(base_b * variation, 18, 60))
-                img[y, x, 3] = 255
+        grain = grain_line * grain_intensity + grain_noise * 0.15
+        variation = 0.7 + grain * 0.6
 
-        # Add horizontal ring patterns (growth rings visible on quarter-sawn wood)
-        ring_noise = np.random.random((height, width)) * 20 - 10
-        ring_noise = gaussian_filter(ring_noise, sigma=3)
+        img[:, :, 0] = np.clip(base_r * variation, 40, 140).astype(np.uint8)
+        img[:, :, 1] = np.clip(base_g * variation, 25, 85).astype(np.uint8)
+        img[:, :, 2] = np.clip(base_b * variation, 18, 60).astype(np.uint8)
+        img[:, :, 3] = 255
 
-        for y in range(height):
-            ring_intensity = (np.sin(y * 0.05) * 0.5 + 0.5) * 0.3
-            for x in range(width):
-                ring_val = ring_intensity + ring_noise[y, x] / 255
-                img[y, x, 0] = int(np.clip(img[y, x, 0] * (1 + ring_val * 0.15), 0, 255))
-                img[y, x, 1] = int(np.clip(img[y, x, 1] * (1 + ring_val * 0.12), 0, 255))
-                img[y, x, 2] = int(np.clip(img[y, x, 2] * (1 + ring_val * 0.1), 0, 255))
+        # Add horizontal ring patterns with seamless noise
+        ring_noise_raw = seamless_fractal_noise(height, width, octaves=3, persistence=0.4)
+        ring_noise = (ring_noise_raw * 20 - 10)
+        ring_noise = gaussian_filter(ring_noise, sigma=3, mode='wrap')
 
-        # Smooth slightly for natural look
+        ring_intensity = (np.sin(tau_y * 2) * 0.5 + 0.5) * 0.3
+        ring_val = ring_intensity + ring_noise / 255
+
+        img[:, :, 0] = np.clip(img[:, :, 0].astype(float) * (1 + ring_val * 0.15), 0, 255).astype(np.uint8)
+        img[:, :, 1] = np.clip(img[:, :, 1].astype(float) * (1 + ring_val * 0.12), 0, 255).astype(np.uint8)
+        img[:, :, 2] = np.clip(img[:, :, 2].astype(float) * (1 + ring_val * 0.1), 0, 255).astype(np.uint8)
+
+        # Smooth slightly for natural look (mode='wrap' for seamless tiling)
         for c in range(3):
-            img[:, :, c] = gaussian_filter(img[:, :, c].astype(float), sigma=0.8).astype(np.uint8)
+            img[:, :, c] = gaussian_filter(img[:, :, c].astype(float), sigma=0.8, mode='wrap').astype(np.uint8)
 
         qimg = QImage(img.data, width, height, width * 4, QImage.Format.Format_RGBA8888).copy()
         return QPixmap.fromImage(qimg)
@@ -277,39 +302,67 @@ class MahoganyWoodStyle(BaseStyle):
         return MahoganyWoodStyle._pine_cache
 
     def _generate_pine_texture(self, width, height):
-        """Generate the pine wood texture (called on cache miss)."""
+        """Generate the pine wood texture (seamlessly tileable)."""
         from scipy.ndimage import gaussian_filter
+        import math
 
         np.random.seed(3141)
+
+        def seamless_fractal_noise(h, w, octaves=4, persistence=0.5):
+            """Generate seamless tileable fractal noise via modular coordinate wrapping."""
+            noise = np.zeros((h, w), dtype=np.float32)
+            amplitude = 1.0
+            for octave in range(octaves):
+                freq = 2 ** octave
+                seed_h, seed_w = max(2, h // freq), max(2, w // freq)
+                seed = np.random.random((seed_h, seed_w)).astype(np.float32)
+                layer = np.zeros((h, w), dtype=np.float32)
+                for y in range(h):
+                    for x in range(w):
+                        sy = (y / h) * seed_h
+                        sx = (x / w) * seed_w
+                        y0, x0 = int(sy) % seed_h, int(sx) % seed_w
+                        y1, x1 = (y0 + 1) % seed_h, (x0 + 1) % seed_w
+                        fy, fx = sy - int(sy), sx - int(sx)
+                        layer[y, x] = (seed[y0, x0] * (1 - fx) * (1 - fy) +
+                                       seed[y0, x1] * fx * (1 - fy) +
+                                       seed[y1, x0] * (1 - fx) * fy +
+                                       seed[y1, x1] * fx * fy)
+                noise += layer * amplitude
+                amplitude *= persistence
+            return (noise - noise.min()) / (noise.max() - noise.min() + 1e-6)
+
         img = np.zeros((height, width, 4), dtype=np.uint8)
 
         # Pine wood colors - yellowy/tan base
         base_r, base_g, base_b = 180, 140, 85
 
-        for y in range(height):
-            # Horizontal grain lines - tight and frequent
-            grain_phase = np.sin(y * 0.8) * 0.25 + np.sin(y * 2.1 + 0.5) * 0.15
-            grain_intensity = 0.6 + grain_phase
+        # Seamless noise for natural grain
+        grain_noise = seamless_fractal_noise(height, width, octaves=4, persistence=0.5)
 
-            for x in range(width):
-                # Subtle vertical waviness
-                wave = np.sin(x * 0.03 + y * 0.15) * 3
-                grain_line = np.sin((y + wave) * 0.6) * 0.3 + 0.6
+        # Tileable sine grain patterns
+        xs = np.arange(width)[None, :].astype(np.float64)
+        ys = np.arange(height)[:, None].astype(np.float64)
+        tau_x = 2 * math.pi * xs / width
+        tau_y = 2 * math.pi * ys / height
 
-                # Fine noise for natural texture
-                noise = np.random.random() * 0.12
+        grain_phase = np.sin(tau_y * 8) * 0.25 + np.sin(tau_y * 20 + 0.5) * 0.15
+        grain_intensity = 0.6 + grain_phase
 
-                grain = grain_line * grain_intensity + noise
-                variation = 0.75 + grain * 0.5
+        wave = np.sin(tau_x * 1 + tau_y * 3) * 3
+        grain_line = np.sin((ys + wave) * 0.6 % (2 * math.pi)) * 0.3 + 0.6
 
-                img[y, x, 0] = int(np.clip(base_r * variation, 120, 220))
-                img[y, x, 1] = int(np.clip(base_g * variation, 95, 175))
-                img[y, x, 2] = int(np.clip(base_b * variation, 55, 115))
-                img[y, x, 3] = 255
+        grain = grain_line * grain_intensity + grain_noise * 0.12
+        variation = 0.75 + grain * 0.5
 
-        # Light smoothing
+        img[:, :, 0] = np.clip(base_r * variation, 120, 220).astype(np.uint8)
+        img[:, :, 1] = np.clip(base_g * variation, 95, 175).astype(np.uint8)
+        img[:, :, 2] = np.clip(base_b * variation, 55, 115).astype(np.uint8)
+        img[:, :, 3] = 255
+
+        # Light smoothing (mode='wrap' for seamless tiling)
         for c in range(3):
-            img[:, :, c] = gaussian_filter(img[:, :, c].astype(float), sigma=0.5).astype(np.uint8)
+            img[:, :, c] = gaussian_filter(img[:, :, c].astype(float), sigma=0.5, mode='wrap').astype(np.uint8)
 
         qimg = QImage(img.data, width, height, width * 4, QImage.Format.Format_RGBA8888).copy()
         return QPixmap.fromImage(qimg)
@@ -327,21 +380,45 @@ class MahoganyWoodStyle(BaseStyle):
         return MahoganyWoodStyle._blue_noise_cache
 
     def _generate_blue_noise(self, width, height):
-        """Generate the blue noise texture (called on cache miss)."""
+        """Generate the blue noise texture (seamlessly tileable)."""
         from scipy.ndimage import gaussian_filter
 
         np.random.seed(2718)
-        # Generate white noise
-        noise = np.random.random((height, width))
 
-        # High-pass filter to create blue noise effect (subtract blurred from original)
-        blurred = gaussian_filter(noise, sigma=1.5)
+        def seamless_fractal_noise(h, w, octaves=4, persistence=0.5):
+            """Generate seamless tileable fractal noise via modular coordinate wrapping."""
+            noise = np.zeros((h, w), dtype=np.float32)
+            amplitude = 1.0
+            for octave in range(octaves):
+                freq = 2 ** octave
+                seed_h, seed_w = max(2, h // freq), max(2, w // freq)
+                seed = np.random.random((seed_h, seed_w)).astype(np.float32)
+                layer = np.zeros((h, w), dtype=np.float32)
+                for y in range(h):
+                    for x in range(w):
+                        sy = (y / h) * seed_h
+                        sx = (x / w) * seed_w
+                        y0, x0 = int(sy) % seed_h, int(sx) % seed_w
+                        y1, x1 = (y0 + 1) % seed_h, (x0 + 1) % seed_w
+                        fy, fx = sy - int(sy), sx - int(sx)
+                        layer[y, x] = (seed[y0, x0] * (1 - fx) * (1 - fy) +
+                                       seed[y0, x1] * fx * (1 - fy) +
+                                       seed[y1, x0] * (1 - fx) * fy +
+                                       seed[y1, x1] * fx * fy)
+                noise += layer * amplitude
+                amplitude *= persistence
+            return (noise - noise.min()) / (noise.max() - noise.min() + 1e-6)
+
+        # Seamless base noise
+        noise = seamless_fractal_noise(height, width, octaves=5, persistence=0.6)
+
+        # High-pass filter to create blue noise effect (mode='wrap' for seamless)
+        blurred = gaussian_filter(noise, sigma=1.5, mode='wrap')
         blue_noise = noise - blurred
         blue_noise = (blue_noise - blue_noise.min()) / (blue_noise.max() - blue_noise.min())
 
         # Create grayscale image with alpha for overlay
         img = np.zeros((height, width, 4), dtype=np.uint8)
-        # Neutral gray noise that can be blended
         gray_val = (blue_noise * 60 + 30).astype(np.uint8)  # Range ~30-90
         img[:, :, 0] = gray_val
         img[:, :, 1] = gray_val

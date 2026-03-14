@@ -219,9 +219,10 @@ class NeonSignStyle(BaseStyle):
 
         np.random.seed(7742)
 
-        # Brick dimensions
+        # Brick dimensions — brick_h=29 + mortar=3 = h_pitch=32, so 512/32=16 rows
+        # even row count ensures running bond pattern tiles vertically
         brick_w = 64
-        brick_h = 28
+        brick_h = 29
         mortar = 3
 
         # Base image - mortar color everywhere first
@@ -232,14 +233,42 @@ class NeonSignStyle(BaseStyle):
         img[:, :, 2] = 14
         img[:, :, 3] = 255
 
-        # Surface noise for roughness (tileable)
-        noise_fine = np.random.random((height, width)).astype(np.float32)
+        # Ensure brick layout tiles: dimensions must be multiples of brick+mortar pitch
+        h_pitch = brick_h + mortar  # vertical pitch per row
+        w_pitch = brick_w + mortar  # horizontal pitch per brick
+
+        # Surface noise for roughness (seamless via fractal noise)
+        def seamless_fractal_noise(h, w, octaves=4, persistence=0.5):
+            """Generate seamless tileable fractal noise via modular coordinate wrapping."""
+            noise = np.zeros((h, w), dtype=np.float32)
+            amplitude = 1.0
+            for octave in range(octaves):
+                freq = 2 ** octave
+                seed_h, seed_w = max(2, h // freq), max(2, w // freq)
+                seed = np.random.random((seed_h, seed_w)).astype(np.float32)
+                layer = np.zeros((h, w), dtype=np.float32)
+                for yy in range(h):
+                    for xx in range(w):
+                        sy = (yy / h) * seed_h
+                        sx = (xx / w) * seed_w
+                        y0, x0 = int(sy) % seed_h, int(sx) % seed_w
+                        y1, x1 = (y0 + 1) % seed_h, (x0 + 1) % seed_w
+                        fy, fx = sy - int(sy), sx - int(sx)
+                        layer[yy, xx] = (seed[y0, x0] * (1 - fx) * (1 - fy) +
+                                         seed[y0, x1] * fx * (1 - fy) +
+                                         seed[y1, x0] * (1 - fx) * fy +
+                                         seed[y1, x1] * fx * fy)
+                noise += layer * amplitude
+                amplitude *= persistence
+            return (noise - noise.min()) / (noise.max() - noise.min() + 1e-6)
+
+        noise_fine = seamless_fractal_noise(height, width, octaves=5, persistence=0.6)
         noise_fine = gaussian_filter(noise_fine, sigma=1.2, mode='wrap')
-        noise_coarse = np.random.random((height, width)).astype(np.float32)
+        noise_coarse = seamless_fractal_noise(height, width, octaves=3, persistence=0.5)
         noise_coarse = gaussian_filter(noise_coarse, sigma=4.0, mode='wrap')
 
         # Aging / stain noise - large scale for patches of discoloration
-        stain_noise = np.random.random((height, width)).astype(np.float32)
+        stain_noise = seamless_fractal_noise(height, width, octaves=2, persistence=0.4)
         stain_noise = gaussian_filter(stain_noise, sigma=12.0, mode='wrap')
 
         # Per-brick color assignment: precompute a grid of brick colors
@@ -285,45 +314,56 @@ class NeonSignStyle(BaseStyle):
                     base_r = min(base_r + 10, 80)
                     base_g = min(base_g + 3, 38)
 
-                # Clamp pixel ranges for this brick
-                px0 = max(x0, 0)
-                px1 = min(x1, width)
+                # Draw brick with wrapping for seamless tiling
                 py0 = max(y0, 0)
                 py1 = min(y1, height)
-                if px0 >= px1 or py0 >= py1:
+                if py0 >= py1:
                     continue
 
-                # Per-pixel variation from noise
-                region_fine = noise_fine[py0:py1, px0:px1]
-                region_coarse = noise_coarse[py0:py1, px0:px1]
-                region_stain = stain_noise[py0:py1, px0:px1]
+                # Handle horizontal wrapping: brick may span across the tile edge
+                def _draw_brick_slice(sx0, sx1, sy0, sy1):
+                    """Draw one slice of a brick (handles wrapped x-coords)."""
+                    region_fine = noise_fine[sy0:sy1, sx0:sx1]
+                    region_coarse = noise_coarse[sy0:sy1, sx0:sx1]
+                    region_stain = stain_noise[sy0:sy1, sx0:sx1]
+                    variation = (
+                        (region_fine - 0.5) * 9
+                        + (region_coarse - 0.5) * 6
+                        + (region_stain - 0.5) * 4
+                    )
+                    img[sy0:sy1, sx0:sx1, 0] = np.clip(base_r + variation, 25, 85).astype(np.uint8)
+                    img[sy0:sy1, sx0:sx1, 1] = np.clip(base_g + variation * 0.5, 12, 40).astype(np.uint8)
+                    img[sy0:sy1, sx0:sx1, 2] = np.clip(base_b + variation * 0.35, 10, 30).astype(np.uint8)
+                    # Top edge highlight
+                    if sy0 == y0:
+                        img[sy0, sx0:sx1, 0] = np.clip(img[sy0, sx0:sx1, 0].astype(np.int16) + 6, 0, 90).astype(np.uint8)
+                        img[sy0, sx0:sx1, 1] = np.clip(img[sy0, sx0:sx1, 1].astype(np.int16) + 3, 0, 45).astype(np.uint8)
+                        img[sy0, sx0:sx1, 2] = np.clip(img[sy0, sx0:sx1, 2].astype(np.int16) + 2, 0, 35).astype(np.uint8)
+                    # Bottom edge shadow
+                    if sy1 == y1 and sy1 > sy0 + 1:
+                        img[sy1-1, sx0:sx1, 0] = np.clip(img[sy1-1, sx0:sx1, 0].astype(np.int16) - 5, 0, 255).astype(np.uint8)
+                        img[sy1-1, sx0:sx1, 1] = np.clip(img[sy1-1, sx0:sx1, 1].astype(np.int16) - 3, 0, 255).astype(np.uint8)
+                        img[sy1-1, sx0:sx1, 2] = np.clip(img[sy1-1, sx0:sx1, 2].astype(np.int16) - 2, 0, 255).astype(np.uint8)
 
-                # Combine: fine roughness + coarse variation + stain (halved)
-                variation = (
-                    (region_fine - 0.5) * 9
-                    + (region_coarse - 0.5) * 6
-                    + (region_stain - 0.5) * 4
-                )
-
-                img[py0:py1, px0:px1, 0] = np.clip(base_r + variation, 25, 85).astype(np.uint8)
-                img[py0:py1, px0:px1, 1] = np.clip(base_g + variation * 0.5, 12, 40).astype(np.uint8)
-                img[py0:py1, px0:px1, 2] = np.clip(base_b + variation * 0.35, 10, 30).astype(np.uint8)
-
-                # Subtle edge shading on brick (halved for readability)
-                # Top edge highlight (1px)
-                if py0 == y0 and py1 > py0 + 1:
-                    img[py0, px0:px1, 0] = np.clip(img[py0, px0:px1, 0].astype(np.int16) + 6, 0, 90).astype(np.uint8)
-                    img[py0, px0:px1, 1] = np.clip(img[py0, px0:px1, 1].astype(np.int16) + 3, 0, 45).astype(np.uint8)
-                    img[py0, px0:px1, 2] = np.clip(img[py0, px0:px1, 2].astype(np.int16) + 2, 0, 35).astype(np.uint8)
-                # Bottom edge shadow (1px)
-                if py1 == y1 and py1 > py0 + 1:
-                    img[py1-1, px0:px1, 0] = np.clip(img[py1-1, px0:px1, 0].astype(np.int16) - 5, 0, 255).astype(np.uint8)
-                    img[py1-1, px0:px1, 1] = np.clip(img[py1-1, px0:px1, 1].astype(np.int16) - 3, 0, 255).astype(np.uint8)
-                    img[py1-1, px0:px1, 2] = np.clip(img[py1-1, px0:px1, 2].astype(np.int16) - 2, 0, 255).astype(np.uint8)
+                if x0 < 0:
+                    # Brick wraps from left edge — draw the right portion at x=0
+                    # and the wrapped portion at the right edge
+                    _draw_brick_slice(0, min(x1, width), py0, py1)
+                    _draw_brick_slice(x0 % width, width, py0, py1)
+                elif x1 > width:
+                    # Brick extends past right edge — draw within bounds
+                    # and wrap the overflow to the left side
+                    _draw_brick_slice(x0, width, py0, py1)
+                    _draw_brick_slice(0, x1 % width, py0, py1)
+                else:
+                    _draw_brick_slice(max(x0, 0), min(x1, width), py0, py1)
 
         # Add mortar line noise - mortar isn't perfectly smooth
+        # Use position-keyed hash for seamless tiling (np.random would break tiling)
         mortar_mask = img[:, :, 0] < 30  # Mortar pixels are darker
-        mortar_noise = (np.random.random((height, width)) * 6 - 3).astype(np.int16)
+        yy_grid, xx_grid = np.mgrid[0:height, 0:width]
+        mortar_hash = ((xx_grid.astype(np.int64) * 73856093) ^ (yy_grid.astype(np.int64) * 19349663)) & 0xFFFFFFFF
+        mortar_noise = ((mortar_hash % 7) - 3).astype(np.int16)  # range -3..+3
         for c in range(3):
             channel = img[:, :, c].astype(np.int16)
             channel[mortar_mask] += mortar_noise[mortar_mask]
