@@ -21,6 +21,13 @@ from .synthwave import SynthwaveStyle
 from .manuscript import ManuscriptStyle
 from .art_nouveau import ArtNouveauStyle
 from .midnight_glass import MidnightGlassStyle
+from .vista_aero import VistaAeroStyle
+from .tropical_jungle import TropicalJungleStyle
+from .autumn_harvest import AutumnHarvestStyle
+from .honeycomb import HoneycombStyle
+from .emerald_terminal import EmeraldTerminalStyle
+from .desert_sunset import DesertSunsetStyle
+from .minecraft import MinecraftStyle
 
 STYLES = {
     "macos_2005": MacOS2005Style,
@@ -44,6 +51,13 @@ STYLES = {
     "manuscript": ManuscriptStyle,
     "art_nouveau": ArtNouveauStyle,
     "midnight_glass": MidnightGlassStyle,
+    "vista_aero": VistaAeroStyle,
+    "tropical_jungle": TropicalJungleStyle,
+    "autumn_harvest": AutumnHarvestStyle,
+    "honeycomb": HoneycombStyle,
+    "emerald_terminal": EmeraldTerminalStyle,
+    "desert_sunset": DesertSunsetStyle,
+    "minecraft": MinecraftStyle,
 }
 
 def get_style(name="macos_2005"):
