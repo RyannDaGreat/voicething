@@ -304,7 +304,10 @@ def _pump_runloop(done_event, timeout_seconds):
 _cached_voices = None
 
 _TYPE_MAP = {4: "neural", 5: "neuralAX", 6: "natural"}
+_TYPE_RMAP = {"neural": 4, "neuralAX": 5, "natural": 6}
 _GENDER_MAP = {1: "male", 2: "female", 3: "neutral"}
+# Higher = better quality. Used to pick the best variant when a name has duplicates.
+_TYPE_RANK = {"natural": 2, "neural": 1, "neuralAX": 0}
 
 
 def _verify_voice(session, voice_obj):
@@ -355,9 +358,13 @@ def list_voices(verify=True):
     to confirm the daemon would actually use it and not silently substitute another.
     Cached after first call.
 
+    Deduplicates voices that appear under multiple quality tiers (e.g. Simone exists
+    as both 'natural' and 'neural'). Keeps only the highest quality variant per
+    (name, language) pair. Ranking: natural > neural > neuralAX.
+
     Args:
-        verify (bool): If True, exclude voices that would fall back. Adds ~50ms
-            total (all voices checked in sequence, ~2ms each).
+        verify (bool): If True, exclude voices that would fall back. Adds ~500ms
+            on first call (all voices checked via XPC, ~20ms each).
 
     Returns:
         list of dict: each with keys 'name', 'language', 'type', 'gender'
@@ -392,48 +399,56 @@ def list_voices(verify=True):
     session.downloadedVoicesMatching_reply_(None, on_reply)
     _pump_runloop(done, 5)
 
-    voices = []
+    # Build dicts, deduplicating by (name, language) — keep highest quality type
+    best = {}  # (name, language) -> voice dict
     for v in raw_voices:
         name = str(v.name())
         lang = str(v.language())
+        vtype = _TYPE_MAP.get(v.type(), "unknown_%d" % v.type())
 
         if verify:
-            # Build a fresh voice spec to test resolution
             test_voice = SynthVoice.alloc().initWithLanguage_name_(lang, name)
             if not _verify_voice(session, test_voice):
                 continue
 
-        voices.append({
-            "name": name,
-            "language": lang,
-            "type": _TYPE_MAP.get(v.type(), "unknown_%d" % v.type()),
-            "gender": _GENDER_MAP.get(v.gender(), "unknown_%d" % v.gender()),
-        })
+        key = (name, lang)
+        rank = _TYPE_RANK.get(vtype, -1)
+        existing = best.get(key)
+        if existing is None or rank > _TYPE_RANK.get(existing["type"], -1):
+            best[key] = {
+                "name": name,
+                "language": lang,
+                "type": vtype,
+                "gender": _GENDER_MAP.get(v.gender(), "unknown_%d" % v.gender()),
+            }
 
+    voices = list(best.values())
     _cached_voices = voices
     return voices
 
 
-def _resolve_language(voice_name):
+def _resolve_voice(voice_name):
     """
-    Query, specific. Look up the BCP-47 language for a voice name from the cached voice list.
+    Query, specific. Look up language and type for a voice name from the cached voice list.
+
+    Returns the best-quality variant when duplicates exist (natural > neural > neuralAX).
 
     Args:
         voice_name (str): e.g. "Aaron", "Martha"
 
     Returns:
-        str: language tag, e.g. "en-US", "en-GB"
+        tuple: (language, type_str) e.g. ("en-US", "natural"), ("en-GB", "natural")
 
     Raises:
         ValueError: if voice_name not found in downloaded voices
 
     Examples:
-        >>> # _resolve_language("Aaron") -> "en-US"
-        >>> # _resolve_language("Martha") -> "en-GB"
+        >>> # _resolve_voice("Aaron") -> ("en-US", "natural")
+        >>> # _resolve_voice("Martha") -> ("en-GB", "natural")
     """
     for v in list_voices(verify=False):
         if v["name"] == voice_name:
-            return v["language"]
+            return v["language"], v["type"]
     raise ValueError(
         "Voice '%s' not found in downloaded Siri voices. "
         "Available: %s" % (voice_name, ", ".join(v["name"] for v in list_voices(verify=False)))
@@ -448,7 +463,10 @@ def synthesize(text, voice_name, language=None, rate=1.0, pitch=1.0, volume=0.8)
     on each callback determines the format — either LPCM (raw PCM) or Opus (needs decoding).
     This function handles both transparently.
 
-    Language is auto-detected from the voice name if not specified.
+    When language is None (default), auto-resolves both language and voice type from
+    list_voices(). The voice type is pinned on the SiriTTSSynthesisVoice object so
+    the daemon uses the best available variant (natural > neural > neuralAX) rather
+    than picking arbitrarily when a name has multiple tiers (e.g. Simone).
 
     Args:
         text (str): Text to speak
@@ -466,8 +484,9 @@ def synthesize(text, voice_name, language=None, rate=1.0, pitch=1.0, volume=0.8)
         RuntimeError: if sirittsd returns an error or unknown audio format
         ValueError: if voice_name not found in downloaded voices
     """
+    voice_type = None
     if language is None:
-        language = _resolve_language(voice_name)
+        language, voice_type = _resolve_voice(voice_name)
 
     _ensure_framework()
 
@@ -478,6 +497,9 @@ def synthesize(text, voice_name, language=None, rate=1.0, pitch=1.0, volume=0.8)
     SynthRequest = objc.lookUpClass("SiriTTSSynthesisRequest")
 
     voice = SynthVoice.alloc().initWithLanguage_name_(language, voice_name)
+    # Pin to the best quality type so the daemon doesn't pick a worse variant
+    if voice_type is not None and voice_type in _TYPE_RMAP:
+        voice.setType_(_TYPE_RMAP[voice_type])
     request = SynthRequest.alloc().initWithText_voice_(text, voice)
     ctx = request.synthesisContext()
 
