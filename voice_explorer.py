@@ -41,11 +41,13 @@ from voice_thing import (
 
 # Column indices
 COL_NAME = 0
-COL_TIER = 1
-COL_LANG = 2
-COL_GENDER = 3
-COL_SIZE = 4
-COL_STATUS = 5
+COL_SIRI = 1
+COL_TIER = 2
+COL_LANG = 3
+COL_GENDER = 4
+COL_SIZE = 5
+COL_STATUS = 6
+NUM_COLS = 7
 
 # Preview debounce delay (ms) — prevents overwhelming `say` when arrowing fast
 PREVIEW_DEBOUNCE_MS = 300
@@ -68,7 +70,8 @@ class VoiceExplorerDialog(DraggableDialog):
     Command, specific. Modal dialog for browsing and selecting macOS TTS voices.
 
     Shows both installed and downloadable voices from the local AssetsV2 catalog.
-    Supports filtering by tier, live preview with debounce, and keyboard nav.
+    Supports filtering by tier and Siri status, live preview with debounce, and
+    keyboard nav.
     """
     window_name = "voice_explorer"
 
@@ -81,7 +84,7 @@ class VoiceExplorerDialog(DraggableDialog):
         self._all_entries = []      # Full catalog
         self._build_ui()
         self._load_catalog()
-        self.resize(680, 500)
+        self.resize(720, 500)
         self.center_on_parent()
 
     # ── UI Construction ────────────────────────────────────────────────
@@ -123,6 +126,13 @@ class VoiceExplorerDialog(DraggableDialog):
 
         filter_row.addStretch()
 
+        self._siri_only = QCheckBox("Siri only")
+        self._siri_only.setChecked(False)
+        self._siri_only.setStyleSheet(get_checkbox_css())
+        set_tooltip(self._siri_only, "Show only Siri neural voices (premium tier).")
+        self._siri_only.stateChanged.connect(self._apply_filters)
+        filter_row.addWidget(self._siri_only)
+
         self._show_not_installed = QCheckBox("Not installed")
         self._show_not_installed.setChecked(True)
         self._show_not_installed.setStyleSheet(get_checkbox_css())
@@ -134,8 +144,8 @@ class VoiceExplorerDialog(DraggableDialog):
 
         # Table
         self._table = QTableWidget()
-        self._table.setColumnCount(6)
-        self._table.setHorizontalHeaderLabels(["Name", "Tier", "Language", "Gender", "Size", "Status"])
+        self._table.setColumnCount(NUM_COLS)
+        self._table.setHorizontalHeaderLabels(["Name", "Siri", "Tier", "Language", "Gender", "Size", "Status"])
         self._table.setStyleSheet(
             f"QTableWidget {{ {PANEL_BG_FLAT_CSS} color: {TEXT_PRIMARY}; "
             f"border: 1px solid {BORDER_COLOR}; font-family: Menlo, monospace; font-size: 11px; }} "
@@ -208,12 +218,15 @@ class VoiceExplorerDialog(DraggableDialog):
         """Command, specific. Rebuilds table rows from _all_entries based on active filters."""
         active_tiers = {k for k, cb in self._tier_checks.items() if cb.isChecked()}
         show_not_installed = self._show_not_installed.isChecked()
+        siri_only = self._siri_only.isChecked()
 
         self._catalog = []
         for entry in self._all_entries:
             if entry['footprint'] not in active_tiers:
                 continue
             if not entry['installed'] and not show_not_installed:
+                continue
+            if siri_only and not entry['siri']:
                 continue
             self._catalog.append(entry)
 
@@ -228,6 +241,9 @@ class VoiceExplorerDialog(DraggableDialog):
             name_item = QTableWidgetItem(entry['name'])
             name_item.setData(Qt.ItemDataRole.UserRole, entry['name'])
             self._table.setItem(row, COL_NAME, name_item)
+
+            siri_text = "✓" if entry['siri'] else ""
+            self._table.setItem(row, COL_SIRI, QTableWidgetItem(siri_text))
 
             tier_label = TIER_LABELS.get(entry['footprint'], entry['footprint'])
             self._table.setItem(row, COL_TIER, QTableWidgetItem(tier_label))
@@ -250,17 +266,18 @@ class VoiceExplorerDialog(DraggableDialog):
 
             # Dim not-installed rows
             if not entry['installed']:
-                for col in range(6):
+                for col in range(NUM_COLS):
                     item = self._table.item(row, col)
                     if item:
                         item.setForeground(STYLE.accent if col == COL_STATUS else _dim_color())
 
         # Column widths
-        self._table.setColumnWidth(COL_NAME, 140)
-        self._table.setColumnWidth(COL_TIER, 100)
-        self._table.setColumnWidth(COL_LANG, 70)
-        self._table.setColumnWidth(COL_GENDER, 60)
-        self._table.setColumnWidth(COL_SIZE, 65)
+        self._table.setColumnWidth(COL_NAME, 130)
+        self._table.setColumnWidth(COL_SIRI, 40)
+        self._table.setColumnWidth(COL_TIER, 95)
+        self._table.setColumnWidth(COL_LANG, 65)
+        self._table.setColumnWidth(COL_GENDER, 55)
+        self._table.setColumnWidth(COL_SIZE, 60)
         # Status stretches via setStretchLastSection
 
         self._table.setSortingEnabled(True)
