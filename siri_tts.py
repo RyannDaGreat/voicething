@@ -455,7 +455,7 @@ def _resolve_voice(voice_name):
     )
 
 
-def _synthesize(text, voice_name, language=None, rate=1.0, pitch=1.0, volume=0.8):
+def _synthesize(text, voice_name, language=None, rate=1.0, pitch=1.0, volume=1.0):
     """
     Command, specific. Synthesize text to 48kHz 16-bit mono PCM bytes using a Siri voice.
 
@@ -474,7 +474,7 @@ def _synthesize(text, voice_name, language=None, rate=1.0, pitch=1.0, volume=0.8
         language (str or None): BCP-47 language tag. Auto-detected if None.
         rate (float): Speech rate multiplier (default 1.0)
         pitch (float): Pitch multiplier (default 1.0)
-        volume (float): Volume 0.0-1.0 (default 0.8)
+        volume (float): Volume 0.0-1.0 (default 1.0)
 
     Returns:
         tuple: (pcm_bytes, sample_rate) — raw 16-bit signed LE mono PCM and its sample rate
@@ -597,7 +597,7 @@ def list_voice_names():
     return [v["name"] for v in voices]
 
 
-def text_to_speech(text, voice="Aaron", rate=1.0, pitch=1.0, volume=0.8, output_path=None):
+def text_to_speech(text, voice="Aaron", rate=1.0, pitch=1.0, volume=1.0, output_path=None):
     """
     Command, specific. Speak text using a Siri voice, or save to WAV file.
 
@@ -621,7 +621,7 @@ def text_to_speech(text, voice="Aaron", rate=1.0, pitch=1.0, volume=0.8, output_
         voice (str): Voice name from list_voice_names(), e.g. "Aaron", "Martha"
         rate (float): Speech rate multiplier (default 1.0). <1 slower, >1 faster.
         pitch (float): Pitch multiplier (default 1.0). <1 lower, >1 higher.
-        volume (float): Volume 0.0-1.0 (default 0.8)
+        volume (float): Volume 0.0-1.0 (default 1.0)
         output_path (str or None): Path to save WAV file, or None to play immediately
 
     Returns:
@@ -678,7 +678,7 @@ def text_to_speech(text, voice="Aaron", rate=1.0, pitch=1.0, volume=0.8, output_
 if __name__ == "__main__":
     import fire
 
-    def speak(text, voice="Aaron", rate=1.0, pitch=1.0, volume=0.8, output=None):
+    def speak(text, voice="Aaron", rate=1.0, pitch=1.0, volume=1.0, output=None):
         """Speak text using a Siri voice, or save to WAV."""
         result = text_to_speech(
             text, voice=voice, rate=rate, pitch=pitch, volume=volume, output_path=output
