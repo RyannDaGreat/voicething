@@ -1,22 +1,8 @@
-"""Windows Vista Aero Glass style - dark dramatic translucent glass (2006-2009).
+"""Midnight Glass style - deep blue-black translucent glass.
 
-Vista's Aero Glass was darker and more dramatic than Windows 7's lighter, airier
-glass. Deep blue-black translucency with strong frosted blur, glossy pill buttons
-with bright white shine lines, and the characteristic blue-purple tinted glass.
-
-Color references:
-  - Vista brand blue: #29599B (41, 89, 155)
-  - Vista default ColorizationColor: 0xC40078D7 (deep blue with ~77% alpha)
-  - DWM glass: dark translucent panels with blue tint over blurred background
-  - Vista title bar: darker gradient glass, not the airy white of Win7
-  - Buttons: blue glow on hover (min/max), red glow for close
-
-Key differences from frutiger_aero (Win7):
-  - Much darker overall - near-black glass vs Win7's light blue-white
-  - More dramatic tinting and opacity
-  - No aquatic bubbles - pure glass/frost aesthetic
-  - Stronger specular highlights on top edge (sharper gloss)
-  - LCD-style timer (Vista's digital clock had this feel)
+Dark dramatic frosted glass with blue-purple tint. Deep blue-black
+translucency, glossy pill buttons with white shine lines, and crisp
+specular highlights. Premium feel without being overly themed.
 """
 
 from PyQt6.QtCore import Qt, QPointF
@@ -64,8 +50,8 @@ PANEL_BORDER = "rgb(50, 60, 85)"
 PANEL_BORDER_DARK = "rgb(35, 45, 65)"
 
 
-class VistaAeroStyle(BaseStyle):
-    name = "vista_aero"
+class MidnightGlassStyle(BaseStyle):
+    name = "midnight_glass"
     font = "Segoe UI"  # Vista introduced Segoe UI as the system font
 
     # ── Core colors ──────────────────────────────────────────────────────

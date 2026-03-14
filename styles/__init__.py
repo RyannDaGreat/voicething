@@ -20,7 +20,7 @@ from .underwater import UnderwaterStyle
 from .synthwave import SynthwaveStyle
 from .manuscript import ManuscriptStyle
 from .art_nouveau import ArtNouveauStyle
-from .vista_aero import VistaAeroStyle
+from .midnight_glass import MidnightGlassStyle
 
 STYLES = {
     "macos_2005": MacOS2005Style,
@@ -43,7 +43,7 @@ STYLES = {
     "synthwave": SynthwaveStyle,
     "manuscript": ManuscriptStyle,
     "art_nouveau": ArtNouveauStyle,
-    "vista_aero": VistaAeroStyle,
+    "midnight_glass": MidnightGlassStyle,
 }
 
 def get_style(name="macos_2005"):
