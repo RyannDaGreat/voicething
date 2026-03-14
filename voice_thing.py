@@ -9071,6 +9071,8 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
     cancel_signal = pyqtSignal()  # Signal to cancel recording (double-tap held long)
     _select_tmux_pane_signal = pyqtSignal(str)  # Thread-safe tmux pane selection
     _delayed_wake_resume_signal = pyqtSignal()  # Resume wakeword from background thread
+    _cooldown_start_signal = pyqtSignal(int)   # Start cooldown stripe animation (delay_ms)
+    _cooldown_stop_signal = pyqtSignal()       # Stop cooldown stripe animation
 
     _paint_inset = 0
 
@@ -9079,6 +9081,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         self._init_draggable()
         self.state = "idle"
         self._state_lock = threading.Lock()  # Protects state transitions from audio callback thread
+        self._wake_suppressed_until = 0.0  # time.time() after which wake triggers are accepted
         self.audio_chunks = []
         self.stream = None
         self.tee = TeeOutput()
@@ -9686,27 +9689,20 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
     def _speak_announcement(self, text):
         """Speak an announcement using TTS (non-blocking).
 
-        When tmux pane phrases are used as wake words, we must pause the wake
-        word detector while speaking. Otherwise saying "sent to paper" would
-        re-trigger recording because the detector hears "paper" from the TTS.
+        Suppresses wake word triggers during TTS + resume delay to prevent
+        the recognizer from hearing the announcement and re-triggering.
         """
-        # Pause wake word detection if tmux phrases are wake words
-        # (the spoken pane name would otherwise re-trigger recording)
-        needs_pause = (
-            S.WAKE_WORD_ENABLED and
-            listening_for_tmux_panes_as_wakewords() and
-            self.wake_word_engine is not None
-        )
-
-        if needs_pause:
-            self._pause_wake_word_listener()
+        # Suppress wake word triggers for the duration of TTS + delay.
+        # We set a far-future timestamp now; speak_and_resume updates it
+        # to a precise value once TTS finishes.
+        if S.WAKE_WORD_ENABLED and self.wake_word_engine is not None:
+            self._wake_suppressed_until = time.time() + 30  # provisional; refined after TTS
 
         def speak_and_resume():
             do_tts(text, block=True)
-            if needs_pause:
-                # Signal main thread to resume wakeword after configured delay
-                # (can't call QTimer.singleShot from background thread)
-                self._delayed_wake_resume_signal.emit()
+            # Now we know TTS is done — suppress for the configured delay
+            delay_sec = S.TMUX_ANNOUNCE_DELAY / 1000.0
+            self._wake_suppressed_until = time.time() + delay_sec
 
         threading.Thread(target=speak_and_resume, daemon=True).start()
 
@@ -10302,6 +10298,10 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
 
         Called from wakeword callback thread — must not touch Qt widgets directly.
         """
+        # Ignore triggers during TTS announcement cooldown
+        if time.time() < self._wake_suppressed_until:
+            print(f"[wakeword] Ignoring trigger during announcement cooldown")
+            return
         # Use lock to prevent race between audio callback thread and main thread
         with self._state_lock:
             if self.state != "idle":
