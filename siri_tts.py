@@ -605,6 +605,17 @@ def text_to_speech(text, voice="Aaron", rate=1.0, pitch=1.0, volume=0.8, output_
     If output_path is given, saves a WAV file at the detected sample rate.
     Language is auto-detected from the voice name.
 
+    Use list_voice_names() to get available voices. Which voices are available
+    depends on what's downloaded in System Settings > Accessibility > Spoken Content.
+    Example output on a machine with all English Siri voices downloaded:
+
+        >>> list_voice_names()
+        ['Aaron', 'Aidan', 'Arthur', 'Catherine', 'Damon', 'en-AU-C',
+         'en-AU-D', 'en-GB-C', 'en-GB-D', 'Gordon', 'Leona', 'Maeve',
+         'Martha', 'Quinn', 'Simone', 'Xander',  # natural tier
+         'Nora',                                   # neural tier
+         'Aman', 'Aru', 'Ona', 'Tara']             # neuralAX tier
+
     Args:
         text (str): Text to speak
         voice (str): Voice name from list_voice_names(), e.g. "Aaron", "Martha"
@@ -620,6 +631,12 @@ def text_to_speech(text, voice="Aaron", rate=1.0, pitch=1.0, volume=0.8, output_
         TimeoutError: if synthesis exceeds 30 seconds
         RuntimeError: if sirittsd returns an error or voice not downloaded
         ValueError: if voice not found in downloaded voices
+
+    Examples:
+        >>> text_to_speech("Hello world", voice="Aaron")           # plays immediately
+        >>> text_to_speech("Hello", voice="Martha", rate=0.8)      # slower British voice
+        >>> text_to_speech("Hi", voice="Simone", output_path="/tmp/out.wav")  # save WAV
+        '/tmp/out.wav'
     """
     pcm, sample_rate = _synthesize(text, voice, rate=rate, pitch=pitch, volume=volume)
 
