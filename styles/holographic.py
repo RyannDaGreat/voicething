@@ -130,14 +130,15 @@ def _generate_holographic_texture(width, height):
     # Dark metal base: values around 25-50
     metal = np.clip(25 + metal_blurred - 15, 18, 52).astype(np.float32)
 
-    # --- Layer 2: Rainbow holographic grain (seamless) ---
-    holo_hue = seamless_fractal_noise(height, width, octaves=4, persistence=0.5)
+    # --- Layer 2: Rainbow holographic grain (fine per-pixel, seamlessly tileable) ---
+    # Position-keyed hash gives per-pixel speckle that tiles perfectly
+    # (seamless_fractal_noise was too smooth/blobby for holographic grain)
+    yy, xx = np.mgrid[0:height, 0:width]
+    grain_hash = ((xx.astype(np.int64) * 73856093) ^ (yy.astype(np.int64) * 19349663)) & 0xFFFFFFFF
+    holo_hue = (grain_hash / 0xFFFFFFFF).astype(np.float32)
 
     # Convert hue to RGB rainbow colors at low saturation and value
     r_holo, g_holo, b_holo = _hsv_to_rgb(holo_hue, 0.6, 0.15)
-
-    # --- Layer 3: Diagonal iridescent bands (coarse, seamlessly tileable) ---
-    yy, xx = np.mgrid[0:height, 0:width]
     # Tileable diagonal: integer frequency multipliers on 2*pi-normalized coords
     # 3 cycles across width + 2 across height ≈ original 256/80 and 256*0.7/80
     import math

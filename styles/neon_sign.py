@@ -300,19 +300,19 @@ class NeonSignStyle(BaseStyle):
                 hue_var = brick_hues[row_i % rows, col_i % cols]
                 dark_var = brick_dark[row_i % rows, col_i % cols]
 
-                # Base brick: dark red-brown with reduced variation for readability
-                base_r = 48 + int(hue_var * 16) + int(dark_var * 8)
-                base_g = 24 + int(hue_var * 7) + int(dark_var * 4)
-                base_b = 18 + int(hue_var * 5) + int(dark_var * 3)
+                # Base brick: dark red-brown, low contrast for background readability
+                base_r = 42 + int(hue_var * 8) + int(dark_var * 4)
+                base_g = 22 + int(hue_var * 4) + int(dark_var * 2)
+                base_b = 16 + int(hue_var * 3) + int(dark_var * 2)
 
-                # Some bricks slightly darker/lighter (subtle weathering)
+                # Subtle weathering (low contrast variation between bricks)
                 if dark_var < 0.15:
-                    base_r = int(base_r * 0.8)
-                    base_g = int(base_g * 0.8)
-                    base_b = int(base_b * 0.8)
+                    base_r = int(base_r * 0.92)
+                    base_g = int(base_g * 0.92)
+                    base_b = int(base_b * 0.92)
                 elif dark_var > 0.9:
-                    base_r = min(base_r + 10, 80)
-                    base_g = min(base_g + 3, 38)
+                    base_r = min(base_r + 4, 60)
+                    base_g = min(base_g + 2, 30)
 
                 # Draw brick with wrapping for seamless tiling
                 py0 = max(y0, 0)
@@ -327,23 +327,23 @@ class NeonSignStyle(BaseStyle):
                     region_coarse = noise_coarse[sy0:sy1, sx0:sx1]
                     region_stain = stain_noise[sy0:sy1, sx0:sx1]
                     variation = (
-                        (region_fine - 0.5) * 9
-                        + (region_coarse - 0.5) * 6
-                        + (region_stain - 0.5) * 4
+                        (region_fine - 0.5) * 5
+                        + (region_coarse - 0.5) * 3
+                        + (region_stain - 0.5) * 2
                     )
-                    img[sy0:sy1, sx0:sx1, 0] = np.clip(base_r + variation, 25, 85).astype(np.uint8)
-                    img[sy0:sy1, sx0:sx1, 1] = np.clip(base_g + variation * 0.5, 12, 40).astype(np.uint8)
-                    img[sy0:sy1, sx0:sx1, 2] = np.clip(base_b + variation * 0.35, 10, 30).astype(np.uint8)
-                    # Top edge highlight
+                    img[sy0:sy1, sx0:sx1, 0] = np.clip(base_r + variation, 30, 62).astype(np.uint8)
+                    img[sy0:sy1, sx0:sx1, 1] = np.clip(base_g + variation * 0.5, 14, 32).astype(np.uint8)
+                    img[sy0:sy1, sx0:sx1, 2] = np.clip(base_b + variation * 0.35, 12, 24).astype(np.uint8)
+                    # Top edge highlight (subtle)
                     if sy0 == y0:
-                        img[sy0, sx0:sx1, 0] = np.clip(img[sy0, sx0:sx1, 0].astype(np.int16) + 6, 0, 90).astype(np.uint8)
-                        img[sy0, sx0:sx1, 1] = np.clip(img[sy0, sx0:sx1, 1].astype(np.int16) + 3, 0, 45).astype(np.uint8)
-                        img[sy0, sx0:sx1, 2] = np.clip(img[sy0, sx0:sx1, 2].astype(np.int16) + 2, 0, 35).astype(np.uint8)
-                    # Bottom edge shadow
+                        img[sy0, sx0:sx1, 0] = np.clip(img[sy0, sx0:sx1, 0].astype(np.int16) + 3, 0, 65).astype(np.uint8)
+                        img[sy0, sx0:sx1, 1] = np.clip(img[sy0, sx0:sx1, 1].astype(np.int16) + 2, 0, 34).astype(np.uint8)
+                        img[sy0, sx0:sx1, 2] = np.clip(img[sy0, sx0:sx1, 2].astype(np.int16) + 1, 0, 26).astype(np.uint8)
+                    # Bottom edge shadow (subtle)
                     if sy1 == y1 and sy1 > sy0 + 1:
-                        img[sy1-1, sx0:sx1, 0] = np.clip(img[sy1-1, sx0:sx1, 0].astype(np.int16) - 5, 0, 255).astype(np.uint8)
-                        img[sy1-1, sx0:sx1, 1] = np.clip(img[sy1-1, sx0:sx1, 1].astype(np.int16) - 3, 0, 255).astype(np.uint8)
-                        img[sy1-1, sx0:sx1, 2] = np.clip(img[sy1-1, sx0:sx1, 2].astype(np.int16) - 2, 0, 255).astype(np.uint8)
+                        img[sy1-1, sx0:sx1, 0] = np.clip(img[sy1-1, sx0:sx1, 0].astype(np.int16) - 3, 0, 255).astype(np.uint8)
+                        img[sy1-1, sx0:sx1, 1] = np.clip(img[sy1-1, sx0:sx1, 1].astype(np.int16) - 2, 0, 255).astype(np.uint8)
+                        img[sy1-1, sx0:sx1, 2] = np.clip(img[sy1-1, sx0:sx1, 2].astype(np.int16) - 1, 0, 255).astype(np.uint8)
 
                 if x0 < 0:
                     # Brick wraps from left edge — draw the right portion at x=0
