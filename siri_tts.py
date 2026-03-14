@@ -350,7 +350,7 @@ def _verify_voice(session, voice_obj):
     return result[0] == requested
 
 
-def list_voices(verify=True):
+def _list_voices(verify=True):
     """
     Query, specific. List downloaded Siri voices, optionally filtering out fallbacks.
 
@@ -446,16 +446,16 @@ def _resolve_voice(voice_name):
         >>> # _resolve_voice("Aaron") -> ("en-US", "natural")
         >>> # _resolve_voice("Martha") -> ("en-GB", "natural")
     """
-    for v in list_voices(verify=False):
+    for v in _list_voices(verify=False):
         if v["name"] == voice_name:
             return v["language"], v["type"]
     raise ValueError(
         "Voice '%s' not found in downloaded Siri voices. "
-        "Available: %s" % (voice_name, ", ".join(v["name"] for v in list_voices(verify=False)))
+        "Available: %s" % (voice_name, ", ".join(v["name"] for v in _list_voices(verify=False)))
     )
 
 
-def synthesize(text, voice_name, language=None, rate=1.0, pitch=1.0, volume=0.8):
+def _synthesize(text, voice_name, language=None, rate=1.0, pitch=1.0, volume=0.8):
     """
     Command, specific. Synthesize text to 48kHz 16-bit mono PCM bytes using a Siri voice.
 
@@ -464,7 +464,7 @@ def synthesize(text, voice_name, language=None, rate=1.0, pitch=1.0, volume=0.8)
     This function handles both transparently.
 
     When language is None (default), auto-resolves both language and voice type from
-    list_voices(). The voice type is pinned on the SiriTTSSynthesisVoice object so
+    _list_voices(). The voice type is pinned on the SiriTTSSynthesisVoice object so
     the daemon uses the best available variant (natural > neural > neuralAX) rather
     than picking arbitrarily when a name has multiple tiers (e.g. Simone).
 
@@ -574,19 +574,43 @@ def synthesize(text, voice_name, language=None, rate=1.0, pitch=1.0, volume=0.8)
     return pcm, sample_rate
 
 
-def text_to_speech(text, voice="Aaron", language=None, output_path=None):
+def list_voice_names():
+    """
+    Query, specific. List available Siri voice names, sorted alphabetically then by tier.
+
+    Returns only names that are downloaded and verified to not fall back.
+    Deduplicated — if a voice exists in multiple tiers, only the best is kept.
+    Sorted alphabetically first, then stably sorted so natural voices come before
+    neural, which come before neuralAX.
+
+    Returns:
+        list of str: voice names, e.g. ["Aaron", "Arthur", "Catherine", ...]
+
+    Examples:
+        >>> # list_voice_names() -> ["Aaron", "Arthur", "Catherine", "Damon", ...]
+    """
+    voices = _list_voices()
+    # Sort alphabetically by name
+    voices = sorted(voices, key=lambda v: v["name"].lower())
+    # Stable sort by tier: natural first, then neural, then neuralAX
+    voices = sorted(voices, key=lambda v: _TYPE_RANK.get(v["type"], -1), reverse=True)
+    return [v["name"] for v in voices]
+
+
+def text_to_speech(text, voice="Aaron", rate=1.0, pitch=1.0, volume=0.8, output_path=None):
     """
     Command, specific. Speak text using a Siri voice, or save to WAV file.
 
     If output_path is None, plays audio through the default output device via afplay.
     If output_path is given, saves a WAV file at the detected sample rate.
-    Language is auto-detected from the voice name if not specified.
+    Language is auto-detected from the voice name.
 
     Args:
         text (str): Text to speak
-        voice (str): Capitalized voice name — "Aaron", "Martha", "Simone",
-                     "Damon", "Quinn", "Nora", "Arthur", etc.
-        language (str or None): BCP-47 language tag. Auto-detected if None.
+        voice (str): Voice name from list_voice_names(), e.g. "Aaron", "Martha"
+        rate (float): Speech rate multiplier (default 1.0). <1 slower, >1 faster.
+        pitch (float): Pitch multiplier (default 1.0). <1 lower, >1 higher.
+        volume (float): Volume 0.0-1.0 (default 0.8)
         output_path (str or None): Path to save WAV file, or None to play immediately
 
     Returns:
@@ -597,7 +621,7 @@ def text_to_speech(text, voice="Aaron", language=None, output_path=None):
         RuntimeError: if sirittsd returns an error or voice not downloaded
         ValueError: if voice not found in downloaded voices
     """
-    pcm, sample_rate = synthesize(text, voice, language=language)
+    pcm, sample_rate = _synthesize(text, voice, rate=rate, pitch=pitch, volume=volume)
 
     if not pcm:
         raise RuntimeError(
@@ -637,15 +661,17 @@ def text_to_speech(text, voice="Aaron", language=None, output_path=None):
 if __name__ == "__main__":
     import fire
 
-    def speak(text, voice="Aaron", language=None, output=None):
+    def speak(text, voice="Aaron", rate=1.0, pitch=1.0, volume=0.8, output=None):
         """Speak text using a Siri voice, or save to WAV."""
-        result = text_to_speech(text, voice=voice, language=language, output_path=output)
+        result = text_to_speech(
+            text, voice=voice, rate=rate, pitch=pitch, volume=volume, output_path=output
+        )
         if result:
             print("Saved: %s" % result)
 
     def voices():
-        """List all downloaded Siri voices."""
-        for v in list_voices():
-            print("%-12s %-6s %-10s %s" % (v["name"], v["language"], v["type"], v["gender"]))
+        """List available Siri voice names."""
+        for name in list_voice_names():
+            print(name)
 
     fire.Fire({"speak": speak, "voices": voices})
