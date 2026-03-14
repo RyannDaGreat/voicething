@@ -3869,6 +3869,35 @@ class TmuxSelectionDialog(DraggableDialog):
             self._refresh_table(preserve_selection=True)
             self.magic_phrases_changed.emit()  # Update status bar
 
+    def _refresh_voice_combos(self):
+        """Update voice combo selections from TTS_WAKE_VOICES without rebuilding table.
+
+        Command, specific. Called on window activation to sync with WakeVoiceDialog.
+        """
+        backend = S.SPEAK_BACK_VOICE
+        overrides = S.TTS_WAKE_VOICES.get(backend, {})
+        for row in range(self.table.rowCount()):
+            combo = self.table.cellWidget(row, self.COL_VOICE)
+            if combo is None:
+                continue
+            phrase_item = self.table.item(row, self.COL_PHRASE)
+            if phrase_item is None:
+                continue
+            phrase = phrase_item.text().strip()
+            if not phrase:
+                continue
+            current_voice = overrides.get(phrase.lower(), "")
+            # Find matching index without triggering signal
+            combo.blockSignals(True)
+            idx = 0
+            if current_voice:
+                for i in range(combo.count()):
+                    if combo.itemData(i) == current_voice:
+                        idx = i
+                        break
+            combo.setCurrentIndex(idx)
+            combo.blockSignals(False)
+
     def _on_tmux_voice_changed(self, phrase, combo):
         """Save wake voice override from tmux table and preview.
 
@@ -4051,6 +4080,13 @@ done
         if self._poll_thread is not None:
             self._poll_thread.join(timeout=1.0)
             self._poll_thread = None
+
+    def changeEvent(self, event):
+        """Refresh voice combos when window becomes active (syncs with WakeVoiceDialog)."""
+        from PyQt6.QtCore import QEvent
+        if event.type() == QEvent.Type.ActivationChange and self.isActiveWindow():
+            self._refresh_voice_combos()
+        super().changeEvent(event)
 
     def showEvent(self, event):
         """Start polling when dialog is shown."""
@@ -4610,6 +4646,13 @@ class WakeVoiceDialog(DraggableDialog):
                 lambda index, p=phrase, c=combo: self._on_voice_changed(p, c)
             )
             self._table.setCellWidget(row, 1, combo)
+
+    def changeEvent(self, event):
+        """Refresh voice combos when window becomes active (syncs with tmux table)."""
+        from PyQt6.QtCore import QEvent
+        if event.type() == QEvent.Type.ActivationChange and self.isActiveWindow():
+            self._populate()
+        super().changeEvent(event)
 
     def _on_voice_changed(self, phrase, combo):
         """Command, specific. Save override to TTS_WAKE_VOICES and preview."""
