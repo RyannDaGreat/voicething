@@ -4435,6 +4435,13 @@ class TTSSettingsWidget(QWidget):
         self._voice_next.setStyleSheet(nav_btn_css)
         self._voice_next.clicked.connect(self._voice_increment)
         self._voice_row.addWidget(self._voice_next)
+        # Voice explorer button (⋯) — opens full voice browser dialog
+        self._voice_explore = QPushButton("⋯")
+        self._voice_explore.setFixedSize(ICON_BTN_SIZE_SMALL, ICON_BTN_SIZE_SMALL)
+        self._voice_explore.setStyleSheet(nav_btn_css)
+        set_tooltip(self._voice_explore, "Browse all macOS voices\n(installed + downloadable)")
+        self._voice_explore.clicked.connect(self._open_voice_explorer)
+        self._voice_row.addWidget(self._voice_explore)
         self._layout.addLayout(self._voice_row)
 
         # Speed slider (all backends, but different ranges)
@@ -4702,7 +4709,8 @@ class TTSSettingsWidget(QWidget):
             self._speed_value.setText(f"{speed:.1f}x")
             set_tooltip(self._speed_label, "Speech speed multiplier")
 
-        # Show/hide volume and quality (supertonic only)
+        # Show/hide voice explorer (say only) and volume/quality (supertonic only)
+        self._voice_explore.setVisible(backend == 'say')
         is_supertonic = (backend == 'supertonic')
         self._vol_widget.setVisible(is_supertonic)
         self._qual_widget.setVisible(is_supertonic)
@@ -4744,6 +4752,19 @@ class TTSSettingsWidget(QWidget):
         count = self._voice_combo.count()
         if count > 0:
             self._voice_combo.setCurrentIndex((self._voice_combo.currentIndex() - 1) % count)
+
+    def _open_voice_explorer(self):
+        """Command, specific. Opens VoiceExplorerDialog and applies selection to combo."""
+        from voice_explorer import VoiceExplorerDialog
+        current = self._voice_combo.currentData() or ""
+        dlg = VoiceExplorerDialog(current_voice=current, parent=self.window())
+        if dlg.exec() and dlg.selected_voice:
+            # Find the voice in the combo box by data value
+            for i in range(self._voice_combo.count()):
+                if self._voice_combo.itemData(i) == dlg.selected_voice:
+                    self._voice_combo.setCurrentIndex(i)
+                    return
+            # Voice not in combo (shouldn't happen for installed voices, but be safe)
 
     def _on_speed_changed(self, value):
         backend = self._get_backend()
