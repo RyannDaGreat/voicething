@@ -54,11 +54,13 @@ def _get_delegate_class():
                 if _delegate_engine._is_recording:
                     if is_cancel_phrase:
                         print(f"[wakeword] Cancel phrase detected: '{phrase}'")
+                        _delegate_engine._is_recording = False  # Prevent double-trigger
                         if _delegate_engine.on_cancel:
                             _delegate_engine.on_cancel()
                         return
                     if is_stop_phrase:
                         print(f"[wakeword] Stop phrase detected: '{phrase}'")
+                        _delegate_engine._is_recording = False  # Prevent double-trigger
                         if _delegate_engine.on_stop:
                             _delegate_engine.on_stop()
                         return
