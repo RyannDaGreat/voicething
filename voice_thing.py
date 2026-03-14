@@ -4509,6 +4509,107 @@ def get_voice_names_for_backend(backend):
     return []
 
 
+class WakeVoiceDialog(DraggableDialog):
+    """Dialog for assigning per-wake-word TTS voice overrides.
+
+    Shows all active wake words (start phrases + tmux phrases) with a voice
+    combobox per row. Changing a voice previews by speaking the wake word.
+    Persists to TTS_WAKE_VOICES[backend][phrase_lower].
+    """
+
+    def __init__(self, backend='say', parent=None):
+        super().__init__(parent)
+        self._backend = backend
+        self._voices = get_voice_names_for_backend(backend)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(DIALOG_MARGIN_COMPACT, DIALOG_MARGIN_COMPACT, DIALOG_MARGIN_COMPACT, DIALOG_MARGIN_COMPACT)
+        layout.setSpacing(6)
+
+        backend_label = {'say': 'macOS Say', 'siri': 'Siri'}.get(backend, backend)
+        layout.addWidget(make_title(f"Wake Word Voices — {backend_label}"))
+
+        # Table: wake word | voice combobox
+        self._table = QTableWidget()
+        self._table.setColumnCount(2)
+        self._table.setHorizontalHeaderLabels(["Wake Word", "Voice"])
+        self._table.horizontalHeader().setStretchLastSection(True)
+        self._table.horizontalHeader().setStyleSheet(
+            f"QHeaderView::section {{ background: {BORDER_COLOR}; color: {TEXT_PRIMARY}; "
+            f"padding: 2px 4px; border: 1px solid {BORDER_COLOR}; font-weight: bold; font-size: 10px; }}"
+        )
+        self._table.verticalHeader().setVisible(False)
+        self._table.verticalHeader().setDefaultSectionSize(26)
+        self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self._table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
+        self._table.setStyleSheet(
+            f"QTableWidget {{ {PANEL_BG_FLAT_CSS} color: {TEXT_PRIMARY}; "
+            f"border: 1px solid {BORDER_COLOR}; font-size: 11px; }} "
+            f"QTableWidget::item {{ padding: 1px 4px; color: {TEXT_PRIMARY}; }}"
+        )
+        layout.addWidget(self._table, 1)
+
+        layout.addWidget(make_close_btn("Esc  Close", self.accept))
+
+        self._populate()
+        self.setMinimumWidth(300)
+
+    def _populate(self):
+        """Command, specific. Fills table rows from wake word config + TTS_WAKE_VOICES."""
+        phrases_str = S.WAKEWORD_MACOS.get('phrases', DEFAULT_WAKEWORD_PHRASES)
+        start_phrases = [p.strip() for p in phrases_str.split(',') if p.strip()]
+        tmux_phrases = get_tmux_phrases_list() if S.WAKEWORD_MACOS.get('use_tmux_phrases', False) else []
+        all_phrases = start_phrases + tmux_phrases
+        overrides = S.TTS_WAKE_VOICES.get(self._backend, {})
+
+        self._table.setRowCount(len(all_phrases))
+        self._table.setColumnWidth(0, 100)
+
+        for row, phrase in enumerate(all_phrases):
+            # Wake word label
+            label_item = QTableWidgetItem(phrase)
+            label_item.setFlags(label_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            if phrase in tmux_phrases:
+                label_item.setToolTip("Tmux phrase: routes to matching pane")
+            self._table.setItem(row, 0, label_item)
+
+            # Voice combobox
+            combo = QComboBox()
+            combo.setStyleSheet(get_combobox_css() + " font-size: 10px;")
+            combo.addItem("Default", "")
+            for v in self._voices:
+                combo.addItem(v, v)
+            current_voice = overrides.get(phrase.lower(), "")
+            idx = 0
+            if current_voice:
+                for i in range(combo.count()):
+                    if combo.itemData(i) == current_voice:
+                        idx = i
+                        break
+            combo.setCurrentIndex(idx)
+            combo.currentIndexChanged.connect(
+                lambda index, p=phrase, c=combo: self._on_voice_changed(p, c)
+            )
+            self._table.setCellWidget(row, 1, combo)
+
+    def _on_voice_changed(self, phrase, combo):
+        """Command, specific. Save override to TTS_WAKE_VOICES and preview."""
+        voice = combo.currentData()
+        overrides = S.TTS_WAKE_VOICES.get(self._backend, {})
+        if voice:
+            overrides[phrase.lower()] = voice
+        else:
+            overrides.pop(phrase.lower(), None)
+        wake_voices = dict(S.TTS_WAKE_VOICES)
+        if overrides:
+            wake_voices[self._backend] = overrides
+        elif self._backend in wake_voices:
+            del wake_voices[self._backend]
+        S.set('TTS_WAKE_VOICES', wake_voices)
+        # Preview: speak the wake word with the selected voice
+        do_tts(phrase, block=False, voice_override=voice or None)
+
+
 class TTSSettingsWidget(QWidget):
     """TTS settings with per-backend configuration. Hides unsupported controls."""
 
@@ -4646,35 +4747,22 @@ class TTSSettingsWidget(QWidget):
         qual_layout.addWidget(self._qual_value)
         self._layout.addWidget(self._qual_widget)
 
-        # Per-wake-word voice table (say/siri only)
-        self._wake_voice_widget = QWidget()
-        wake_layout = QVBoxLayout(self._wake_voice_widget)
-        wake_layout.setContentsMargins(0, 4, 0, 0)
-        wake_layout.setSpacing(2)
-        wake_header = QLabel("Wake Word Voices:")
-        wake_header.setStyleSheet(get_pref_label_css())
-        set_tooltip(wake_header, "Assign different voices to wake words.\nWhen a wake word triggers recording,\nthe TTS instruction will use that voice.")
-        wake_layout.addWidget(wake_header)
-        self._wake_voice_table = QTableWidget()
-        self._wake_voice_table.setColumnCount(2)
-        self._wake_voice_table.setHorizontalHeaderLabels(["Wake Word", "Voice"])
-        self._wake_voice_table.horizontalHeader().setStretchLastSection(True)
-        self._wake_voice_table.horizontalHeader().setStyleSheet(
-            f"QHeaderView::section {{ background: {BORDER_COLOR}; color: {TEXT_PRIMARY}; "
-            f"padding: 2px 4px; border: 1px solid {BORDER_COLOR}; font-weight: bold; font-size: 10px; }}"
-        )
-        self._wake_voice_table.verticalHeader().setVisible(False)
-        self._wake_voice_table.verticalHeader().setDefaultSectionSize(26)
-        self._wake_voice_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self._wake_voice_table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
-        self._wake_voice_table.setStyleSheet(
-            f"QTableWidget {{ {PANEL_BG_FLAT_CSS} color: {TEXT_PRIMARY}; "
-            f"border: 1px solid {BORDER_COLOR}; font-size: 11px; }} "
-            f"QTableWidget::item {{ padding: 1px 4px; color: {TEXT_PRIMARY}; }}"
-        )
-        self._wake_voice_table.setMaximumHeight(150)
-        wake_layout.addWidget(self._wake_voice_table)
-        self._layout.addWidget(self._wake_voice_widget)
+        # Per-wake-word voice button (say/siri only) — opens WakeVoiceDialog
+        self._wake_voice_row = QHBoxLayout()
+        self._wake_voice_row.setSpacing(8)
+        self._wake_voice_label = QLabel("Wake Voices:")
+        self._wake_voice_label.setStyleSheet(get_pref_label_css())
+        set_tooltip(self._wake_voice_label,
+            "Assign different voices per wake word.\n"
+            "When a wake word triggers recording,\n"
+            "the TTS instruction will use that voice.")
+        self._wake_voice_row.addWidget(self._wake_voice_label)
+        self._wake_voice_btn = make_edit_button("Edit per-wake-word voice assignments", self._open_wake_voice_dialog)
+        self._wake_voice_row.addWidget(self._wake_voice_btn)
+        self._wake_voice_row.addStretch()
+        self._wake_voice_row_widget = QWidget()
+        self._wake_voice_row_widget.setLayout(self._wake_voice_row)
+        self._layout.addWidget(self._wake_voice_row_widget)
 
         # Initialize UI for current backend
         self._update_for_backend()
@@ -4936,98 +5024,17 @@ class TTSSettingsWidget(QWidget):
             self._qual_slider.setValue(cfg.get('steps', 5))
             self._qual_value.setText(str(cfg.get('steps', 5)))
 
-        # Show/hide and populate wake voice table (say + siri only)
-        self._wake_voice_widget.setVisible(backend in ('say', 'siri'))
-        if backend in ('say', 'siri'):
-            self._refresh_wake_voice_table()
+        # Show/hide wake voice button (say + siri only)
+        self._wake_voice_row_widget.setVisible(backend in ('say', 'siri'))
 
     def _speak_demo(self, text):
         do_tts(text, block=False)
 
-    def _refresh_wake_voice_table(self):
-        """Populate wake voice table with all start phrases + tmux phrases.
-
-        Command, specific. Reads wake words from WAKEWORD_MACOS and tmux pane
-        config, then shows a voice combobox per phrase.
-        """
-        backend = self._get_backend()
-        voices = get_voice_names_for_backend(backend)
-
-        # Gather all wake words: start phrases + tmux phrases
-        phrases_str = S.WAKEWORD_MACOS.get('phrases', DEFAULT_WAKEWORD_PHRASES)
-        start_phrases = [p.strip() for p in phrases_str.split(',') if p.strip()]
-        tmux_phrases = get_tmux_phrases_list() if S.WAKEWORD_MACOS.get('use_tmux_phrases', False) else []
-        all_phrases = start_phrases + tmux_phrases
-
-        # Current overrides for this backend
-        overrides = S.TTS_WAKE_VOICES.get(backend, {})
-
-        self._wake_voice_table.blockSignals(True)
-        self._wake_voice_table.setRowCount(len(all_phrases))
-        self._wake_voice_table.setColumnWidth(0, 100)
-
-        for row, phrase in enumerate(all_phrases):
-            # Wake word label (read-only)
-            label_item = QTableWidgetItem(phrase)
-            label_item.setFlags(label_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-            is_tmux = phrase in tmux_phrases
-            if is_tmux:
-                label_item.setToolTip(f"Tmux phrase: routes to matching pane")
-            self._wake_voice_table.setItem(row, 0, label_item)
-
-            # Voice combobox
-            combo = QComboBox()
-            combo.setStyleSheet(get_combobox_css() + " font-size: 10px;")
-            combo.addItem("Default", "")  # Empty string = use backend default
-            for v in voices:
-                combo.addItem(v, v)
-            # Set current selection from overrides
-            current_voice = overrides.get(phrase.lower(), "")
-            idx = 0
-            if current_voice:
-                for i in range(combo.count()):
-                    if combo.itemData(i) == current_voice:
-                        idx = i
-                        break
-            combo.setCurrentIndex(idx)
-            combo.currentIndexChanged.connect(
-                lambda index, p=phrase, c=combo: self._on_wake_voice_changed(p, c)
-            )
-            self._wake_voice_table.setCellWidget(row, 1, combo)
-
-        self._wake_voice_table.blockSignals(False)
-
-        # Adjust table height to content (header + rows, capped)
-        row_count = len(all_phrases)
-        header_h = self._wake_voice_table.horizontalHeader().height()
-        row_h = self._wake_voice_table.verticalHeader().defaultSectionSize()
-        content_h = header_h + row_count * row_h + 4  # 4px for borders
-        self._wake_voice_table.setFixedHeight(min(content_h, 150))
-
-        # Hide entire widget if no wake words configured
-        self._wake_voice_widget.setVisible(backend in ('say', 'siri') and row_count > 0)
-
-    def _on_wake_voice_changed(self, phrase, combo):
-        """Save wake voice override and preview by speaking the phrase.
-
-        Command, specific. Updates TTS_WAKE_VOICES[backend][phrase_lower] and
-        speaks the wake word using the selected voice for preview.
-        """
-        backend = self._get_backend()
-        voice = combo.currentData()
-        overrides = S.TTS_WAKE_VOICES.get(backend, {})
-        if voice:
-            overrides[phrase.lower()] = voice
-        else:
-            overrides.pop(phrase.lower(), None)
-        wake_voices = dict(S.TTS_WAKE_VOICES)
-        if overrides:
-            wake_voices[backend] = overrides
-        elif backend in wake_voices:
-            del wake_voices[backend]
-        S.set('TTS_WAKE_VOICES', wake_voices)
-        # Preview: speak the wake word using the selected voice
-        do_tts(phrase, block=False, voice_override=voice or None)
+    def _open_wake_voice_dialog(self):
+        """Command, specific. Opens WakeVoiceDialog for per-wake-word voice assignment."""
+        dlg = WakeVoiceDialog(backend=self._get_backend(), parent=self.window())
+        dlg.center_on_parent()
+        dlg.exec()
 
     # ─────────────────────────────────────────────────────────────────────────
     # Handlers
