@@ -11,7 +11,6 @@ from .rust_grunge import RustGrungeStyle
 from .supervillain import SupervillainStyle
 from .barbie_jelly import BarbieJellyStyle
 from .mahogany_wood import MahoganyWoodStyle
-from .y2k_winamp import Y2KWinampStyle
 from .holographic import HolographicStyle
 from .chalkboard import ChalkboardStyle
 from .neon_sign import NeonSignStyle
@@ -19,7 +18,6 @@ from .weathered_copper import WeatheredCopperStyle
 from .crt_terminal import CRTTerminalStyle
 from .underwater import UnderwaterStyle
 from .synthwave import SynthwaveStyle
-from .star_trek_lcars import StarTrekLCARSStyle
 from .manuscript import ManuscriptStyle
 from .art_nouveau import ArtNouveauStyle
 from .vista_aero import VistaAeroStyle
@@ -36,7 +34,6 @@ STYLES = {
     "supervillain": SupervillainStyle,
     "barbie_jelly": BarbieJellyStyle,
     "mahogany_wood": MahoganyWoodStyle,
-    "y2k_winamp": Y2KWinampStyle,
     "holographic": HolographicStyle,
     "chalkboard": ChalkboardStyle,
     "neon_sign": NeonSignStyle,
@@ -44,7 +41,6 @@ STYLES = {
     "crt_terminal": CRTTerminalStyle,
     "underwater": UnderwaterStyle,
     "synthwave": SynthwaveStyle,
-    "star_trek_lcars": StarTrekLCARSStyle,
     "manuscript": ManuscriptStyle,
     "art_nouveau": ArtNouveauStyle,
     "vista_aero": VistaAeroStyle,
