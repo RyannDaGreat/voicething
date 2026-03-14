@@ -719,7 +719,7 @@ def build_tts_command(voice_override=None):
         # can extract the voice: {"t":"message","v":"VoiceName"}
         if voice_override:
             if S.NTFY_USE_CURL:
-                return f"""curl -s -d '{{"t":"YOUR_MESSAGE_HERE","v":"{voice_override}"}}' ntfy.sh/{S.NTFY_TOPIC}"""
+                return f"""curl -s -H 'Content-Type: text/plain' -d '{{"t":"YOUR_MESSAGE_HERE","v":"{voice_override}"}}' ntfy.sh/{S.NTFY_TOPIC}"""
             else:
                 return f"""{sys.executable} -m rp call ntfy_send --- '{{"t":"YOUR_MESSAGE_HERE","v":"{voice_override}"}}' ---topic '{S.NTFY_TOPIC}'"""
         else:
