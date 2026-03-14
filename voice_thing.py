@@ -715,10 +715,18 @@ def build_tts_command(voice_override=None):
         >>> # Without NTFY:             "say -r 175 'YOUR_MESSAGE_HERE'"
     """
     if S.NTFY_ENABLED and S.NTFY_TOPIC:
-        if S.NTFY_USE_CURL:
-            return f"curl -s -d 'YOUR_MESSAGE_HERE' ntfy.sh/{S.NTFY_TOPIC}"
+        # When voice override is set, wrap in JSON envelope so the listener
+        # can extract the voice: {"t":"message","v":"VoiceName"}
+        if voice_override:
+            if S.NTFY_USE_CURL:
+                return f"""curl -s -d '{{"t":"YOUR_MESSAGE_HERE","v":"{voice_override}"}}' ntfy.sh/{S.NTFY_TOPIC}"""
+            else:
+                return f"""{sys.executable} -m rp call ntfy_send --- '{{"t":"YOUR_MESSAGE_HERE","v":"{voice_override}"}}' ---topic '{S.NTFY_TOPIC}'"""
         else:
-            return f"python3 -m rp call ntfy_send --- 'YOUR_MESSAGE_HERE' ---topic '{S.NTFY_TOPIC}'"
+            if S.NTFY_USE_CURL:
+                return f"curl -s -d 'YOUR_MESSAGE_HERE' ntfy.sh/{S.NTFY_TOPIC}"
+            else:
+                return f"python3 -m rp call ntfy_send --- 'YOUR_MESSAGE_HERE' ---topic '{S.NTFY_TOPIC}'"
     backend = S.SPEAK_BACK_VOICE
     if backend == 'say':
         cfg = S.TTS_SAY
@@ -883,12 +891,23 @@ def _ntfy_listen_loop(topic, gen):
                 # Skip cached messages from before we started listening
                 if msg.time < start_time:
                     continue
-                text = msg.message
-                if text:
-                    print(f"NTFY received: {text}")
+                raw = msg.message
+                if raw:
+                    # Parse JSON envelope for voice override: {"t":"text","v":"voice"}
+                    # Falls back to plain text for backwards compatibility
+                    text, voice = raw, None
+                    if raw.startswith('{'):
+                        try:
+                            import json
+                            envelope = json.loads(raw)
+                            text = envelope.get('t', raw)
+                            voice = envelope.get('v') or None
+                        except (json.JSONDecodeError, AttributeError):
+                            pass  # Not JSON — treat as plain text
+                    print(f"NTFY received: {text}" + (f" (voice={voice})" if voice else ""))
                     if _ntfy_pre_tts_callback:
                         _ntfy_pre_tts_callback()
-                    do_tts(text, block=True)
+                    do_tts(text, block=True, voice_override=voice)
                     if _ntfy_post_tts_callback:
                         _ntfy_post_tts_callback()
         except Exception as e:
@@ -9888,7 +9907,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
                 if S.SPEAK_BACK_APPEND_INSTRUCTION and not (S.SPEAK_BACK_WAKE_ONLY and not self._recording_from_wake_word):
                     tmux_text = text + '\n\n' + build_speak_back_instruction(voice_override=voice_override)
                 play_chime('tmux_send')
-                self._do_tmux_paste_to_target(pane_id, tmux_text)
+                self._do_tmux_paste_to_target(pane_id, tmux_text, voice_override=voice_override)
                 tmux_routed = True
 
         # ⌘V paste: only if enabled AND tmux didn't route
@@ -9914,7 +9933,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
             time.sleep(0.2)
             QApplication.clipboard().setText(saved_clipboard)
 
-    def _do_tmux_paste_to_target(self, target, text):
+    def _do_tmux_paste_to_target(self, target, text, voice_override=None):
         """Send text to a specific tmux target using bracketed paste."""
         try:
             tmux_paste_text(target, text)
@@ -9927,19 +9946,23 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
             # Update tmux dialog selection if open
             if self._tmux_dialog is not None:
                 self._tmux_dialog.select_pane(target)
-            # Announce pane name via TTS if enabled
+            # Announce pane name via TTS if enabled (uses wake word's voice)
             if S.TMUX_ANNOUNCE_PANE:
-                self._speak_announcement(f"Sent to {phrase}")
+                self._speak_announcement(f"Sent to {phrase}", voice_override=voice_override)
         except subprocess.CalledProcessError as e:
             print(f"tmux paste-buffer failed: {e}")
         except FileNotFoundError:
             print("tmux not found - is tmux installed and running?")
 
-    def _speak_announcement(self, text):
+    def _speak_announcement(self, text, voice_override=None):
         """Speak an announcement using TTS (non-blocking).
 
         Suppresses wake word triggers during TTS + resume delay to prevent
         the recognizer from hearing the announcement and re-triggering.
+
+        Args:
+            text: Text to speak.
+            voice_override: If set, use this voice instead of the backend default.
         """
         # Suppress wake word triggers for the duration of TTS + delay.
         # We set a far-future timestamp now; speak_and_resume updates it
@@ -9948,7 +9971,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
             self._wake_suppressed_until = time.time() + 30  # provisional; refined after TTS
 
         def speak_and_resume():
-            do_tts(text, block=True)
+            do_tts(text, block=True, voice_override=voice_override)
             # Now we know TTS is done — suppress for the configured delay
             delay_ms = S.TMUX_ANNOUNCE_DELAY
             self._wake_suppressed_until = time.time() + delay_ms / 1000.0
