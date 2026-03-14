@@ -10959,6 +10959,9 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
 
     def _stop_recording_from_wake_word(self):
         """Stop recording triggered by wake word detection."""
+        if self.state != "recording":
+            print(f"[wakeword] Ignoring stop (state={self.state}, not recording)")
+            return
         self._recording_from_wake_word = True
         self.stop_recording()
 
