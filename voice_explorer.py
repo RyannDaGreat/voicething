@@ -3,6 +3,75 @@
 import subprocess
 import rp
 
+
+def _get_macos_voice_catalog():
+    """
+    Query, specific. Enumerates ALL macOS TTS voices (installed + downloadable).
+
+    Parses the local AssetsV2 plist that macOS maintains for on-demand voice
+    downloads. Cross-references with rp.get_macos_voices() to mark which are
+    installed. No network access, no extra packages -- pure stdlib plistlib.
+
+    Returns empty list if the catalog plist doesn't exist (older macOS versions
+    or non-macOS platforms).
+
+    Returns:
+        list[dict]: Each dict has keys:
+            name (str), languages (list[str]), footprint (str),
+            download_size_mb (float), type (str), gender (str),
+            installed (bool), voice_id (str), siri (bool)
+    """
+    import plistlib
+    import os
+
+    plist_path = (
+        "/System/Library/AssetsV2/"
+        "com_apple_MobileAsset_TTSAXResourceModelAssets/"
+        "com_apple_MobileAsset_TTSAXResourceModelAssets.xml"
+    )
+    if not os.path.exists(plist_path):
+        return []
+
+    with open(plist_path, 'rb') as f:
+        data = plistlib.load(f)
+
+    installed_voices = set(rp.get_macos_voices())
+
+    # Deduplicate by (name, footprint, first_language) -- the catalog has
+    # multiple _ContentVersion entries per voice; keep the latest.
+    seen = {}
+    for asset in data.get('Assets', []):
+        name = asset.get('Name', '')
+        if not name:
+            continue
+        langs = asset.get('Languages', [])
+        footprint = asset.get('Footprint', '')
+        first_lang = langs[0] if langs else ''
+        key = (name, footprint, first_lang)
+        version = asset.get('_ContentVersion', 0)
+        if key in seen and seen[key].get('_ContentVersion', 0) >= version:
+            continue
+        seen[key] = asset
+
+    results = []
+    for asset in seen.values():
+        name = asset.get('Name', '')
+        download_bytes = asset.get('_DownloadSize', 0)
+        results.append({
+            'name':             name,
+            'languages':        asset.get('Languages', []),
+            'footprint':        asset.get('Footprint', ''),
+            'download_size_mb': round(download_bytes / (1024 * 1024), 1),
+            'type':             asset.get('Type', ''),
+            'gender':           asset.get('Gender', ''),
+            'installed':        name in installed_voices,
+            'voice_id':         asset.get('VoiceId', ''),
+            'siri':             'premium' in asset.get('VoiceId', ''),
+        })
+
+    results.sort(key=lambda d: (d['name'].lower(), d['footprint']))
+    return results
+
 from PyQt6.QtCore import Qt, QTimer, QSize
 from PyQt6.QtWidgets import (
     QVBoxLayout,
@@ -202,7 +271,7 @@ class VoiceExplorerDialog(DraggableDialog):
 
     def _load_catalog(self):
         """Command, specific. Loads voice catalog and populates table."""
-        self._all_entries = rp.r.get_macos_voice_catalog()
+        self._all_entries = _get_macos_voice_catalog()
         self._apply_filters()
 
         # Select current voice if present

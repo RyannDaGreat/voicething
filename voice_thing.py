@@ -4341,6 +4341,47 @@ def _get_macos_voices():
     """Get list of available macOS voices via rp.get_macos_voices (cached)."""
     return rp.get_macos_voices()
 
+
+def _get_macos_voice_qualities():
+    """
+    Query, specific. Returns a dict mapping voice name -> quality tier.
+
+    Tiers are derived from NSSpeechSynthesizer voice identifier prefixes:
+        'premium'   - com.apple.voice.premium.*   Neural voices (macOS 14+)
+        'personal'  - com.apple.voice.* (no compact/premium)  Siri-era voices
+        'eloquence' - com.apple.eloquence.*        Accessibility voices (macOS 13+)
+        'compact'   - com.apple.voice.compact.*    Modern system voices
+        'legacy'    - com.apple.speech.synthesis.*  Classic voices (Alex, Fred, etc.)
+        'novelty'   - com.apple.speech.synthesis.*  Fun effect voices (Bells, Boing, etc.)
+
+    Returns:
+        dict[str, str]: {voice_name: quality_tier}
+    """
+    from AppKit import NSSpeechSynthesizer
+    novelty_ids = {
+        'Bahh', 'Bells', 'Boing', 'Bubbles', 'Cellos', 'BadNews',
+        'GoodNews', 'Hysterical', 'Organ', 'Princess', 'Trinoids',
+        'Whisper', 'Zarvox', 'Deranged',
+    }
+    qualities = {}
+    for voice_id in NSSpeechSynthesizer.availableVoices():
+        attrs = NSSpeechSynthesizer.attributesForVoice_(voice_id)
+        name = attrs.get('VoiceName', '')
+        vid = str(voice_id)
+        short_id = vid.split('.')[-1]
+        if 'premium' in vid:
+            qualities[name] = 'premium'
+        elif 'eloquence' in vid:
+            qualities[name] = 'eloquence'
+        elif 'compact' in vid:
+            qualities[name] = 'compact'
+        elif 'speech.synthesis.voice' in vid:
+            qualities[name] = 'novelty' if short_id in novelty_ids else 'legacy'
+        else:
+            qualities[name] = 'personal'
+    return qualities
+
+
 MACOS_VOICES = None  # Lazy-loaded
 
 class TTSSettingsWidget(QWidget):
@@ -4660,7 +4701,7 @@ class TTSSettingsWidget(QWidget):
         if backend == 'say':
             if MACOS_VOICES is None:
                 MACOS_VOICES = _get_macos_voices()
-            qualities = rp.get_macos_voice_qualities()
+            qualities = _get_macos_voice_qualities()
             tier_suffix = {
                 'premium':   ' ★',
                 'personal':  ' ●',
