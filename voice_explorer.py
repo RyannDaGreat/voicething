@@ -1,6 +1,9 @@
 """Voice Explorer: browse, preview, and select macOS TTS voices."""
 
+import os
 import subprocess
+import tempfile
+import threading
 import rp
 
 
@@ -22,7 +25,6 @@ def _get_macos_voice_catalog():
             installed (bool), voice_id (str), siri (bool)
     """
     import plistlib
-    import os
 
     plist_path = (
         "/System/Library/AssetsV2/"
@@ -108,7 +110,7 @@ from voice_thing import (
 
 # ── Constants ──────────────────────────────────────────────────────────────
 
-# Column indices
+# Column indices (Say mode — full catalog)
 COL_NAME = 0
 COL_SIRI = 1
 COL_TIER = 2
@@ -116,9 +118,12 @@ COL_LANG = 3
 COL_GENDER = 4
 COL_SIZE = 5
 COL_STATUS = 6
-NUM_COLS = 7
+NUM_COLS_SAY = 7
 
-# Preview debounce delay (ms) — prevents overwhelming `say` when arrowing fast
+# Column indices (Siri mode — name only)
+NUM_COLS_SIRI = 1
+
+# Preview debounce delay (ms) — prevents overwhelming TTS when arrowing fast
 PREVIEW_DEBOUNCE_MS = 300
 
 # Default test phrase
@@ -136,24 +141,33 @@ TIER_LABELS = {
 
 class VoiceExplorerDialog(DraggableDialog):
     """
-    Command, specific. Modal dialog for browsing and selecting macOS TTS voices.
+    Command, specific. Modal dialog for browsing and selecting TTS voices.
 
-    Shows both installed and downloadable voices from the local AssetsV2 catalog.
-    Supports filtering by tier and Siri status, live preview with debounce, and
-    keyboard nav.
+    Supports two backends:
+    - 'say': Full macOS AssetsV2 catalog with tiers, filters, install status.
+    - 'siri': Simple name-only list from rp.get_siri_voices().
+
+    Both support live preview with debounce and keyboard nav.
     """
     window_name = "voice_explorer"
 
-    def __init__(self, current_voice="", parent=None):
+    def __init__(self, current_voice="", parent=None, backend='say'):
+        self._backend = backend
+        self._is_siri = (backend == 'siri')
         super().__init__(parent)
         self._current_voice = current_voice
-        self.selected_voice = None  # Set on accept
-        self._preview_proc = None   # Running `say` subprocess
-        self._catalog = []          # Filtered view into _all_entries
-        self._all_entries = []      # Full catalog
+        self.selected_voice = None   # Set on accept
+        self._preview_proc = None    # Running preview subprocess (say or afplay)
+        self._siri_synth_cancel = None  # threading.Event to cancel siri synthesis
+        self._siri_temp_wav = None   # Temp WAV path for siri preview
+        self._catalog = []           # Filtered view into _all_entries
+        self._all_entries = []       # Full catalog
         self._build_ui()
         self._load_catalog()
-        self.resize(720, 500)
+        if self._is_siri:
+            self.resize(360, 500)
+        else:
+            self.resize(720, 500)
         self.center_on_parent()
 
     # ── UI Construction ────────────────────────────────────────────────
@@ -165,8 +179,9 @@ class VoiceExplorerDialog(DraggableDialog):
         layout.setSpacing(8)
 
         # Title row
+        title_text = "Voice Explorer — Siri" if self._is_siri else "Voice Explorer"
         title_row = QHBoxLayout()
-        title_row.addWidget(make_title("Voice Explorer"), 1)
+        title_row.addWidget(make_title(title_text), 1)
         layout.addLayout(title_row)
 
         # Test phrase input
@@ -181,40 +196,49 @@ class VoiceExplorerDialog(DraggableDialog):
         phrase_row.addWidget(self._phrase_edit, 1)
         layout.addLayout(phrase_row)
 
-        # Filter row
-        filter_row = QHBoxLayout()
-        filter_row.setSpacing(8)
-        self._tier_checks = {}
-        for tier_key, tier_label in TIER_LABELS.items():
-            cb = QCheckBox(tier_label)
-            cb.setChecked(True)
-            cb.setStyleSheet(get_checkbox_css())
-            cb.stateChanged.connect(self._apply_filters)
-            self._tier_checks[tier_key] = cb
-            filter_row.addWidget(cb)
+        # Filter row (Say only)
+        self._filter_widgets = []
+        if not self._is_siri:
+            filter_row = QHBoxLayout()
+            filter_row.setSpacing(8)
+            self._tier_checks = {}
+            for tier_key, tier_label in TIER_LABELS.items():
+                cb = QCheckBox(tier_label)
+                cb.setChecked(True)
+                cb.setStyleSheet(get_checkbox_css())
+                cb.stateChanged.connect(self._apply_filters)
+                self._tier_checks[tier_key] = cb
+                filter_row.addWidget(cb)
+                self._filter_widgets.append(cb)
 
-        filter_row.addStretch()
+            filter_row.addStretch()
 
-        self._siri_only = QCheckBox("Siri only")
-        self._siri_only.setChecked(False)
-        self._siri_only.setStyleSheet(get_checkbox_css())
-        set_tooltip(self._siri_only, "Show only Siri neural voices (premium tier).")
-        self._siri_only.stateChanged.connect(self._apply_filters)
-        filter_row.addWidget(self._siri_only)
+            self._siri_only = QCheckBox("Siri only")
+            self._siri_only.setChecked(False)
+            self._siri_only.setStyleSheet(get_checkbox_css())
+            set_tooltip(self._siri_only, "Show only Siri neural voices (premium tier).")
+            self._siri_only.stateChanged.connect(self._apply_filters)
+            filter_row.addWidget(self._siri_only)
+            self._filter_widgets.append(self._siri_only)
 
-        self._show_not_installed = QCheckBox("Not installed")
-        self._show_not_installed.setChecked(True)
-        self._show_not_installed.setStyleSheet(get_checkbox_css())
-        set_tooltip(self._show_not_installed, "Show voices that haven't been downloaded yet.\nThey can be installed via System Settings > Accessibility > Spoken Content.")
-        self._show_not_installed.stateChanged.connect(self._apply_filters)
-        filter_row.addWidget(self._show_not_installed)
+            self._show_not_installed = QCheckBox("Not installed")
+            self._show_not_installed.setChecked(True)
+            self._show_not_installed.setStyleSheet(get_checkbox_css())
+            set_tooltip(self._show_not_installed, "Show voices that haven't been downloaded yet.\nThey can be installed via System Settings > Accessibility > Spoken Content.")
+            self._show_not_installed.stateChanged.connect(self._apply_filters)
+            filter_row.addWidget(self._show_not_installed)
+            self._filter_widgets.append(self._show_not_installed)
 
-        layout.addLayout(filter_row)
+            layout.addLayout(filter_row)
 
         # Table
         self._table = QTableWidget()
-        self._table.setColumnCount(NUM_COLS)
-        self._table.setHorizontalHeaderLabels(["Name", "Siri", "Tier", "Language", "Gender", "Size", "Status"])
+        if self._is_siri:
+            self._table.setColumnCount(NUM_COLS_SIRI)
+            self._table.setHorizontalHeaderLabels(["Name"])
+        else:
+            self._table.setColumnCount(NUM_COLS_SAY)
+            self._table.setHorizontalHeaderLabels(["Name", "Siri", "Tier", "Language", "Gender", "Size", "Status"])
         self._table.setStyleSheet(
             f"QTableWidget {{ {PANEL_BG_FLAT_CSS} color: {TEXT_PRIMARY}; "
             f"border: 1px solid {BORDER_COLOR}; font-family: Menlo, monospace; font-size: 11px; }} "
@@ -241,9 +265,14 @@ class VoiceExplorerDialog(DraggableDialog):
 
         btn_css = get_btn_css()
 
-        self._download_btn = QPushButton("Download Voices…")
+        # Download / install more voices button
+        if self._is_siri:
+            self._download_btn = QPushButton("Install More Voices…")
+            set_tooltip(self._download_btn, "Open System Settings > Spoken Content\nto download additional Siri voices.")
+        else:
+            self._download_btn = QPushButton("Download Voices…")
+            set_tooltip(self._download_btn, "Open System Settings to download additional voices.")
         self._download_btn.setStyleSheet(btn_css)
-        set_tooltip(self._download_btn, "Open System Settings to download additional voices.")
         self._download_btn.clicked.connect(self._open_voice_settings)
         footer.addWidget(self._download_btn)
 
@@ -271,8 +300,16 @@ class VoiceExplorerDialog(DraggableDialog):
 
     def _load_catalog(self):
         """Command, specific. Loads voice catalog and populates table."""
-        self._all_entries = _get_macos_voice_catalog()
-        self._apply_filters()
+        if self._is_siri:
+            self._all_entries = [
+                {'name': name, 'installed': True}
+                for name in rp.get_siri_voices()
+            ]
+            self._catalog = list(self._all_entries)
+            self._populate_table()
+        else:
+            self._all_entries = _get_macos_voice_catalog()
+            self._apply_filters()
 
         # Select current voice if present
         if self._current_voice:
@@ -306,48 +343,54 @@ class VoiceExplorerDialog(DraggableDialog):
         self._table.setSortingEnabled(False)
         self._table.setRowCount(len(self._catalog))
 
-        for row, entry in enumerate(self._catalog):
-            name_item = QTableWidgetItem(entry['name'])
-            name_item.setData(Qt.ItemDataRole.UserRole, entry['name'])
-            self._table.setItem(row, COL_NAME, name_item)
+        if self._is_siri:
+            for row, entry in enumerate(self._catalog):
+                name_item = QTableWidgetItem(entry['name'])
+                name_item.setData(Qt.ItemDataRole.UserRole, entry['name'])
+                self._table.setItem(row, COL_NAME, name_item)
+        else:
+            for row, entry in enumerate(self._catalog):
+                name_item = QTableWidgetItem(entry['name'])
+                name_item.setData(Qt.ItemDataRole.UserRole, entry['name'])
+                self._table.setItem(row, COL_NAME, name_item)
 
-            siri_text = "✓" if entry['siri'] else ""
-            self._table.setItem(row, COL_SIRI, QTableWidgetItem(siri_text))
+                siri_text = "✓" if entry['siri'] else ""
+                self._table.setItem(row, COL_SIRI, QTableWidgetItem(siri_text))
 
-            tier_label = TIER_LABELS.get(entry['footprint'], entry['footprint'])
-            self._table.setItem(row, COL_TIER, QTableWidgetItem(tier_label))
+                tier_label = TIER_LABELS.get(entry['footprint'], entry['footprint'])
+                self._table.setItem(row, COL_TIER, QTableWidgetItem(tier_label))
 
-            lang_str = ', '.join(entry['languages'])
-            self._table.setItem(row, COL_LANG, QTableWidgetItem(lang_str))
+                lang_str = ', '.join(entry['languages'])
+                self._table.setItem(row, COL_LANG, QTableWidgetItem(lang_str))
 
-            gender = entry['gender'].capitalize() if entry['gender'] else ''
-            self._table.setItem(row, COL_GENDER, QTableWidgetItem(gender))
+                gender = entry['gender'].capitalize() if entry['gender'] else ''
+                self._table.setItem(row, COL_GENDER, QTableWidgetItem(gender))
 
-            size_str = f"{entry['download_size_mb']:.0f} MB" if entry['download_size_mb'] >= 1 else f"{entry['download_size_mb']:.1f} MB"
-            size_item = QTableWidgetItem(size_str)
-            # Store numeric value for proper sorting
-            size_item.setData(Qt.ItemDataRole.UserRole, entry['download_size_mb'])
-            self._table.setItem(row, COL_SIZE, size_item)
+                size_str = f"{entry['download_size_mb']:.0f} MB" if entry['download_size_mb'] >= 1 else f"{entry['download_size_mb']:.1f} MB"
+                size_item = QTableWidgetItem(size_str)
+                # Store numeric value for proper sorting
+                size_item.setData(Qt.ItemDataRole.UserRole, entry['download_size_mb'])
+                self._table.setItem(row, COL_SIZE, size_item)
 
-            status = "Installed" if entry['installed'] else "Not Downloaded"
-            status_item = QTableWidgetItem(status)
-            self._table.setItem(row, COL_STATUS, status_item)
+                status = "Installed" if entry['installed'] else "Not Downloaded"
+                status_item = QTableWidgetItem(status)
+                self._table.setItem(row, COL_STATUS, status_item)
 
-            # Dim not-installed rows
-            if not entry['installed']:
-                for col in range(NUM_COLS):
-                    item = self._table.item(row, col)
-                    if item:
-                        item.setForeground(STYLE.accent if col == COL_STATUS else _dim_color())
+                # Dim not-installed rows
+                if not entry['installed']:
+                    for col in range(NUM_COLS_SAY):
+                        item = self._table.item(row, col)
+                        if item:
+                            item.setForeground(STYLE.accent if col == COL_STATUS else _dim_color())
 
-        # Column widths
-        self._table.setColumnWidth(COL_NAME, 130)
-        self._table.setColumnWidth(COL_SIRI, 40)
-        self._table.setColumnWidth(COL_TIER, 95)
-        self._table.setColumnWidth(COL_LANG, 65)
-        self._table.setColumnWidth(COL_GENDER, 55)
-        self._table.setColumnWidth(COL_SIZE, 60)
-        # Status stretches via setStretchLastSection
+            # Column widths (Say mode)
+            self._table.setColumnWidth(COL_NAME, 130)
+            self._table.setColumnWidth(COL_SIRI, 40)
+            self._table.setColumnWidth(COL_TIER, 95)
+            self._table.setColumnWidth(COL_LANG, 65)
+            self._table.setColumnWidth(COL_GENDER, 55)
+            self._table.setColumnWidth(COL_SIZE, 60)
+            # Status stretches via setStretchLastSection
 
         self._table.setSortingEnabled(True)
 
@@ -378,16 +421,22 @@ class VoiceExplorerDialog(DraggableDialog):
         if not name_item:
             return None
         name = name_item.data(Qt.ItemDataRole.UserRole)
+        if self._is_siri:
+            # Siri: match by name only (all entries are unique names)
+            for entry in self._catalog:
+                if entry['name'] == name:
+                    return entry
+            return None
+        # Say: match by name + tier display label
         tier_item = self._table.item(row, COL_TIER)
         tier_text = tier_item.text() if tier_item else ''
-        # Match by name + tier display label
         for entry in self._catalog:
             if entry['name'] == name and TIER_LABELS.get(entry['footprint'], entry['footprint']) == tier_text:
                 return entry
         return None
 
     def _do_preview(self):
-        """Command, specific. Speaks current selection using `say` subprocess."""
+        """Command, specific. Speaks current selection using appropriate backend."""
         self._kill_preview()
 
         rows = self._table.selectionModel().selectedRows()
@@ -398,17 +447,50 @@ class VoiceExplorerDialog(DraggableDialog):
             return
 
         phrase = self._phrase_edit.text().strip() or DEFAULT_PHRASE
-        self._preview_proc = subprocess.Popen(
-            ['say', '-v', entry['name'], phrase],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
+
+        if self._is_siri:
+            self._do_siri_preview(entry['name'], phrase)
+        else:
+            self._preview_proc = subprocess.Popen(
+                ['say', '-v', entry['name'], phrase],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+
+    def _do_siri_preview(self, voice_name, phrase):
+        """Command, specific. Synthesizes via Siri XPC to temp WAV, then plays with afplay."""
+        cancel_event = threading.Event()
+        self._siri_synth_cancel = cancel_event
+        temp_wav = tempfile.mktemp(suffix='.wav', prefix='siri_preview_')
+        self._siri_temp_wav = temp_wav
+
+        def _synth_and_play():
+            rp.text_to_speech_via_siri(phrase, voice=voice_name, output_path=temp_wav)
+            if cancel_event.is_set():
+                _cleanup_temp(temp_wav)
+                return
+            self._preview_proc = subprocess.Popen(
+                ['afplay', temp_wav],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+
+        threading.Thread(target=_synth_and_play, daemon=True).start()
 
     def _kill_preview(self):
-        """Command, specific. Kills any running preview subprocess."""
+        """Command, specific. Kills any running preview subprocess and cancels pending Siri synthesis."""
+        # Cancel pending Siri synthesis
+        if self._siri_synth_cancel is not None:
+            self._siri_synth_cancel.set()
+            self._siri_synth_cancel = None
+        # Kill afplay or say process
         if self._preview_proc and self._preview_proc.poll() is None:
             self._preview_proc.kill()
             self._preview_proc = None
+        # Clean up temp WAV
+        if self._siri_temp_wav is not None:
+            _cleanup_temp(self._siri_temp_wav)
+            self._siri_temp_wav = None
 
     # ── Actions ────────────────────────────────────────────────────────
 
@@ -424,8 +506,9 @@ class VoiceExplorerDialog(DraggableDialog):
 
     def _open_voice_settings(self):
         """Command, specific. Opens macOS System Settings > Spoken Content."""
+        # Modern format (macOS Ventura+), falls back gracefully on older systems
         subprocess.Popen([
-            'open', 'x-apple.systempreferences:com.apple.Accessibility?SpokenContent',
+            'open', 'x-apple.systempreferences:com.apple.Accessibility-Settings.extension?SpokenContent',
         ])
 
     # ── Keyboard Navigation ───────────────────────────────────────────
@@ -471,3 +554,19 @@ def _dim_color():
     """
     from PyQt6.QtGui import QColor
     return QColor(TEXT_MUTED)
+
+
+def _cleanup_temp(path):
+    """
+    Command, specific. Silently removes a temp file if it exists.
+
+    Args:
+        path (str): File path to remove.
+
+    Examples:
+        >>> _cleanup_temp("/tmp/nonexistent_file.wav")  # no-op
+    """
+    try:
+        os.remove(path)
+    except FileNotFoundError:
+        pass
