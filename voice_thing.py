@@ -10866,12 +10866,19 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
     def _refresh_styles(self):
         """Refresh all widget styles after a style change."""
         btn_css = get_btn_css()
-        # Refresh all buttons
+        # Refresh all buttons — stylesheet AND icon colors
         for btn in [self.record_btn, self.cancel_btn, self.retranscribe_btn, self.simple_btn,
                     self.copy_btn, self.load_btn, self.folder_btn, self.sound_btn,
                     self.eye_btn, self.llm_btn, self.wake_word_btn,
                     self.enter_btn, self.tmux_btn, self.model_btn, self.prefs_btn, self.help_btn]:
             btn.setStyleSheet(btn_css)
+            # Reload icon with new theme color
+            if hasattr(btn, 'icon_name'):
+                if btn.isCheckable():
+                    color = ICON_COLOR_LIGHT if btn.isChecked() else ICON_COLOR_DARK
+                else:
+                    color = ICON_COLOR_DARK
+                btn.setIcon(load_icon(btn.icon_name, color=color))
         # Refresh tab buttons
         self.output_tab.setStyleSheet(get_tab_css())
         self.transcriptions_tab.setStyleSheet(get_tab_css())
