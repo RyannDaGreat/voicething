@@ -18,6 +18,11 @@ from .neon_sign import NeonSignStyle
 from .weathered_copper import WeatheredCopperStyle
 from .crt_terminal import CRTTerminalStyle
 from .underwater import UnderwaterStyle
+from .synthwave import SynthwaveStyle
+from .star_trek_lcars import StarTrekLCARSStyle
+from .manuscript import ManuscriptStyle
+from .art_nouveau import ArtNouveauStyle
+from .vista_aero import VistaAeroStyle
 
 STYLES = {
     "macos_2005": MacOS2005Style,
@@ -38,6 +43,11 @@ STYLES = {
     "weathered_copper": WeatheredCopperStyle,
     "crt_terminal": CRTTerminalStyle,
     "underwater": UnderwaterStyle,
+    "synthwave": SynthwaveStyle,
+    "star_trek_lcars": StarTrekLCARSStyle,
+    "manuscript": ManuscriptStyle,
+    "art_nouveau": ArtNouveauStyle,
+    "vista_aero": VistaAeroStyle,
 }
 
 def get_style(name="macos_2005"):

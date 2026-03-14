@@ -5801,7 +5801,7 @@ class PrefsDialog(DraggableDialog):
         theme_btns_box.setSpacing(2)
         style_keys = list(STYLES.keys())
         # Custom display names for themes
-        THEME_DISPLAY_NAMES = {"rust_grunge": "SBU Tunnels", "macos_2005": "MacOS 2005"}
+        THEME_DISPLAY_NAMES = {"rust_grunge": "SBU Tunnels", "macos_2005": "MacOS 2005", "star_trek_lcars": "Star Trek LCARS", "vista_aero": "Vista Aero", "y2k_winamp": "Y2K Winamp", "crt_terminal": "CRT Terminal"}
         for i, style_name in enumerate(style_keys):
             key = str(i + 1)
             display_name = THEME_DISPLAY_NAMES.get(style_name, style_name.replace("_", " ").title())
