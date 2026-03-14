@@ -55,6 +55,10 @@ class SupervillainStyle(BaseStyle):
     icon_color_light = '#ff4040'
     icon_color_muted = '#801010'
 
+    # Dropdown input fields - evil dark to match theme
+    input_bg = '#0c080c'
+    input_text = '#ff8080'
+
     # Slider - blood red groove on black void
     slider_groove = "rgba(200,20,20,0.4)"
 

@@ -60,6 +60,10 @@ class RustGrungeStyle(BaseStyle):
     icon_color_light = '#ffaa44'
     icon_color_muted = '#8b5a2b'
 
+    # Dropdown input fields - dark rust to match theme
+    input_bg = '#231a14'
+    input_text = '#dcd0c3'
+
     # Slider - rust-colored groove on dark metal
     slider_groove = "rgba(140,65,35,0.6)"
 

@@ -79,6 +79,10 @@ class FrutigerAeroStyle(BaseStyle):
     icon_color_light = '#ffffff'
     icon_color_muted = '#606068'
 
+    # Dropdown input fields - white glass to match light theme
+    input_bg = '#f8fbff'
+    input_text = '#1e1e23'
+
     # Slider - dark groove on light glass, blue accent
     slider_groove = "rgba(60,60,70,0.5)"
 

@@ -58,6 +58,10 @@ class MahoganyWoodStyle(BaseStyle):
     icon_color_light = '#fff8eb'
     icon_color_muted = '#a08060'
 
+    # Dropdown input fields - dark wood to match theme
+    input_bg = '#2d1810'
+    input_text = '#fff0d8'
+
     # Slider - dark wood groove, amber handle/fill
     slider_groove = "rgba(45,25,18,0.8)"
     slider_handle = "rgb(210,150,70)"

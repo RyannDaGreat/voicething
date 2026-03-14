@@ -50,6 +50,10 @@ class VaporwaveStyle(BaseStyle):
     icon_color_light = '#ffffff'
     icon_color_muted = '#ffccea'  # Lighter pink for disabled (more visible)
 
+    # Dropdown input fields - dark purple to match theme
+    input_bg = '#2a0548'
+    input_text = '#ffe0f0'
+
     # Slider - cyan groove on dark purple (contrasts with pink accent)
     slider_groove = "rgba(1,205,254,0.4)"  # Cyan with transparency
 

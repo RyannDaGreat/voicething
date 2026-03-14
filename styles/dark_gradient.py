@@ -48,6 +48,10 @@ class DarkGradientStyle(BaseStyle):
     icon_color_light = '#ffffff'
     icon_color_muted = '#999999'  # Solid gray for SVG compatibility
 
+    # Dropdown input fields - dark glass to match theme
+    input_bg = '#232338'
+    input_text = '#e0e0f0'
+
     # Slider - semi-transparent cyan groove on dark gradient
     slider_groove = "rgba(100,200,255,0.25)"
 

@@ -550,7 +550,7 @@ S = Settings(**DEFAULTS)
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
 from styles import get_style, STYLES
-from styles.base import CYAN_CSS
+from styles.base import CYAN_CSS  # Only for fallback; prefer STYLE.accent_css for theme-aware coloring
 STYLE = get_style(DEFAULTS['THEME'])
 
 # Expose style properties as module-level for backward compatibility
@@ -1147,14 +1147,22 @@ def get_menu_css():
     return STYLE.menu_css()
 
 def get_combobox_css():
-    """Get ComboBox CSS - uses input_bg/input_text for opaque, contrasting dropdowns."""
+    """Get ComboBox CSS - uses input_bg/input_text for opaque, contrasting dropdowns.
+
+    Query, specific. Reads from global STYLE for theme-aware colors.
+    """
     bg = STYLE.input_bg
     text = STYLE.input_text
+    accent = STYLE.accent_css
+    border = STYLE.border_color
     return (
-        f"QComboBox {{ background-color: {bg}; color: {text}; border: 1px solid {BORDER_COLOR}; padding: 4px 8px; }} "
-        f"QComboBox QAbstractItemView {{ background-color: {bg}; color: {text}; selection-background-color: {ACCENT}; selection-color: white; }} "
-        f"QComboBox QAbstractItemView::item:hover {{ background: {ACCENT}; color: white; }} "
-        f"QComboBox QLineEdit {{ background-color: {bg}; color: {text}; padding: 0px; margin: 0px; border: none; }} "
+        f"QComboBox {{ background-color: {bg}; color: {text}; border: 1px solid {border}; border-radius: 4px; padding: 4px 8px; }} "
+        f"QComboBox:hover {{ border: 1px solid {accent}; }} "
+        f"QComboBox QAbstractItemView {{ background-color: {bg}; color: {text}; border: 1px solid {border}; border-radius: 4px; padding: 2px; outline: none; }} "
+        f"QComboBox QAbstractItemView::item {{ padding: 4px 8px; border-radius: 3px; }} "
+        f"QComboBox QAbstractItemView::item:selected {{ background: {accent}; color: white; }} "
+        f"QComboBox QAbstractItemView::item:hover {{ background: {accent}; color: white; }} "
+        f"QComboBox QLineEdit {{ background-color: {bg}; color: {text}; padding: 0px; margin: 0px; border: none; selection-background-color: {accent}; }} "
         f"QComboBox::drop-down {{ border: none; }} {TOOLTIP_CSS}"
     )
 
@@ -2166,7 +2174,7 @@ class OptionsDialog(DraggableDialog):
             btn.setStyleSheet(get_btn_css())
             btn.setToolTip(desc)
             if value == current_value:
-                btn.setStyleSheet(get_btn_css() + f"QPushButton {{ border: 2px solid {CYAN_CSS}; }}")
+                btn.setStyleSheet(get_btn_css() + f"QPushButton {{ border: 2px solid {STYLE.accent_css}; }}")
             btn.clicked.connect(lambda checked, v=value: self._select(v))
             layout.addWidget(btn)
             self._key_map[getattr(Qt.Key, f"Key_{key.upper()}")] = value
@@ -2415,7 +2423,7 @@ class ModelDialog(DraggableDialog):
             # Key badge + model name (left side)
             key_label = QLabel(key)
             key_label.setFixedWidth(16)
-            key_label.setStyleSheet(f"color: {CYAN_CSS}; font-weight: bold; font-size: 12px;")
+            key_label.setStyleSheet(f"color: {STYLE.accent_css}; font-weight: bold; font-size: 12px;")
             btn_layout.addWidget(key_label)
 
             name_label = QLabel(value)
@@ -2445,7 +2453,7 @@ class ModelDialog(DraggableDialog):
             btn.setStyleSheet(get_btn_css())
             btn.setToolTip(desc)
             if value == current_model:
-                btn.setStyleSheet(get_btn_css() + f"QPushButton {{ border: 2px solid {CYAN_CSS}; }}")
+                btn.setStyleSheet(get_btn_css() + f"QPushButton {{ border: 2px solid {STYLE.accent_css}; }}")
             btn.clicked.connect(lambda checked, v=value: self._select(v))
             layout.addWidget(btn)
             self._key_map[getattr(Qt.Key, f"Key_{key.upper()}")] = value
@@ -2525,7 +2533,7 @@ class TranscriptionActionsDialog(DraggableDialog):
             # Key badge
             key_label = QLabel(key)
             key_label.setFixedWidth(20)
-            key_label.setStyleSheet(f"color: {CYAN_CSS}; font-weight: bold; font-size: 12px;")
+            key_label.setStyleSheet(f"color: {STYLE.accent_css}; font-weight: bold; font-size: 12px;")
             btn_layout.addWidget(key_label)
 
             # Icon
@@ -2578,7 +2586,7 @@ class TranscriptionActionsDialog(DraggableDialog):
     def _update_shortcut_toggle_style(self, toggle_btn, icon_name, is_on):
         """Update toggle button appearance: opaque when on, dim when off."""
         opacity = "1.0" if is_on else "0.2"
-        color = CYAN_CSS if is_on else STYLE.icon_color_muted
+        color = STYLE.accent_css if is_on else STYLE.icon_color_muted
         toggle_btn.setIcon(load_icon(icon_name, color=color))
         toggle_btn.setStyleSheet(
             f"QPushButton {{ background: transparent; border: none; border-radius: 4px; opacity: {opacity}; }} "
@@ -2647,7 +2655,7 @@ class TmuxPaneSelectorDialog(DraggableDialog):
                 # Key badge
                 key_label = QLabel(key)
                 key_label.setFixedWidth(20)
-                key_label.setStyleSheet(f"color: {CYAN_CSS}; font-weight: bold; font-size: 12px;")
+                key_label.setStyleSheet(f"color: {STYLE.accent_css}; font-weight: bold; font-size: 12px;")
                 btn_layout.addWidget(key_label)
 
                 # Phrase
@@ -5801,7 +5809,7 @@ class PrefsDialog(DraggableDialog):
             base_css = get_btn_css().replace("padding: 3px 8px;", "padding: 1px 8px; margin: 0px;")
             btn.setStyleSheet(base_css)
             if style_name == current_style:
-                btn.setStyleSheet(base_css + f"QPushButton {{ border: 2px solid {CYAN_CSS}; }}")
+                btn.setStyleSheet(base_css + f"QPushButton {{ border: 2px solid {STYLE.accent_css}; }}")
             btn.clicked.connect(lambda checked, s=style_name, b=btn: self._select_style(s, b))
             self._style_buttons[btn] = style_name
             theme_btns_box.addWidget(btn)
@@ -6507,7 +6515,7 @@ class PrefsDialog(DraggableDialog):
         base_css = get_btn_css().replace("padding: 3px 8px;", "padding: 0px; margin: 0px;").replace("text-align: left;", "text-align: center;")
         for btn, prog_num in self._inst_buttons.items():
             if prog_num == S.CHIME_PROGRAM:
-                btn.setStyleSheet(base_css + f"QPushButton {{ border: 2px solid {CYAN_CSS}; }}")
+                btn.setStyleSheet(base_css + f"QPushButton {{ border: 2px solid {STYLE.accent_css}; }}")
             else:
                 btn.setStyleSheet(base_css)
 

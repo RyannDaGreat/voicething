@@ -57,6 +57,10 @@ class CyberpunkMetalStyle(BaseStyle):
     icon_color_light = '#00ffff'
     icon_color_muted = '#008888'
 
+    # Dropdown input fields - dark metal to match theme
+    input_bg = '#0f1218'
+    input_text = '#c0e8ff'
+
     # Slider - bright cyan groove on dark metal
     slider_groove = "rgba(0,255,255,0.3)"
 

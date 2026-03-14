@@ -46,6 +46,10 @@ class DarkMinimalStyle(BaseStyle):
     icon_color_light = '#ffffff'
     icon_color_muted = '#999999'  # Solid gray for SVG compatibility
 
+    # Dropdown input fields - dark to match theme
+    input_bg = '#1e1e28'
+    input_text = '#e0e0e0'
+
     # Slider - lighter groove visible on dark bg
     slider_groove = "rgba(255,255,255,0.2)"
 

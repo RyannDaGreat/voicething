@@ -57,6 +57,10 @@ class BarbieJellyStyle(BaseStyle):
     icon_color_light = '#ffb6c1'
     icon_color_muted = '#db3082'
 
+    # Dropdown input fields - deep pink to match theme
+    input_bg = '#8b1460'
+    input_text = '#ffe0f0'
+
     # Slider - magenta groove on pink jelly
     slider_groove = "rgba(255,0,128,0.4)"
 

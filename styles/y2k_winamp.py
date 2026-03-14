@@ -58,6 +58,10 @@ class Y2KWinampStyle(BaseStyle):
     icon_color_light = '#ffffff'
     icon_color_muted = '#00cc00'  # Slightly darker green
 
+    # Dropdown input fields - dark Winamp panel to match theme
+    input_bg = '#1a1a1a'
+    input_text = '#00ff00'
+
     # Slider - lime green groove on dark Winamp panel
     slider_groove = "rgba(0,255,0,0.25)"
 
