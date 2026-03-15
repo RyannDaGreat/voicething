@@ -492,6 +492,15 @@ DEFAULTS = dict(
     TMUX_FIRST_WORD_ONLY=True,  # Only match magic phrase if it's the first word(s) in the text
     TMUX_ANNOUNCE_PANE=False,  # Announce pane names via TTS when sending
     TMUX_ANNOUNCE_DELAY=500,  # ms to wait after TTS before resuming wake word (0-5000)
+    # Command phrases: say a phrase to run a bash command (macOS engine only, no recording)
+    COMMAND_PHRASES_ENABLED=False,
+    COMMAND_PHRASES={
+        'press enter key': "osascript -e 'tell app \"System Events\" to key code 36'",
+        'play':            "osascript -e 'tell app \"System Events\" to key code 100'",
+        'pause':           "osascript -e 'tell app \"System Events\" to key code 100'",
+        'spotify play':    "osascript -e 'tell application \"Spotify\" to play'",
+        'spotify pause':   "osascript -e 'tell application \"Spotify\" to pause'",
+    },
     AUTO_COPY=True,   # Copy transcription to clipboard before paste
     AUTO_PASTE=True,  # Use ⌘V to paste after copying
     RESTORE_CLIPBOARD=False,  # Restore original clipboard contents after paste
@@ -1843,7 +1852,8 @@ ACTIONS = [
     ("load", "L", "disc", "Load audio file", "Load Audio File..."),
     ("folder", "F", "folder-open", "Open recordings folder", "Open Recordings Folder"),
     ("sound", "S", "volume", "Toggle sound effects", None),
-    ("auto_hide", "H", "eye", "Toggle auto-minimize", None),
+    ("cmd_phrases", "H", "terminal", "Open command phrases", None),
+    ("cmd_phrases_toggle", "⇧H", "terminal", "Toggle command phrases on/off", None),
     ("llm", "R", "robot", "Toggle auto LLM post-processing", None),
     ("wake_word", "J", "ear", "Toggle wake word detection (disable to save battery)", None),
     ("auto_enter", "N", "enter", "Toggle auto-enter after paste", None),
@@ -4387,6 +4397,137 @@ done
                 self._main_window._apply_window_flags(show=True)
 
 
+class CommandPhrasesDialog(DraggableDialog):
+    """Dialog to manage command phrases — voice-triggered bash commands.
+
+    Command, specific. Shows an editable table of phrase→command mappings.
+    Only works with macOS native wake word engine (arbitrary phrase support).
+    """
+    window_name = "command_phrases"
+
+    COL_PHRASE = 0
+    COL_COMMAND = 1
+
+    phrases_changed = pyqtSignal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(DIALOG_MARGIN, DIALOG_MARGIN, DIALOG_MARGIN, DIALOG_MARGIN)
+        layout.setSpacing(8)
+
+        # Title row
+        title_row = QHBoxLayout()
+        title_row.setSpacing(6)
+        self.close_btn = TrafficLightButton("rgb(255, 95, 87)", "rgb(255, 120, 110)", "macos-close")
+        self.close_btn.setToolTip("Close")
+        self.close_btn.clicked.connect(self.reject)
+        title_row.addWidget(self.close_btn)
+        title_label = QLabel("Command Phrases")
+        title_label.setStyleSheet(f"font-weight: bold; font-size: 13px; color: {TEXT_PRIMARY};")
+        title_row.addWidget(title_label)
+        title_row.addStretch()
+
+        # Enable toggle
+        self.enable_checkbox = make_checkbox("Enabled", S.COMMAND_PHRASES_ENABLED,
+            "Enable command phrase detection (macOS engine only)", self._on_enable_changed)
+        title_row.addWidget(self.enable_checkbox)
+        layout.addLayout(title_row)
+
+        # Info label
+        info = QLabel("Say a phrase to run a bash command. Only works with macOS native engine.")
+        info.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 10px;")
+        info.setWordWrap(True)
+        layout.addWidget(info)
+
+        # Table
+        self.table = QTableWidget()
+        self.table.setColumnCount(2)
+        self.table.setHorizontalHeaderLabels(["Phrase", "Command"])
+        self.table.horizontalHeader().setStretchLastSection(True)
+        self.table.horizontalHeader().setMinimumSectionSize(100)
+        self.table.setColumnWidth(self.COL_PHRASE, 140)
+        self.table.verticalHeader().setVisible(False)
+        self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.table.setStyleSheet(
+            f"QTableWidget {{ {PANEL_BG_FLAT_CSS} color: {TEXT_PRIMARY}; "
+            f"font-size: 11px; gridline-color: rgba(255,255,255,0.1); }} "
+            f"QTableWidget::item {{ padding: 1px 4px; color: {TEXT_PRIMARY}; }} "
+            f"QHeaderView::section {{ background: rgba(255,255,255,0.05); color: {TEXT_SECONDARY}; "
+            f"font-size: 10px; padding: 2px 4px; border: none; border-bottom: 1px solid rgba(255,255,255,0.1); }} "
+            f"{SCROLLBAR_CSS}"
+        )
+        self.table.cellChanged.connect(self._on_cell_changed)
+        layout.addWidget(self.table)
+
+        # Button row
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(8)
+        add_btn = QPushButton("+")
+        add_btn.setFixedSize(28, 28)
+        add_btn.setStyleSheet(get_btn_css())
+        set_tooltip(add_btn, "Add new command phrase")
+        add_btn.clicked.connect(self._add_row)
+        btn_row.addWidget(add_btn)
+        remove_btn = QPushButton("−")
+        remove_btn.setFixedSize(28, 28)
+        remove_btn.setStyleSheet(get_btn_css())
+        set_tooltip(remove_btn, "Remove selected command phrase")
+        remove_btn.clicked.connect(self._remove_row)
+        btn_row.addWidget(remove_btn)
+        btn_row.addStretch()
+        layout.addLayout(btn_row)
+
+        self._loading = False
+        self._load_phrases()
+        self.resize(500, 320)
+
+    def _load_phrases(self):
+        """Populate table from S.COMMAND_PHRASES."""
+        self._loading = True
+        phrases = S.COMMAND_PHRASES
+        self.table.setRowCount(len(phrases))
+        for i, (phrase, command) in enumerate(phrases.items()):
+            self.table.setItem(i, self.COL_PHRASE, QTableWidgetItem(phrase))
+            self.table.setItem(i, self.COL_COMMAND, QTableWidgetItem(command))
+        self._loading = False
+
+    def _save_phrases(self):
+        """Save table contents to S.COMMAND_PHRASES and emit signal."""
+        phrases = {}
+        for row in range(self.table.rowCount()):
+            phrase_item = self.table.item(row, self.COL_PHRASE)
+            cmd_item = self.table.item(row, self.COL_COMMAND)
+            phrase = phrase_item.text().strip() if phrase_item else ''
+            command = cmd_item.text().strip() if cmd_item else ''
+            if phrase:  # Skip empty phrase rows
+                phrases[phrase] = command
+        S.set('COMMAND_PHRASES', phrases)
+        self.phrases_changed.emit()
+
+    def _on_cell_changed(self, row, col):
+        if not self._loading:
+            self._save_phrases()
+
+    def _add_row(self):
+        row = self.table.rowCount()
+        self.table.insertRow(row)
+        self.table.setItem(row, self.COL_PHRASE, QTableWidgetItem(''))
+        self.table.setItem(row, self.COL_COMMAND, QTableWidgetItem(''))
+        self.table.editItem(self.table.item(row, self.COL_PHRASE))
+
+    def _remove_row(self):
+        rows = sorted(set(idx.row() for idx in self.table.selectedIndexes()), reverse=True)
+        if not rows:
+            return
+        for row in rows:
+            self.table.removeRow(row)
+        self._save_phrases()
+
+    def _on_enable_changed(self, state):
+        S.set('COMMAND_PHRASES_ENABLED', state == Qt.CheckState.Checked.value)
+
+
 class TextEditDialog(DraggableDialog):
     """Base class for resizable text edit dialogs."""
 
@@ -6257,6 +6398,9 @@ class PrefsDialog(DraggableDialog):
         self.always_on_top_checkbox = make_checkbox("Always on Top", S.ALWAYS_ON_TOP,
             "Keep window above other windows", self._on_always_on_top_changed)
         window_row.addWidget(self.always_on_top_checkbox)
+        self.auto_hide_checkbox = make_checkbox("Auto-Minimize", S.AUTO_HIDE,
+            "Minimize window after transcription completes", self._on_auto_hide_changed)
+        window_row.addWidget(self.auto_hide_checkbox)
         # Show override notice when in blue mode (tmux fullscreen)
         self.blue_mode_label = QLabel("(overridden)")
         self.blue_mode_label.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 10px; font-style: italic;")
@@ -6397,6 +6541,9 @@ class PrefsDialog(DraggableDialog):
 
     def _on_always_on_top_changed(self, state):
         S.set('ALWAYS_ON_TOP', state == Qt.CheckState.Checked.value)
+
+    def _on_auto_hide_changed(self, state):
+        S.set('AUTO_HIDE', state == Qt.CheckState.Checked.value)
 
     def _on_restore_geom_changed(self, state):
         S.set('RESTORE_WINDOW_GEOMETRY', state == Qt.CheckState.Checked.value)
@@ -9421,6 +9568,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         self._wake_voice_phrase = None  # Phrase that triggered recording (for per-wake-word voice override)
         self._recording_from_wake_word = False  # True when current recording was started by wake word
         self._tmux_dialog = None  # Reference to open TmuxSelectionDialog (if any)
+        self._cmd_phrases_dialog = None  # Reference to open CommandPhrasesDialog (if any)
         self._blue_mode_override = False  # True when tmux fullscreen forces always-on-top
         self._original_volume = None  # Mac volume before reduction (None = not reduced)
 
@@ -9532,10 +9680,13 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         self.sound_btn.setIcon(load_icon("volume" if S.SOUND_ENABLED else "volume-off",
                                          color=ICON_COLOR_LIGHT if S.SOUND_ENABLED else ICON_COLOR_DARK))
         self.sound_btn.setEnabled(True)
-        self.eye_btn = make_btn("H", "eye", self.toggle_auto_hide)
-        self.eye_btn.setCheckable(True)
-        set_toggle_tooltip(self.eye_btn, "Toggle auto-minimize after transcription")
-        self.eye_btn.setEnabled(True)
+        self.cmd_phrases_btn = make_btn("H", "terminal", self.show_command_phrases)
+        self.cmd_phrases_btn.setCheckable(True)
+        self.cmd_phrases_btn.setChecked(S.COMMAND_PHRASES_ENABLED)
+        set_toggle_tooltip(self.cmd_phrases_btn, "H: Open command phrases\n⇧H: Toggle command phrases on/off")
+        if S.COMMAND_PHRASES_ENABLED:
+            self.cmd_phrases_btn.setIcon(load_icon("terminal", color=ICON_COLOR_LIGHT))
+        self.cmd_phrases_btn.setEnabled(True)
         self.llm_btn = make_btn("R", "robot", self.toggle_llm)
         self.llm_btn.setCheckable(True)
         set_toggle_tooltip(self.llm_btn, "Toggle LLM post-processing")
@@ -9579,7 +9730,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         self.all_toolbar_buttons = [
             self.record_btn, self.cancel_btn, self.retranscribe_btn, self.simple_btn,
             self.copy_btn, self.load_btn, self.folder_btn, self.sound_btn,
-            self.eye_btn, self.llm_btn, self.wake_word_btn, self.enter_btn,
+            self.cmd_phrases_btn, self.llm_btn, self.wake_word_btn, self.enter_btn,
             self.tmux_btn, self.model_btn, self.prefs_btn, self.help_btn,
         ]
         self.essential_buttons = {self.record_btn, self.cancel_btn, self.simple_btn,
@@ -9593,7 +9744,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
             Qt.Key.Key_Z: self.retranscribe_btn, Qt.Key.Key_W: self.simple_btn,
             Qt.Key.Key_C: self.copy_btn, Qt.Key.Key_L: self.load_btn,
             Qt.Key.Key_F: self.folder_btn, Qt.Key.Key_S: self.sound_btn,
-            Qt.Key.Key_H: self.eye_btn, Qt.Key.Key_R: self.llm_btn,
+            Qt.Key.Key_H: self.cmd_phrases_btn, Qt.Key.Key_R: self.llm_btn,
             Qt.Key.Key_J: self.wake_word_btn, Qt.Key.Key_N: self.enter_btn,
             Qt.Key.Key_U: self.tmux_btn,
             Qt.Key.Key_M: self.model_btn, Qt.Key.Key_P: self.prefs_btn,
@@ -9697,6 +9848,8 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         S.hooks['TMUX_MODE'] = self._on_tmux_mode_changed
         S.hooks['SIMPLE_MODE'] = self._on_simple_mode_changed
         S.hooks['ALWAYS_ON_TOP'] = self._on_always_on_top_setting_changed
+        S.hooks['COMMAND_PHRASES_ENABLED'] = self._on_command_phrases_enabled_changed
+        S.hooks['COMMAND_PHRASES'] = self._on_command_phrases_setting_changed
         S.hooks['TRANSCRIPTION_SHORTCUTS'] = lambda _: self.transcriptions_panel.rebuild_shortcuts()
 
         # Pet container - floats absolutely, not in any layout
@@ -9726,7 +9879,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
             "load": self.load_audio_file,
             "folder": self.open_folder,
             "sound": self.toggle_sound,
-            "auto_hide": self.toggle_auto_hide,
+            "cmd_phrases": self.show_command_phrases,
             "llm": self.toggle_llm,
             "wake_word": self.toggle_wake_word,
             "model": self.show_model_dialog,
@@ -10158,7 +10311,8 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         elif no_mods and key == Qt.Key.Key_F: self.open_folder()
         elif no_mods and key == Qt.Key.Key_L: self.load_audio_file()
         elif no_mods and key == Qt.Key.Key_S: self.toggle_sound()
-        elif no_mods and key == Qt.Key.Key_H: self.toggle_auto_hide()
+        elif mods == Qt.KeyboardModifier.ShiftModifier and key == Qt.Key.Key_H: self.toggle_command_phrases()
+        elif no_mods and key == Qt.Key.Key_H: self.show_command_phrases()
         elif no_mods and key == Qt.Key.Key_R: self.toggle_llm()
         elif no_mods and key == Qt.Key.Key_J: self.toggle_wake_word()
         elif no_mods and key == Qt.Key.Key_N: self.toggle_auto_enter()
@@ -10305,7 +10459,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
                 (self.record_btn, "␣"), (self.cancel_btn, "X"),
                 (self.retranscribe_btn, "Z"), (self.simple_btn, "W"),
                 (self.copy_btn, "C"), (self.load_btn, "L"), (self.folder_btn, "F"),
-                (self.sound_btn, "S"), (self.eye_btn, "H"), (self.llm_btn, "R"),
+                (self.sound_btn, "S"), (self.cmd_phrases_btn, "H"), (self.llm_btn, "R"),
                 (self.wake_word_btn, "J"), (self.enter_btn, "N"),
                 (self.model_btn, "M"), (self.prefs_btn, "P"), (self.help_btn, "?"),
             ]
@@ -10386,9 +10540,10 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         self.pet_container.set_pets(pet_types)
 
     def _on_auto_hide_changed(self, enabled):
-        self.eye_btn.setChecked(enabled)
-        set_toggle_tooltip(self.eye_btn)
-        self._update_checkable_btn_icon(self.eye_btn, "eye-off" if enabled else "eye")
+        # Update prefs checkbox if dialog is open
+        if hasattr(self, '_prefs_dialog') and self._prefs_dialog is not None:
+            if hasattr(self._prefs_dialog, 'auto_hide_checkbox'):
+                self._prefs_dialog.auto_hide_checkbox.setChecked(enabled)
 
     def _on_sound_changed(self, enabled):
         self.sound_btn.setChecked(enabled)
@@ -10419,6 +10574,26 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
     def _on_always_on_top_setting_changed(self, enabled):
         self._apply_window_flags(show=True)
         print(f"Always on top {'ON' if enabled else 'OFF'}")
+
+    def _on_command_phrases_enabled_changed(self, enabled):
+        self.cmd_phrases_btn.setChecked(enabled)
+        set_toggle_tooltip(self.cmd_phrases_btn)
+        self._update_checkable_btn_icon(self.cmd_phrases_btn)
+        play_chime('focus' if enabled else 'delete')
+        print(f"Command phrases {'ON' if enabled else 'OFF'}")
+        # Update dialog checkbox if open
+        if hasattr(self, '_cmd_phrases_dialog') and self._cmd_phrases_dialog is not None:
+            self._cmd_phrases_dialog.enable_checkbox.setChecked(enabled)
+        # Restart engine to add/remove command phrases
+        if S.WAKE_WORD_ENABLED and S.WAKEWORD_ENGINE == 'macos':
+            self._stop_wake_word_listener()
+            self._start_wake_word_listener()
+
+    def _on_command_phrases_setting_changed(self, _value):
+        """Handle COMMAND_PHRASES dict changed (via settings load)."""
+        if S.WAKE_WORD_ENABLED and S.WAKEWORD_ENGINE == 'macos' and S.COMMAND_PHRASES_ENABLED:
+            self._stop_wake_word_listener()
+            self._start_wake_word_listener()
 
     def _apply_window_flags(self, show=True):
         """Apply window flags based on ALWAYS_ON_TOP setting (or blue mode override)."""
@@ -10502,6 +10677,55 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
     def toggle_auto_hide(self):
         S.set('AUTO_HIDE', not S.AUTO_HIDE)
         self._save_settings()
+
+    def show_command_phrases(self):
+        """Show command phrases dialog (non-modal)."""
+        if not hasattr(self, '_cmd_phrases_dialog') or self._cmd_phrases_dialog is None:
+            self._cmd_phrases_dialog = CommandPhrasesDialog(self)
+            self._cmd_phrases_dialog.center_on_parent()
+            self._cmd_phrases_dialog.finished.connect(self._on_cmd_phrases_dialog_closed)
+            self._cmd_phrases_dialog.phrases_changed.connect(self._on_command_phrases_changed)
+        self._cmd_phrases_dialog.show()
+        self._cmd_phrases_dialog.raise_()
+        self._cmd_phrases_dialog.activateWindow()
+
+    def _on_cmd_phrases_dialog_closed(self, result):
+        """Handle command phrases dialog closed."""
+        self._save_settings()
+        self._cmd_phrases_dialog = None
+        self.raise_()
+        self.activateWindow()
+
+    def toggle_command_phrases(self):
+        """Toggle command phrases on/off."""
+        S.set('COMMAND_PHRASES_ENABLED', not S.COMMAND_PHRASES_ENABLED)
+        self._save_settings()
+
+    def _on_command_phrases_changed(self):
+        """Handle command phrase mappings changed — restart engine if active."""
+        if S.WAKE_WORD_ENABLED and S.WAKEWORD_ENGINE == 'macos' and S.COMMAND_PHRASES_ENABLED:
+            self._stop_wake_word_listener()
+            self._start_wake_word_listener()
+            print("Restarted macOS wakeword engine for new command phrases")
+        self._save_settings()
+
+    def _on_command_phrase_detected(self, phrase):
+        """Handle command phrase detected — run the associated bash command in a daemon thread."""
+        import subprocess, threading
+        phrase_lower = phrase.lower()
+        # Look up command (case-insensitive)
+        cmd = None
+        for p, c in S.COMMAND_PHRASES.items():
+            if p.lower() == phrase_lower:
+                cmd = c
+                break
+        if not cmd:
+            print(f"[cmd_phrases] No command for phrase '{phrase}'")
+            return
+        print(f"[cmd_phrases] Running: {cmd}")
+        def _run():
+            subprocess.run(cmd, shell=True, capture_output=True)
+        threading.Thread(target=_run, daemon=True).start()
 
     def toggle_small_mode(self):
         """Toggle between small and normal window size. Progressive collapse handles the rest."""
@@ -10629,6 +10853,8 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
                         phrase = info.get('phrase', '')
                         if phrase:
                             tmux_phrases.append(phrase)
+                # Collect command phrases if enabled
+                command_phrases = list(S.COMMAND_PHRASES.keys()) if S.COMMAND_PHRASES_ENABLED else []
                 self.wake_word_engine = create_engine(
                     engine_name,
                     callback=self._on_wake_word_detected,
@@ -10636,11 +10862,13 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
                     stop_phrases=cfg.get('stop_phrases', DEFAULT_WAKEWORD_STOP_PHRASES),
                     tmux_phrases=tmux_phrases,
                     cancel_phrases=cfg.get('cancel_phrases', DEFAULT_WAKEWORD_CANCEL_PHRASES),
+                    command_phrases=command_phrases,
                 )
 
-            # Set up stop and cancel callbacks
+            # Set up stop, cancel, and command callbacks
             self.wake_word_engine.on_stop = lambda: self.stop_signal.emit()
             self.wake_word_engine.on_cancel = lambda: self.cancel_signal.emit()
+            self.wake_word_engine.on_command = self._on_command_phrase_detected
 
             self.wake_word_engine.start()
             print(f"Wake word listener started ({self._get_wake_word_display()})")
@@ -10859,6 +11087,8 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
             'NTFY_TOPIC', 'NTFY_USE_CURL',
             # Wakeword (config before enabled, so engine has config when it starts)
             'WAKEWORD_ENGINE', 'WAKEWORD_OPENWAKEWORD', 'WAKEWORD_MACOS',
+            # Command phrases (config before enabled, so engine has phrases when it starts)
+            'COMMAND_PHRASES', 'COMMAND_PHRASES_ENABLED',
             # UI / layout
             'PET_TYPES', 'RECORDINGS_DIR', 'TRANSCRIPTIONS_DIR',
             'RESTORE_WINDOW_GEOMETRY', 'WINDOW_GEOMETRY',
@@ -10928,7 +11158,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         # Refresh all buttons — stylesheet AND icon colors
         for btn in [self.record_btn, self.cancel_btn, self.retranscribe_btn, self.simple_btn,
                     self.copy_btn, self.load_btn, self.folder_btn, self.sound_btn,
-                    self.eye_btn, self.llm_btn, self.wake_word_btn,
+                    self.cmd_phrases_btn, self.llm_btn, self.wake_word_btn,
                     self.enter_btn, self.tmux_btn, self.model_btn, self.prefs_btn, self.help_btn]:
             btn.setStyleSheet(btn_css)
             # Reload icon with new theme color

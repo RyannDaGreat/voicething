@@ -14,6 +14,9 @@ StopCallback = Callable[[], None]
 # Callback for cancel signal (cancel phrase said while recording)
 CancelCallback = Callable[[], None]
 
+# Callback for command phrase detected: (phrase: str) -> None
+CommandCallback = Callable[[str], None]
+
 
 class WakeWordEngine(ABC):
     """Abstract base class for wake word detection engines."""
@@ -27,6 +30,7 @@ class WakeWordEngine(ABC):
         on_wake: WakeWordCallback,
         on_stop: Optional[StopCallback] = None,
         on_cancel: Optional[CancelCallback] = None,
+        on_command: Optional['CommandCallback'] = None,
     ):
         """
         Initialize engine with callbacks.
@@ -35,10 +39,12 @@ class WakeWordEngine(ABC):
             on_wake: Called when wake word detected (receives pre-buffer audio)
             on_stop: Called when wake word detected during recording (stop signal)
             on_cancel: Called when cancel phrase detected during recording
+            on_command: Called when command phrase detected (receives phrase string)
         """
         self.on_wake = on_wake
         self.on_stop = on_stop
         self.on_cancel = on_cancel
+        self.on_command = on_command
         self._running = False
 
     @abstractmethod

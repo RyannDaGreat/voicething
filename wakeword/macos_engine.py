@@ -13,7 +13,7 @@ from typing import Optional, List
 
 import numpy as np
 
-from .base import WakeWordEngine, WakeWordCallback, StopCallback, CancelCallback
+from .base import WakeWordEngine, WakeWordCallback, StopCallback, CancelCallback, CommandCallback
 
 # Create the delegate class once at module level to avoid ObjC class redefinition errors
 _SpeechDelegateClass = None
@@ -51,6 +51,8 @@ def _get_delegate_class():
                 is_stop_phrase = phrase_lower in _delegate_engine._stop_phrases_lower
                 is_start_phrase = phrase_lower in _delegate_engine._start_phrases_lower
 
+                is_command_phrase = phrase_lower in _delegate_engine._command_phrases_lower
+
                 if _delegate_engine._is_recording:
                     if is_cancel_phrase:
                         print(f"[wakeword] Cancel phrase detected: '{phrase}'")
@@ -64,9 +66,15 @@ def _get_delegate_class():
                         if _delegate_engine.on_stop:
                             _delegate_engine.on_stop()
                         return
-                    # Start/tmux phrases are ignored during recording
+                    # Start/tmux/command phrases are ignored during recording
                     print(f"[wakeword] Ignoring phrase during recording: '{phrase}'")
                 else:
+                    # Command phrases take priority when not recording
+                    if is_command_phrase and not (is_start_phrase or is_tmux_phrase):
+                        print(f"[wakeword] Command phrase detected: '{phrase}'")
+                        if _delegate_engine.on_command:
+                            _delegate_engine.on_command(phrase)
+                        return
                     if (is_cancel_phrase or is_stop_phrase) and not (is_start_phrase or is_tmux_phrase):
                         print(f"[wakeword] Ignoring stop/cancel phrase (not recording)")
                         return
@@ -98,10 +106,12 @@ class MacOSWakeWordEngine(WakeWordEngine):
         on_wake: WakeWordCallback,
         on_stop: Optional[StopCallback] = None,
         on_cancel: Optional[CancelCallback] = None,
+        on_command: Optional[CommandCallback] = None,
         phrases: Optional[List[str]] = None,
         stop_phrases: Optional[List[str]] = None,
         tmux_phrases: Optional[List[str]] = None,
         cancel_phrases: Optional[List[str]] = None,
+        command_phrases: Optional[List[str]] = None,
     ):
         """
         Initialize macOS wake word engine.
@@ -110,12 +120,14 @@ class MacOSWakeWordEngine(WakeWordEngine):
             on_wake: Callback when wake word detected
             on_stop: Callback when stop phrase detected during recording
             on_cancel: Callback when cancel phrase detected during recording
+            on_command: Callback when command phrase detected (receives phrase string)
             phrases: Start phrases (comma-separated string or list)
             stop_phrases: Stop phrases that end recording (comma-separated string or list)
             tmux_phrases: Tmux pane phrases (start only, prepend to transcription)
             cancel_phrases: Phrases that cancel recording (comma-separated string or list)
+            command_phrases: Command phrases that trigger bash commands (list of phrase strings)
         """
-        super().__init__(on_wake, on_stop, on_cancel)
+        super().__init__(on_wake, on_stop, on_cancel, on_command)
 
         # Parse start phrases
         self._phrases = _parse_phrases(phrases) or self.DEFAULT_PHRASES.copy()
@@ -129,11 +141,15 @@ class MacOSWakeWordEngine(WakeWordEngine):
         # Parse cancel phrases
         self._cancel_phrases = _parse_phrases(cancel_phrases)
 
+        # Parse command phrases
+        self._command_phrases = _parse_phrases(command_phrases)
+
         # Lowercase sets for quick lookup
         self._start_phrases_lower = {p.lower() for p in self._phrases}
         self._stop_phrases_lower = {p.lower() for p in self._stop_phrases}
         self._tmux_phrases_lower = {p.lower() for p in self._tmux_phrases}
         self._cancel_phrases_lower = {p.lower() for p in self._cancel_phrases}
+        self._command_phrases_lower = {p.lower() for p in self._command_phrases}
 
         self._recognizer = None
         self._delegate = None
@@ -144,7 +160,7 @@ class MacOSWakeWordEngine(WakeWordEngine):
 
     def _all_phrases(self):
         """Return all phrases the recognizer should listen for."""
-        return self._phrases + self._stop_phrases + self._tmux_phrases + self._cancel_phrases
+        return self._phrases + self._stop_phrases + self._tmux_phrases + self._cancel_phrases + self._command_phrases
 
     def _create_delegate(self):
         """Create the Objective-C delegate instance."""
