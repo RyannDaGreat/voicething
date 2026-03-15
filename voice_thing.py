@@ -6102,9 +6102,9 @@ class PrefsDialog(DraggableDialog):
         theme_box.addWidget(self.tts_widget)
 
         theme_box.addWidget(make_section("Theme"))
-        # Theme buttons in compact sub-layout (60% reduced spacing = ~2px)
-        theme_btns_box = QVBoxLayout()
-        theme_btns_box.setSpacing(2)
+        # Theme buttons in 2-column grid (halved width to reduce list height)
+        theme_btns_grid = QGridLayout()
+        theme_btns_grid.setSpacing(2)
         style_keys = list(STYLES.keys())
         # Custom display names for themes
         THEME_DISPLAY_NAMES = {"rust_grunge": "SBU Tunnels", "macos_2005": "MacOS 2005", "crt_terminal": "CRT Terminal"}
@@ -6118,8 +6118,8 @@ class PrefsDialog(DraggableDialog):
                 btn.setStyleSheet(base_css + f"QPushButton {{ border: 2px solid {STYLE.accent_css}; }}")
             btn.clicked.connect(lambda checked, s=style_name, b=btn: self._select_style(s, b))
             self._style_buttons[btn] = style_name
-            theme_btns_box.addWidget(btn)
-        theme_box.addLayout(theme_btns_box)
+            theme_btns_grid.addWidget(btn, i // 2, i % 2)
+        theme_box.addLayout(theme_btns_grid)
         theme_box.addStretch()
         content.addLayout(theme_box)
 

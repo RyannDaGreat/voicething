@@ -28,6 +28,12 @@ from .honeycomb import HoneycombStyle
 from .emerald_terminal import EmeraldTerminalStyle
 from .desert_sunset import DesertSunsetStyle
 from .minecraft import MinecraftStyle
+from .filigree import FiligreeStyle
+from .filigree_gothic import FiligreeGothicStyle
+from .filigree_flourish import FiligreeFlourishStyle
+from .filigree_web import FiligreeWebStyle
+from .filigree_iron import FiligreeIronStyle
+from .desert_filigree import DesertFiligreeStyle
 
 STYLES = {
     "macos_2005": MacOS2005Style,
@@ -58,6 +64,12 @@ STYLES = {
     "emerald_terminal": EmeraldTerminalStyle,
     "desert_sunset": DesertSunsetStyle,
     "minecraft": MinecraftStyle,
+    "filigree": FiligreeStyle,
+    "filigree_gothic": FiligreeGothicStyle,
+    "filigree_flourish": FiligreeFlourishStyle,
+    "filigree_web": FiligreeWebStyle,
+    "filigree_iron": FiligreeIronStyle,
+    "desert_filigree": DesertFiligreeStyle,
 }
 
 def get_style(name="macos_2005"):
