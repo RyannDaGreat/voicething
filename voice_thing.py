@@ -4458,6 +4458,8 @@ class CommandPhrasesDialog(DraggableDialog):
             f"font-size: 10px; padding: 2px 4px; border: none; border-bottom: 1px solid rgba(255,255,255,0.1); }} "
             f"{SCROLLBAR_CSS}"
         )
+        self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.table.cellClicked.connect(self._on_cell_clicked)
         self.table.cellChanged.connect(self._on_cell_changed)
         layout.addWidget(self.table)
 
@@ -4505,6 +4507,12 @@ class CommandPhrasesDialog(DraggableDialog):
                 phrases[phrase] = command
         S.set('COMMAND_PHRASES', phrases)
         self.phrases_changed.emit()
+
+    def _on_cell_clicked(self, row, col):
+        """Single-click starts editing the clicked cell."""
+        item = self.table.item(row, col)
+        if item:
+            self.table.editItem(item)
 
     def _on_cell_changed(self, row, col):
         if not self._loading:
