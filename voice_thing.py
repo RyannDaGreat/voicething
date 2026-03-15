@@ -503,6 +503,8 @@ DEFAULTS = dict(
         'brightness minimum': "osascript -e 'tell app \"System Events\"' -e 'repeat 20 times' -e 'key code 145' -e 'end repeat' -e 'repeat 2 times' -e 'key code 144' -e 'end repeat' -e 'end tell'",
         'brightness maximum': "osascript -e 'tell app \"System Events\"' -e 'repeat 20 times' -e 'key code 144' -e 'end repeat' -e 'end tell'",
         'volume maximum':     "osascript -e 'set volume output volume 100'",
+        'volume medium':      "osascript -e 'set volume output volume 50'",
+        'volume minimum':     "osascript -e 'set volume output volume 6'",
         'volume mute':        "osascript -e 'set volume output muted true'",
     },
     AUTO_COPY=True,   # Copy transcription to clipboard before paste
