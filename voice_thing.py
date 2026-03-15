@@ -500,7 +500,7 @@ DEFAULTS = dict(
         'pause':              "osascript -e 'tell app \"System Events\" to key code 100'",
         'spotify play':       "osascript -e 'tell application \"Spotify\" to play'",
         'spotify pause':      "osascript -e 'tell application \"Spotify\" to pause'",
-        'brightness minimum': "osascript -e 'repeat 20 times' -e 'tell app \"System Events\" to key code 145' -e 'end repeat'",
+        'brightness minimum': "osascript -e 'repeat 20 times' -e 'tell app \"System Events\" to key code 145' -e 'end repeat' -e 'repeat 2 times' -e 'tell app \"System Events\" to key code 144' -e 'end repeat'",
         'brightness maximum': "osascript -e 'repeat 20 times' -e 'tell app \"System Events\" to key code 144' -e 'end repeat'",
         'volume maximum':     "osascript -e 'set volume output volume 100'",
         'volume mute':        "osascript -e 'set volume output muted true'",
