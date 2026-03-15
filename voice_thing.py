@@ -497,14 +497,12 @@ DEFAULTS = dict(
     COMMAND_PHRASES_MUTE_WHILE_RECORDING=True,  # Ignore command phrases during recording
     COMMAND_PHRASES={
         'press enter key':    "osascript -e 'tell app \"System Events\" to key code 36'",
-        'play':               """osascript -l JavaScript -e 'ObjC.import("Cocoa");var k=16,f=function(d){var e=$.NSEvent.otherEventWithTypeLocationModifierFlagsTimestampWindowNumberContextSubtypeData1Data2(14,{x:0,y:0},d?2560:2816,0,0,0,8,(k<<16)|((d?10:11)<<8),-1);$.CGEventPost(1,e.CGEvent)};f(true);f(false);$.NSRunLoop.currentRunLoop.runUntilDate($.NSDate.dateWithTimeIntervalSinceNow(0.5))'""",
-        'pause':              """osascript -l JavaScript -e 'ObjC.import("Cocoa");var k=16,f=function(d){var e=$.NSEvent.otherEventWithTypeLocationModifierFlagsTimestampWindowNumberContextSubtypeData1Data2(14,{x:0,y:0},d?2560:2816,0,0,0,8,(k<<16)|((d?10:11)<<8),-1);$.CGEventPost(1,e.CGEvent)};f(true);f(false);$.NSRunLoop.currentRunLoop.runUntilDate($.NSDate.dateWithTimeIntervalSinceNow(0.5))'""",
-        'next track':         """osascript -l JavaScript -e 'ObjC.import("Cocoa");var k=17,f=function(d){var e=$.NSEvent.otherEventWithTypeLocationModifierFlagsTimestampWindowNumberContextSubtypeData1Data2(14,{x:0,y:0},d?2560:2816,0,0,0,8,(k<<16)|((d?10:11)<<8),-1);$.CGEventPost(1,e.CGEvent)};f(true);f(false);$.NSRunLoop.currentRunLoop.runUntilDate($.NSDate.dateWithTimeIntervalSinceNow(0.5))'""",
-        'previous track':     """osascript -l JavaScript -e 'ObjC.import("Cocoa");var k=18,f=function(d){var e=$.NSEvent.otherEventWithTypeLocationModifierFlagsTimestampWindowNumberContextSubtypeData1Data2(14,{x:0,y:0},d?2560:2816,0,0,0,8,(k<<16)|((d?10:11)<<8),-1);$.CGEventPost(1,e.CGEvent)};f(true);f(false);$.NSRunLoop.currentRunLoop.runUntilDate($.NSDate.dateWithTimeIntervalSinceNow(0.5))'""",
         'spotify play':       "osascript -e 'tell application \"Spotify\" to play'",
         'spotify pause':      "osascript -e 'tell application \"Spotify\" to pause'",
         'spotify next':       "osascript -e 'tell application \"Spotify\" to next track'",
         'spotify previous':   "osascript -e 'tell application \"Spotify\" to previous track'",
+        'music play':         "osascript -e 'tell application \"Music\" to play'",
+        'music pause':        "osascript -e 'tell application \"Music\" to pause'",
         'brightness minimum': "osascript -e 'tell app \"System Events\"' -e 'repeat 20 times' -e 'key code 145' -e 'end repeat' -e 'repeat 2 times' -e 'key code 144' -e 'end repeat' -e 'end tell'",
         'brightness maximum': "osascript -e 'tell app \"System Events\"' -e 'repeat 20 times' -e 'key code 144' -e 'end repeat' -e 'end tell'",
         'volume maximum':     "osascript -e 'set volume output volume 100'",
