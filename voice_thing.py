@@ -1499,6 +1499,17 @@ def set_tooltip(widget, text):
     else:
         widget.setCursor(Qt.CursorShape.WhatsThisCursor)
 
+def set_toggle_tooltip(btn, base_text=None):
+    """Set tooltip on a checkable button, appending current ON/OFF state.
+
+    Call with base_text to store and set. Call without to refresh from stored text.
+    """
+    if base_text is not None:
+        btn._base_tooltip = base_text
+    text = getattr(btn, '_base_tooltip', '')
+    state = "ON" if btn.isChecked() else "OFF"
+    set_tooltip(btn, text + "\n\nCurrently: " + state)
+
 def get_tab_css():
     return STYLE.button_css()  # Tab buttons use same style
 
@@ -3517,7 +3528,7 @@ class TmuxSelectionDialog(DraggableDialog):
         self.tmux_toggle_btn.setCheckable(True)
         self.tmux_toggle_btn.setChecked(S.TMUX_MODE)
         self.tmux_toggle_btn.clicked.connect(self._on_tmux_toggle)
-        set_tooltip(self.tmux_toggle_btn,
+        set_toggle_tooltip(self.tmux_toggle_btn,
             "U  Enable or disable tmux voice routing.\n\n"
             "When enabled, transcriptions containing magic phrases\n"
             "will be sent directly to the matching tmux panes."
@@ -3532,7 +3543,7 @@ class TmuxSelectionDialog(DraggableDialog):
         self.first_word_btn.setCheckable(True)
         self.first_word_btn.setChecked(S.TMUX_FIRST_WORD_ONLY)
         self.first_word_btn.clicked.connect(self._on_first_word_toggle)
-        set_tooltip(self.first_word_btn,
+        set_toggle_tooltip(self.first_word_btn,
             "W  Only match magic phrase at start of text.\n\n"
             'When ON, "dog" won\'t match "dogma" or\n'
             '"I have a dog". The phrase must be the\n'
@@ -3554,7 +3565,7 @@ class TmuxSelectionDialog(DraggableDialog):
         self.theme_btn.setCheckable(True)
         self.theme_btn.setChecked(self._preview_dark_mode)
         self.theme_btn.clicked.connect(self._toggle_preview_theme)
-        set_tooltip(self.theme_btn, "D  Toggle dark/light terminal background")
+        set_toggle_tooltip(self.theme_btn, "D  Toggle dark/light terminal background")
         btn_row.addWidget(self.theme_btn)
 
         # ANSI colors toggle (checkable button)
@@ -3565,7 +3576,7 @@ class TmuxSelectionDialog(DraggableDialog):
         self.ansi_btn.setCheckable(True)
         self.ansi_btn.setChecked(self._ansi_colors_enabled)
         self.ansi_btn.clicked.connect(self._on_ansi_toggle)
-        set_tooltip(self.ansi_btn, "A  Toggle ANSI color rendering\n\nOFF = faster rendering\nON = slower but prettier")
+        set_toggle_tooltip(self.ansi_btn, "A  Toggle ANSI color rendering\n\nOFF = faster rendering\nON = slower but prettier")
         btn_row.addWidget(self.ansi_btn)
 
         # Scroll toggle - limited (50 lines) vs unlimited scrollback
@@ -3577,7 +3588,7 @@ class TmuxSelectionDialog(DraggableDialog):
         self.scroll_btn.setCheckable(True)
         self.scroll_btn.setChecked(self._unlimited_scroll)
         self.scroll_btn.clicked.connect(self._on_scroll_toggle)
-        set_tooltip(self.scroll_btn, "S  Toggle unlimited scrollback\n\nOFF = 50 lines (fast)\nON = full history (slower)")
+        set_toggle_tooltip(self.scroll_btn, "S  Toggle unlimited scrollback\n\nOFF = 50 lines (fast)\nON = full history (slower)")
         btn_row.addWidget(self.scroll_btn)
 
         # Auto-scroll toggle - scroll to bottom on update vs preserve position
@@ -3589,7 +3600,7 @@ class TmuxSelectionDialog(DraggableDialog):
         self.autoscroll_btn.setCheckable(True)
         self.autoscroll_btn.setChecked(self._auto_scroll)
         self.autoscroll_btn.clicked.connect(self._on_autoscroll_toggle)
-        set_tooltip(self.autoscroll_btn, "B  Toggle auto-scroll to bottom\n\nON = scroll to bottom on update\nOFF = preserve scroll position")
+        set_toggle_tooltip(self.autoscroll_btn, "B  Toggle auto-scroll to bottom\n\nON = scroll to bottom on update\nOFF = preserve scroll position")
         btn_row.addWidget(self.autoscroll_btn)
 
         # Font size increase (zoom in)
@@ -4271,17 +4282,20 @@ done
     def _toggle_preview_theme(self, checked=None):
         """Toggle between dark and light terminal preview background."""
         self._preview_dark_mode = self.theme_btn.isChecked()
+        set_toggle_tooltip(self.theme_btn)
         S.set('TMUX_PREVIEW_DARK_MODE', self._preview_dark_mode)
         self._update_preview_style()
 
     def _on_ansi_toggle(self, checked=None):
         """Toggle ANSI color rendering (poll thread will re-render shortly)."""
         self._ansi_colors_enabled = self.ansi_btn.isChecked()
+        set_toggle_tooltip(self.ansi_btn)
         S.set('TMUX_PREVIEW_ANSI_COLORS', self._ansi_colors_enabled)
 
     def _on_scroll_toggle(self, checked=None):
         """Toggle unlimited scrollback - restarts poll to apply immediately."""
         self._unlimited_scroll = self.scroll_btn.isChecked()
+        set_toggle_tooltip(self.scroll_btn)
         S.set('TMUX_UNLIMITED_SCROLL', self._unlimited_scroll)
         # Restart poll thread with new scroll setting
         self._stop_polling()
@@ -4290,6 +4304,7 @@ done
     def _on_autoscroll_toggle(self, checked=None):
         """Toggle auto-scroll to bottom behavior."""
         self._auto_scroll = self.autoscroll_btn.isChecked()
+        set_toggle_tooltip(self.autoscroll_btn)
         S.set('TMUX_AUTO_SCROLL', self._auto_scroll)
 
     def _increase_font_size(self):
@@ -4310,10 +4325,12 @@ done
         """Toggle tmux mode, update button icon, and auto-save."""
         is_on = self.tmux_toggle_btn.isChecked()
         self.tmux_toggle_btn.setIcon(load_icon("tmux" if is_on else "tmux-off", ICON_COLOR_DARK))
+        set_toggle_tooltip(self.tmux_toggle_btn)
         S.set('TMUX_MODE', is_on)  # Auto-save immediately
 
     def _on_first_word_toggle(self, checked=None):
         """Toggle first-word-only matching and auto-save."""
+        set_toggle_tooltip(self.first_word_btn)
         S.set('TMUX_FIRST_WORD_ONLY', self.first_word_btn.isChecked())
 
     def _paste_from_tmux_clipboard(self):
@@ -9498,8 +9515,8 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         self.retranscribe_btn = make_btn("Z", "retranscribe", self.retranscribe_latest)
         self.retranscribe_btn.setToolTip("Retranscribe latest with current model")
         self.simple_btn = make_btn("W", "plus", self.toggle_simple_mode)
-        self.simple_btn.setToolTip("Toggle simple mode")
         self.simple_btn.setCheckable(True)
+        set_toggle_tooltip(self.simple_btn, "Toggle simple mode")
         self.simple_btn.setEnabled(True)
         self.copy_btn = make_btn("C", "copy", self.copy_transcription)
         self.copy_btn.setToolTip("Copy last transcription to clipboard")
@@ -9509,35 +9526,35 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         self.folder_btn = make_btn("F", "folder-open", self.open_folder)
         self.folder_btn.setToolTip("Open recordings folder")
         self.sound_btn = make_btn("S", "volume", self.toggle_sound)
-        self.sound_btn.setToolTip("Toggle sound effects")
         self.sound_btn.setCheckable(True)
         self.sound_btn.setChecked(S.SOUND_ENABLED)
+        set_toggle_tooltip(self.sound_btn, "Toggle sound effects")
         self.sound_btn.setIcon(load_icon("volume" if S.SOUND_ENABLED else "volume-off",
                                          color=ICON_COLOR_LIGHT if S.SOUND_ENABLED else ICON_COLOR_DARK))
         self.sound_btn.setEnabled(True)
         self.eye_btn = make_btn("H", "eye", self.toggle_auto_hide)
-        self.eye_btn.setToolTip("Toggle auto-minimize after transcription")
         self.eye_btn.setCheckable(True)
+        set_toggle_tooltip(self.eye_btn, "Toggle auto-minimize after transcription")
         self.eye_btn.setEnabled(True)
         self.llm_btn = make_btn("R", "robot", self.toggle_llm)
-        self.llm_btn.setToolTip("Toggle LLM post-processing")
         self.llm_btn.setCheckable(True)
+        set_toggle_tooltip(self.llm_btn, "Toggle LLM post-processing")
         self.llm_btn.setEnabled(True)
         self.wake_word_btn = make_btn("J", "ear", self.toggle_wake_word)
-        self.wake_word_btn.setToolTip(f"Toggle wake word ({self._get_wake_word_display()}) - disable to save battery")
         self.wake_word_btn.setCheckable(True)
+        set_toggle_tooltip(self.wake_word_btn, "Toggle wake word (" + self._get_wake_word_display() + ") - disable to save battery")
         self.wake_word_btn.setEnabled(True)
         self.enter_btn = make_btn("N", "enter", self.toggle_auto_enter)
-        self.enter_btn.setToolTip("Toggle auto-enter after paste")
         self.enter_btn.setCheckable(True)
         self.enter_btn.setChecked(S.AUTO_ENTER)
+        set_toggle_tooltip(self.enter_btn, "Toggle auto-enter after paste")
         if S.AUTO_ENTER:
             self.enter_btn.setIcon(load_icon("enter", color=ICON_COLOR_LIGHT))
         self.enter_btn.setEnabled(True)
         self.tmux_btn = make_btn("U", "tmux", self.show_tmux_selection)
-        set_tooltip(self.tmux_btn, "U: Open tmux pane manager\n⇧U: Toggle tmux mode on/off")
         self.tmux_btn.setCheckable(True)
         self.tmux_btn.setChecked(S.TMUX_MODE)
+        set_toggle_tooltip(self.tmux_btn, "U: Open tmux pane manager\n⇧U: Toggle tmux mode on/off")
         if S.TMUX_MODE:
             self.tmux_btn.setIcon(load_icon("tmux", color=ICON_COLOR_LIGHT))
         self.tmux_btn.setEnabled(True)
@@ -10232,6 +10249,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
 
         # Update simple mode button
         self.simple_btn.setChecked(S.SIMPLE_MODE)
+        set_toggle_tooltip(self.simple_btn)
         self._update_checkable_btn_icon(self.simple_btn, "plus" if S.SIMPLE_MODE else "minus")
 
         # Button text mode
@@ -10369,23 +10387,28 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
 
     def _on_auto_hide_changed(self, enabled):
         self.eye_btn.setChecked(enabled)
+        set_toggle_tooltip(self.eye_btn)
         self._update_checkable_btn_icon(self.eye_btn, "eye-off" if enabled else "eye")
 
     def _on_sound_changed(self, enabled):
         self.sound_btn.setChecked(enabled)
+        set_toggle_tooltip(self.sound_btn)
         self._update_checkable_btn_icon(self.sound_btn, "volume" if enabled else "volume-off")
 
     def _on_llm_changed(self, enabled):
         self.llm_btn.setChecked(enabled)
+        set_toggle_tooltip(self.llm_btn)
         self._update_checkable_btn_icon(self.llm_btn)
 
     def _on_auto_enter_changed(self, enabled):
         self.enter_btn.setChecked(enabled)
+        set_toggle_tooltip(self.enter_btn)
         self._update_checkable_btn_icon(self.enter_btn, "enter" if enabled else "enter-off")
         play_chime('auto_enter_on' if enabled else 'auto_enter_off')
 
     def _on_tmux_mode_changed(self, enabled):
         self.tmux_btn.setChecked(enabled)
+        set_toggle_tooltip(self.tmux_btn)
         self._update_checkable_btn_icon(self.tmux_btn)  # Uses icon_name from button ("tmux")
         play_chime('tmux_on' if enabled else 'tmux_off')
         print(f"Tmux paste mode {'ON' if enabled else 'OFF'}")
@@ -10409,6 +10432,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
 
     def _on_wake_word_enabled_changed(self, enabled):
         self.wake_word_btn.setChecked(enabled)
+        set_toggle_tooltip(self.wake_word_btn)
         self._update_checkable_btn_icon(self.wake_word_btn)
         # Update prefs dialog checkbox if open
         if hasattr(self, '_prefs_dialog') and self._prefs_dialog:
