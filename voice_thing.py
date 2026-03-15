@@ -11614,6 +11614,13 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
                     initial_prompt=initial_prompt, as_string=False,
                 )
                 text = result.text
+                # Detect prompt parroting: Whisper hallucinates initial_prompt words on silence
+                if initial_prompt and text:
+                    prompt_words = set(_normalize_text(initial_prompt).split())
+                    result_words = set(_normalize_text(text).split())
+                    if result_words and result_words.issubset(prompt_words):
+                        print(f"Prompt parroting detected: {text!r} (all words from initial_prompt)")
+                        text = ""
             self._handle_transcription_result(text, txt_path, audio_path=wav_path, archive_txt_path=archive_txt_path)
         except Exception as e:
             print(f"Transcription error: {e}")
