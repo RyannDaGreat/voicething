@@ -4483,6 +4483,11 @@ class CommandPhrasesDialog(DraggableDialog):
         remove_btn.clicked.connect(self._remove_row)
         btn_row.addWidget(remove_btn)
         btn_row.addStretch()
+        reset_btn = QPushButton("Reset…")
+        reset_btn.setStyleSheet(get_btn_css())
+        set_tooltip(reset_btn, "Restore default phrases or wipe all")
+        reset_btn.clicked.connect(self._show_reset_dialog)
+        btn_row.addWidget(reset_btn)
         layout.addLayout(btn_row)
 
         self._loading = False
@@ -4539,6 +4544,86 @@ class CommandPhrasesDialog(DraggableDialog):
 
     def _on_enable_changed(self, state):
         S.set('COMMAND_PHRASES_ENABLED', state == Qt.CheckState.Checked.value)
+
+    def _show_reset_dialog(self):
+        """Show dialog with Restore Defaults / Wipe All / Cancel options."""
+        defaults = DEFAULTS['COMMAND_PHRASES']
+        current = S.COMMAND_PHRASES
+        # Identify what restore would change
+        custom_phrases = {p: c for p, c in current.items() if p not in defaults}
+        missing_defaults = {p: c for p, c in defaults.items() if p not in current}
+        changed_defaults = {p: c for p, c in defaults.items() if p in current and current[p] != c}
+
+        dialog = DraggableDialog(self)
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(DIALOG_MARGIN, DIALOG_MARGIN, DIALOG_MARGIN, DIALOG_MARGIN)
+        layout.setSpacing(12)
+        layout.addWidget(make_title("Reset Command Phrases"))
+
+        # Summary of what will change
+        summary_parts = []
+        if missing_defaults:
+            summary_parts.append(f"Add {len(missing_defaults)} missing default phrase(s)")
+        if changed_defaults:
+            summary_parts.append(f"Revert {len(changed_defaults)} modified default phrase(s)")
+        if custom_phrases:
+            summary_parts.append(f"{len(custom_phrases)} custom phrase(s) will be kept")
+        if not missing_defaults and not changed_defaults:
+            summary_parts.append("All defaults are already present and unchanged")
+
+        summary = QLabel("\n".join(summary_parts))
+        summary.setStyleSheet(f"color: {TEXT_PRIMARY}; font-size: 11px;")
+        summary.setWordWrap(True)
+        layout.addWidget(summary)
+
+        desc_css = f"color: {TEXT_SECONDARY}; font-size: 10px; padding-left: 4px;"
+
+        # Restore Defaults button
+        restore_btn = QPushButton("Restore Defaults")
+        restore_btn.setStyleSheet(get_btn_css())
+        restore_btn.clicked.connect(lambda: self._do_restore_defaults(dialog))
+        layout.addWidget(restore_btn)
+        restore_desc = QLabel("Adds back any missing defaults and reverts modified defaults.\nYour custom phrases are kept untouched.")
+        restore_desc.setStyleSheet(desc_css)
+        restore_desc.setWordWrap(True)
+        layout.addWidget(restore_desc)
+
+        # Wipe All button
+        wipe_btn = QPushButton("Wipe All")
+        wipe_btn.setStyleSheet(get_btn_css())
+        wipe_btn.clicked.connect(lambda: self._do_wipe_all(dialog))
+        layout.addWidget(wipe_btn)
+        wipe_desc = QLabel("Deletes every phrase — defaults and custom.\nYou start with a completely empty list.")
+        wipe_desc.setStyleSheet(desc_css)
+        wipe_desc.setWordWrap(True)
+        layout.addWidget(wipe_desc)
+
+        # Cancel
+        cancel_btn = QPushButton("Esc  Cancel")
+        cancel_btn.setStyleSheet(get_btn_css())
+        cancel_btn.clicked.connect(dialog.reject)
+        layout.addWidget(cancel_btn)
+
+        dialog.setMinimumWidth(320)
+        dialog.exec()
+
+    def _do_restore_defaults(self, dialog):
+        """Restore default phrases (merge into current, keeping custom)."""
+        defaults = DEFAULTS['COMMAND_PHRASES']
+        merged = dict(S.COMMAND_PHRASES)
+        for phrase, cmd in defaults.items():
+            merged[phrase] = cmd  # Overwrite/add defaults
+        S.set('COMMAND_PHRASES', merged)
+        self._load_phrases()
+        self.phrases_changed.emit()
+        dialog.accept()
+
+    def _do_wipe_all(self, dialog):
+        """Delete all phrases."""
+        S.set('COMMAND_PHRASES', {})
+        self._load_phrases()
+        self.phrases_changed.emit()
+        dialog.accept()
 
 
 class TextEditDialog(DraggableDialog):
