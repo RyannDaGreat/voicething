@@ -495,11 +495,15 @@ DEFAULTS = dict(
     # Command phrases: say a phrase to run a bash command (macOS engine only, no recording)
     COMMAND_PHRASES_ENABLED=False,
     COMMAND_PHRASES={
-        'press enter key': "osascript -e 'tell app \"System Events\" to key code 36'",
-        'play':            "osascript -e 'tell app \"System Events\" to key code 100'",
-        'pause':           "osascript -e 'tell app \"System Events\" to key code 100'",
-        'spotify play':    "osascript -e 'tell application \"Spotify\" to play'",
-        'spotify pause':   "osascript -e 'tell application \"Spotify\" to pause'",
+        'press enter key':    "osascript -e 'tell app \"System Events\" to key code 36'",
+        'play':               "osascript -e 'tell app \"System Events\" to key code 100'",
+        'pause':              "osascript -e 'tell app \"System Events\" to key code 100'",
+        'spotify play':       "osascript -e 'tell application \"Spotify\" to play'",
+        'spotify pause':      "osascript -e 'tell application \"Spotify\" to pause'",
+        'brightness minimum': "osascript -e 'tell app \"System Events\" to key code 145 using {command down, option down}'",
+        'brightness maximum': "osascript -e 'tell app \"System Events\" to key code 144 using {command down, option down}'",
+        'volume maximum':     "osascript -e 'set volume output volume 100'",
+        'volume mute':        "osascript -e 'set volume output muted true'",
     },
     AUTO_COPY=True,   # Copy transcription to clipboard before paste
     AUTO_PASTE=True,  # Use ⌘V to paste after copying
