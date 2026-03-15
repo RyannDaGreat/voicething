@@ -534,7 +534,7 @@ DEFAULTS = dict(
         'boot':          {'pattern': [[0], [4], [7], [11], [16], [0, 4, 7, 11, 16]] + [[]] * 49, 'duration': 0.06},
         'auto_enter_on': {'pattern': [[2, 9], [6, 14, 16], [9, 18], [7, 16, 21], [6, 14, 18, 21, 26]] + [[]] * 11, 'duration': 0.08711429988156041},
         'tmux_send':     {'pattern': [[-17, -5, 7], [-13, -1, 11], [-10, 14], [-5, 19]] + [[]] * 12, 'duration': 0.06843836142250373},
-        'command_phrase': {'pattern': [[7, 12], [0, 5]] + [[]] * 14, 'duration': 0.07},
+        'command_phrase': {'pattern': [[0, 7, 12], [5, 12, 19]] + [[]] * 14, 'duration': 0.08},
     },
     TRANSCRIPTION_SHORTCUTS=['L'],  # Action keys shown as quick buttons on each transcription row
     RECORDINGS_DIR=DEFAULT_RECORDINGS_DIR,  # Folder for audio recordings and transcripts
