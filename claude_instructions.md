@@ -16,6 +16,7 @@ VoiceThing is a keyboard-driven voice transcription app for macOS built with PyQ
 - **TRANSCRIPTION_SHORTCUTS**: Settings key storing a list of action keys (e.g. `['L', 'C']`) that appear as quick-access buttons on each transcription row. Configurable via toggle buttons in the actions dialog.
 - **ACTION_INFO**: Module-level dict mapping action keys to `(icon_name, label, signal_name)` tuples. Used by both `TranscriptionActionsDialog` and `TranscriptionRow` to dynamically build shortcut buttons.
 - **Append Copy**: Action that appends transcription text to the clipboard (with newline separator) rather than replacing it. Key: B, icon: clipboard-plus.
+- **command phrases**: Voice-triggered bash commands. Say a phrase → run a shell command, with no recording. Only works with macOS native engine (arbitrary phrase support). Toolbar slot: H key.
 
 ## Key Files
 
@@ -76,6 +77,22 @@ Actions available per transcription item (via hamburger menu):
 | H | eye-off | Hide/remove from list |
 
 Users can toggle which actions appear as **shortcut buttons** on each transcription row (next to the hamburger menu). Toggle controls are in the actions dialog. Stored in `S.TRANSCRIPTION_SHORTCUTS` (default: `['L']`).
+
+## Command Phrases
+
+Voice-triggered bash commands — say a phrase, run a command, no recording involved. Only works with the macOS native wake word engine (NSSpeechRecognizer supports arbitrary phrases).
+
+**Architecture**:
+- Settings: `COMMAND_PHRASES_ENABLED` (bool), `COMMAND_PHRASES` (dict of phrase→bash_command)
+- Default phrases include media controls (play/pause) and key simulation (press enter key)
+- `wakeword/base.py`: `on_command` callback in `WakeWordEngine.__init__`
+- `wakeword/macos_engine.py`: `command_phrases` param, `_command_phrases_lower` lookup set. In delegate: when not recording and command phrase detected → `on_command(phrase)` and return (skip recording)
+- `VoiceThingWindow._on_command_phrase_detected`: case-insensitive lookup, plays `command_phrase` chime, runs command via `subprocess.run(cmd, shell=True)` in daemon thread
+- `CommandPhrasesDialog`: editable table (phrase|command), +/- row buttons, enable checkbox. Emits `phrases_changed` signal which triggers engine restart
+
+**Toolbar**: H key slot (replaced auto-minimize/eye button). H opens dialog, Shift+H toggles on/off. Auto-minimize moved to Preferences → Window section as a checkbox.
+
+**Chime**: `command_phrase` — descending two-note confirmation beep (`[7,12], [0,5]`).
 
 ## Constraints
 
