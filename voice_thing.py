@@ -11580,17 +11580,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
             if len(audio) == 0:
                 print("No audio.")
                 return
-            duration = len(audio) / SAMPLE_RATE
-            rms = np.sqrt(np.mean(audio ** 2))
-            db = 20 * np.log10(rms + 1e-10)
-            print(f"Recorded {duration:.2f}s, {db:.1f} dB")
-            # Skip transcription if audio is too short or too quiet
-            # Whisper hallucinates phantom phrases on silence
-            MIN_AUDIO_SECONDS = 0.3
-            if duration < MIN_AUDIO_SECONDS or db < S.SILENCE_THRESHOLD:
-                print(f"Audio too short ({duration:.2f}s) or too quiet ({db:.1f} dB) — skipping transcription")
-                self._handle_transcription_result("", None, audio_path=None, archive_txt_path=None)
-                return
+            print(f"Recorded {len(audio) / SAMPLE_RATE:.2f}s")
 
             os.makedirs(S.RECORDINGS_DIR, exist_ok=True)
             os.makedirs(S.TRANSCRIPTIONS_DIR, exist_ok=True)
