@@ -494,12 +494,15 @@ DEFAULTS = dict(
     TMUX_ANNOUNCE_DELAY=500,  # ms to wait after TTS before resuming wake word (0-5000)
     # Command phrases: say a phrase to run a bash command (macOS engine only, no recording)
     COMMAND_PHRASES_ENABLED=False,
+    COMMAND_PHRASES_MUTE_WHILE_RECORDING=True,  # Ignore command phrases during recording
     COMMAND_PHRASES={
         'press enter key':    "osascript -e 'tell app \"System Events\" to key code 36'",
-        'play':               "osascript -e 'tell app \"System Events\" to key code 100'",
-        'pause':              "osascript -e 'tell app \"System Events\" to key code 100'",
         'spotify play':       "osascript -e 'tell application \"Spotify\" to play'",
         'spotify pause':      "osascript -e 'tell application \"Spotify\" to pause'",
+        'spotify next':       "osascript -e 'tell application \"Spotify\" to next track'",
+        'spotify previous':   "osascript -e 'tell application \"Spotify\" to previous track'",
+        'music play':         "osascript -e 'tell application \"Music\" to play'",
+        'music pause':        "osascript -e 'tell application \"Music\" to pause'",
         'brightness minimum': "osascript -e 'tell app \"System Events\"' -e 'repeat 20 times' -e 'key code 145' -e 'end repeat' -e 'repeat 2 times' -e 'key code 144' -e 'end repeat' -e 'end tell'",
         'brightness maximum': "osascript -e 'tell app \"System Events\"' -e 'repeat 20 times' -e 'key code 144' -e 'end repeat' -e 'end tell'",
         'volume maximum':     "osascript -e 'set volume output volume 100'",
@@ -4447,6 +4450,11 @@ class CommandPhrasesDialog(DraggableDialog):
         info.setWordWrap(True)
         layout.addWidget(info)
 
+        # Mute while recording checkbox
+        self.mute_checkbox = make_checkbox("Disable while recording", S.COMMAND_PHRASES_MUTE_WHILE_RECORDING,
+            "Ignore command phrases while voice recording is active", self._on_mute_changed)
+        layout.addWidget(self.mute_checkbox)
+
         # Table
         self.table = QTableWidget()
         self.table.setColumnCount(2)
@@ -4546,6 +4554,9 @@ class CommandPhrasesDialog(DraggableDialog):
 
     def _on_enable_changed(self, state):
         S.set('COMMAND_PHRASES_ENABLED', state == Qt.CheckState.Checked.value)
+
+    def _on_mute_changed(self, state):
+        S.set('COMMAND_PHRASES_MUTE_WHILE_RECORDING', state == Qt.CheckState.Checked.value)
 
     def _show_reset_dialog(self):
         """Show dialog with Restore Defaults / Wipe All / Cancel options."""
@@ -10964,6 +10975,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
                     tmux_phrases=tmux_phrases,
                     cancel_phrases=cfg.get('cancel_phrases', DEFAULT_WAKEWORD_CANCEL_PHRASES),
                     command_phrases=command_phrases,
+                    mute_commands_while_recording=S.COMMAND_PHRASES_MUTE_WHILE_RECORDING,
                 )
 
             # Set up stop, cancel, and command callbacks
@@ -11189,7 +11201,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
             # Wakeword (config before enabled, so engine has config when it starts)
             'WAKEWORD_ENGINE', 'WAKEWORD_OPENWAKEWORD', 'WAKEWORD_MACOS',
             # Command phrases (config before enabled, so engine has phrases when it starts)
-            'COMMAND_PHRASES', 'COMMAND_PHRASES_ENABLED',
+            'COMMAND_PHRASES', 'COMMAND_PHRASES_ENABLED', 'COMMAND_PHRASES_MUTE_WHILE_RECORDING',
             # UI / layout
             'PET_TYPES', 'RECORDINGS_DIR', 'TRANSCRIPTIONS_DIR',
             'RESTORE_WINDOW_GEOMETRY', 'WINDOW_GEOMETRY',

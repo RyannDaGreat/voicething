@@ -66,7 +66,13 @@ def _get_delegate_class():
                         if _delegate_engine.on_stop:
                             _delegate_engine.on_stop()
                         return
-                    # Start/tmux/command phrases are ignored during recording
+                    # Allow command phrases through during recording if mute is off
+                    if is_command_phrase and not _delegate_engine._mute_commands_while_recording:
+                        print(f"[wakeword] Command phrase during recording: '{phrase}'")
+                        if _delegate_engine.on_command:
+                            _delegate_engine.on_command(phrase)
+                        return
+                    # Start/tmux phrases are ignored during recording
                     print(f"[wakeword] Ignoring phrase during recording: '{phrase}'")
                 else:
                     # Command phrases take priority when not recording
@@ -112,6 +118,7 @@ class MacOSWakeWordEngine(WakeWordEngine):
         tmux_phrases: Optional[List[str]] = None,
         cancel_phrases: Optional[List[str]] = None,
         command_phrases: Optional[List[str]] = None,
+        mute_commands_while_recording: bool = True,
     ):
         """
         Initialize macOS wake word engine.
@@ -143,6 +150,7 @@ class MacOSWakeWordEngine(WakeWordEngine):
 
         # Parse command phrases
         self._command_phrases = _parse_phrases(command_phrases)
+        self._mute_commands_while_recording = mute_commands_while_recording
 
         # Lowercase sets for quick lookup
         self._start_phrases_lower = {p.lower() for p in self._phrases}
