@@ -52,6 +52,7 @@ class EmeraldTerminalStyle(BaseStyle):
     name = "emerald_terminal"
     font = "Menlo"
     corner_radius = 8
+    scanlines = True
 
     # Accent -- emerald green
     accent = EMERALD

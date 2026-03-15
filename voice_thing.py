@@ -3302,6 +3302,7 @@ class TmuxPreviewWidget(QTextEdit):
             + SCROLLBAR_CSS
         )
         self._update_style()
+        self._scanline_overlay = ScanlineOverlay(self.viewport(), alpha=14)
 
     def set_target(self, pane_id):
         """Set the tmux pane to send keys to."""
@@ -3520,6 +3521,7 @@ class TmuxSelectionDialog(DraggableDialog):
         self.table.cellChanged.connect(self._on_cell_changed)
         self.table.itemSelectionChanged.connect(self._on_selection_changed)
         self.table.viewport().installEventFilter(self)  # For hover preview
+        self._table_scanlines = ScanlineOverlay(self.table.viewport(), alpha=12)
         self.splitter.addWidget(self.table)
 
         # Right side: preview
@@ -4489,6 +4491,7 @@ class CommandPhrasesDialog(DraggableDialog):
             f"{SCROLLBAR_CSS}"
         )
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.table.viewport().setCursor(Qt.CursorShape.IBeamCursor)
         self.table.cellClicked.connect(self._on_cell_clicked)
         self.table.cellChanged.connect(self._on_cell_changed)
         layout.addWidget(self.table)
@@ -8245,6 +8248,51 @@ class PermissionDialog(DraggableDialog):
             super().keyPressEvent(e)
 
 
+class ScanlineOverlay(QWidget):
+    """Transparent overlay drawing horizontal CRT scanlines on a parent viewport.
+
+    Command, specific. Installs itself on the parent, auto-resizes, and draws
+    scanlines only when STYLE.scanlines is True. Used by EmeraldTerminalStyle.
+
+    Args:
+        parent (QWidget): Viewport widget to overlay
+        alpha (int): Scanline darkness (0-255), higher = more prominent
+        spacing (int): Pixels between scanlines
+    """
+
+    def __init__(self, parent=None, alpha=18, spacing=3):
+        super().__init__(parent)
+        self._alpha = alpha
+        self._spacing = spacing
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setAutoFillBackground(False)
+        if parent:
+            parent.installEventFilter(self)
+            self.resize(parent.size())
+            self.raise_()
+
+    def eventFilter(self, obj, event):
+        """Command, specific. Auto-resize overlay when parent resizes."""
+        if obj is self.parent() and event.type() == QEvent.Type.Resize:
+            self.resize(event.size())
+        return False
+
+    def paintEvent(self, event):
+        """Command, specific. Draw horizontal scanlines if STYLE.scanlines is True."""
+        if not STYLE.scanlines:
+            return
+        p = QPainter(self)
+        p.setPen(QPen(QColor(0, 0, 0, self._alpha), 1))
+        y = 0
+        h = self.height()
+        w = self.width()
+        while y < h:
+            p.drawLine(0, y, w, y)
+            y += self._spacing
+        p.end()
+
+
 class TextPanel(QTextEdit):
     """Read-only text panel."""
 
@@ -8260,6 +8308,7 @@ class TextPanel(QTextEdit):
         if not selectable:
             self.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
         self.setStyleSheet(self.STYLE)
+        self._scanline_overlay = ScanlineOverlay(self.viewport(), alpha=16)
 
     def keyPressEvent(self, e):
         # Pass shortcut keys to parent window (only without modifiers, so Cmd+C still copies)
@@ -8712,6 +8761,7 @@ class TranscriptionList(QScrollArea):
         self._layout.addStretch()
         self.setWidget(self.container)
         self._apply_style()
+        self._scanline_overlay = ScanlineOverlay(self.viewport(), alpha=16)
 
     def _apply_style(self):
         css = (

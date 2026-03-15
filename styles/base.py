@@ -104,6 +104,7 @@ class BaseStyle:
     name = "base"
     font = "Futura"
     corner_radius = 12
+    scanlines = False  # If True, draw CRT-style horizontal scanlines on panels
 
     # Colors
     accent = CYAN
