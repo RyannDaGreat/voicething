@@ -84,7 +84,9 @@ Voice-triggered bash commands — say a phrase, run a command, no recording invo
 
 **Architecture**:
 - Settings: `COMMAND_PHRASES_ENABLED` (bool), `COMMAND_PHRASES` (dict of phrase→bash_command)
-- Default phrases include media controls (play/pause) and key simulation (press enter key)
+- Default phrases include media controls (play/pause/next/previous via JXA media key simulation), Spotify-specific controls, brightness/volume control, and key simulation (press enter key)
+- Media key simulation uses JXA `osascript -l JavaScript` with ObjC bridge to post `NSEvent` system-defined events (NX_KEYTYPE_PLAY=16, NX_KEYTYPE_NEXT=17, NX_KEYTYPE_PREVIOUS=18). No dependencies beyond macOS.
+- `COMMAND_PHRASES_MUTE_WHILE_RECORDING` (bool, default True): suppresses command phrase callbacks during recording
 - `wakeword/base.py`: `on_command` callback in `WakeWordEngine.__init__`
 - `wakeword/macos_engine.py`: `command_phrases` param, `_command_phrases_lower` lookup set. In delegate: when not recording and command phrase detected → `on_command(phrase)` and return (skip recording)
 - `VoiceThingWindow._on_command_phrase_detected`: case-insensitive lookup, plays `command_phrase` chime, runs command via `subprocess.run(cmd, shell=True)` in daemon thread
