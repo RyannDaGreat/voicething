@@ -497,12 +497,10 @@ DEFAULTS = dict(
     COMMAND_PHRASES_MUTE_WHILE_RECORDING=True,  # Ignore command phrases during recording
     COMMAND_PHRASES={
         'press enter key':    "osascript -e 'tell app \"System Events\" to key code 36'",
-        'spotify play':       "osascript -e 'tell application \"Spotify\" to play'",
-        'spotify pause':      "osascript -e 'tell application \"Spotify\" to pause'",
-        'spotify next':       "osascript -e 'tell application \"Spotify\" to next track'",
-        'spotify previous':   "osascript -e 'tell application \"Spotify\" to previous track'",
-        'music play':         "osascript -e 'tell application \"Music\" to play'",
-        'music pause':        "osascript -e 'tell application \"Music\" to pause'",
+        'play':               "python3 -c \"from pynput.keyboard import Key,Controller;k=Controller();k.press(Key.media_play_pause);k.release(Key.media_play_pause)\"",
+        'pause':              "python3 -c \"from pynput.keyboard import Key,Controller;k=Controller();k.press(Key.media_play_pause);k.release(Key.media_play_pause)\"",
+        'next track':         "python3 -c \"from pynput.keyboard import Key,Controller;k=Controller();k.press(Key.media_next);k.release(Key.media_next)\"",
+        'previous track':     "python3 -c \"from pynput.keyboard import Key,Controller;k=Controller();k.press(Key.media_previous);k.release(Key.media_previous)\"",
         'brightness minimum': "osascript -e 'tell app \"System Events\"' -e 'repeat 20 times' -e 'key code 145' -e 'end repeat' -e 'repeat 2 times' -e 'key code 144' -e 'end repeat' -e 'end tell'",
         'brightness maximum': "osascript -e 'tell app \"System Events\"' -e 'repeat 20 times' -e 'key code 144' -e 'end repeat' -e 'end tell'",
         'volume maximum':     "osascript -e 'set volume output volume 100'",
