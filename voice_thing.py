@@ -489,6 +489,7 @@ DEFAULTS = dict(
     TMUX_UNLIMITED_SCROLL=False,  # Show full scrollback (slow) vs limited (fast)
     TMUX_AUTO_SCROLL=True,  # Auto-scroll to bottom on update (False = preserve position)
     TMUX_PHRASES_AS_CONTEXT=True,  # Include tmux phrases in context words
+    TMUX_FIRST_WORD_ONLY=True,  # Only match magic phrase if it's the first word(s) in the text
     TMUX_ANNOUNCE_PANE=False,  # Announce pane names via TTS when sending
     TMUX_ANNOUNCE_DELAY=500,  # ms to wait after TTS before resuming wake word (0-5000)
     AUTO_COPY=True,   # Copy transcription to clipboard before paste
@@ -3523,6 +3524,22 @@ class TmuxSelectionDialog(DraggableDialog):
         )
         btn_row.addWidget(self.tmux_toggle_btn)
 
+        # First-word-only toggle button
+        self.first_word_btn = QPushButton("W  First word only")
+        self.first_word_btn.setIcon(load_icon("target", ICON_COLOR_DARK))
+        self.first_word_btn.setIconSize(QSize(ICON_SIZE, ICON_SIZE))
+        self.first_word_btn.setStyleSheet(get_btn_css())
+        self.first_word_btn.setCheckable(True)
+        self.first_word_btn.setChecked(S.TMUX_FIRST_WORD_ONLY)
+        self.first_word_btn.clicked.connect(self._on_first_word_toggle)
+        set_tooltip(self.first_word_btn,
+            "W  Only match magic phrase at start of text.\n\n"
+            'When ON, "dog" won\'t match "dogma" or\n'
+            '"I have a dog". The phrase must be the\n'
+            "first word(s) spoken (like a wake word)."
+        )
+        btn_row.addWidget(self.first_word_btn)
+
         # Preview controls: theme toggle, ANSI toggle, font size +/-
         # Load from settings
         self._preview_dark_mode = S.TMUX_PREVIEW_DARK_MODE
@@ -4294,6 +4311,10 @@ done
         is_on = self.tmux_toggle_btn.isChecked()
         self.tmux_toggle_btn.setIcon(load_icon("tmux" if is_on else "tmux-off", ICON_COLOR_DARK))
         S.set('TMUX_MODE', is_on)  # Auto-save immediately
+
+    def _on_first_word_toggle(self, checked=None):
+        """Toggle first-word-only matching and auto-save."""
+        S.set('TMUX_FIRST_WORD_ONLY', self.first_word_btn.isChecked())
 
     def _paste_from_tmux_clipboard(self):
         """Paste tmux clipboard contents to the selected pane."""
@@ -10037,16 +10058,30 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
 
         Returns (pane_id, phrase) or (None, None) if no match.
         Only returns ONE match - the phrase that appears first in the text.
+
+        When TMUX_FIRST_WORD_ONLY is True, the phrase must be the first
+        word(s) of the text with a word boundary after it (space, comma,
+        period, end-of-string, etc). This prevents false matches like
+        "dogma" triggering the "dog" pane.
         """
         text_lower = text.lower()
+        first_word_only = S.TMUX_FIRST_WORD_ONLY
         first_match = None
         first_pos = len(text_lower)  # Start with position beyond end
 
         for pane_id, info in S.TMUX_PANE_NAMES.items():
             phrase = info.get('phrase', '')
             if phrase:
-                pos = text_lower.find(phrase.lower())
+                phrase_lower = phrase.lower()
+                pos = text_lower.find(phrase_lower)
                 if pos != -1 and pos < first_pos:
+                    if first_word_only:
+                        # Must start at position 0 and have a word boundary after
+                        if pos != 0:
+                            continue
+                        end = len(phrase_lower)
+                        if end < len(text_lower) and text_lower[end].isalnum():
+                            continue  # "dogma" should not match "dog"
                     first_pos = pos
                     first_match = (pane_id, phrase)
 
@@ -10790,7 +10825,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
             'CHIME_VOLUME', 'CHIME_PITCH', 'CHIME_PROGRAM', 'CHIME_THEME',
             'CUSTOM_CHIMES', 'CHIME_AUDIO_SETTINGS',
             # Tmux
-            'TMUX_MODE', 'TMUX_TARGET', 'TMUX_PANE_NAMES',
+            'TMUX_MODE', 'TMUX_TARGET', 'TMUX_PANE_NAMES', 'TMUX_FIRST_WORD_ONLY',
             'TMUX_PHRASES_AS_CONTEXT', 'TMUX_ANNOUNCE_PANE', 'TMUX_ANNOUNCE_DELAY',
             # TTS / speak-back
             'SPEAK_BACK_VOICE', 'TTS_SAY', 'TTS_SUPERTONIC', 'TTS_KITTEN', 'TTS_SIRI', 'TTS_WAKE_VOICES',
