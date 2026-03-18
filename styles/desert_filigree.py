@@ -58,6 +58,7 @@ class DesertFiligreeStyle(BaseStyle):
 
     name = "desert_filigree"
     font = "Futura"
+    text_shadow = (QColor(0, 0, 0, 220), 0, 2, 5)  # 2px dark engrave, stronger blur
 
     accent = SUNSET_ORANGE
     accent_css = ORANGE_CSS

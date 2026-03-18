@@ -613,17 +613,33 @@ def section_style():
     return STYLE.section_style()
 
 # UI helper functions to reduce boilerplate
+def _apply_text_shadow(label):
+    """Apply drop shadow to a label if STYLE.text_shadow is set.
+
+    Command, specific. Uses QGraphicsDropShadowEffect for 1px engrave/emboss.
+    """
+    shadow = STYLE.text_shadow
+    if shadow:
+        color, dx, dy, blur = shadow
+        effect = QGraphicsDropShadowEffect(label)
+        effect.setColor(color)
+        effect.setOffset(dx, dy)
+        effect.setBlurRadius(blur)
+        label.setGraphicsEffect(effect)
+
 def make_title(text, size=14):
     """Create a centered title label."""
     label = QLabel(text)
     label.setStyleSheet(title_style(size))
     label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    _apply_text_shadow(label)
     return label
 
 def make_section(text):
     """Create a section header label."""
     label = QLabel(text)
     label.setStyleSheet(section_style())
+    _apply_text_shadow(label)
     return label
 
 def make_close_btn(text="Esc  Close", on_click=None):
@@ -3246,6 +3262,51 @@ def _ansi_to_html(text: str, cursor_info=None, scrollback_lines=50, ansi_colors=
     return '<pre style="margin:0;white-space:pre-wrap;font-family:Menlo,monospace">' + html_out + '</pre>'
 
 
+class ScanlineOverlay(QWidget):
+    """Transparent overlay drawing horizontal CRT scanlines on a parent viewport.
+
+    Command, specific. Installs itself on the parent, auto-resizes, and draws
+    scanlines only when STYLE.scanlines is True. Used by EmeraldTerminalStyle.
+
+    Args:
+        parent (QWidget): Viewport widget to overlay
+        alpha (int): Scanline darkness (0-255), higher = more prominent
+        spacing (int): Pixels between scanlines
+    """
+
+    def __init__(self, parent=None, alpha=18, spacing=3):
+        super().__init__(parent)
+        self._alpha = alpha
+        self._spacing = spacing
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setAutoFillBackground(False)
+        if parent:
+            parent.installEventFilter(self)
+            self.resize(parent.size())
+            self.raise_()
+
+    def eventFilter(self, obj, event):
+        """Command, specific. Auto-resize overlay when parent resizes."""
+        if obj is self.parent() and event.type() == QEvent.Type.Resize:
+            self.resize(event.size())
+        return False
+
+    def paintEvent(self, event):
+        """Command, specific. Draw horizontal scanlines if STYLE.scanlines is True."""
+        if not STYLE.scanlines:
+            return
+        p = QPainter(self)
+        p.setPen(QPen(QColor(0, 0, 0, self._alpha), 1))
+        y = 0
+        h = self.height()
+        w = self.width()
+        while y < h:
+            p.drawLine(0, y, w, y)
+            y += self._spacing
+        p.end()
+
+
 class TmuxPreviewWidget(QTextEdit):
     """Focusable tmux pane preview with keyboard input forwarding.
 
@@ -3438,9 +3499,7 @@ class TmuxSelectionDialog(DraggableDialog):
     def __init__(self, current_target='%', parent=None):
         super().__init__(parent)
         self.selected_target = current_target
-        self._hover_pane_id = None
         self._selected_pane_id = None
-        self._table_ibeam = None  # Cursor dedup for table viewport (avoids ImageIO churn)
         self._pane_data = []  # List of {address, pane_id, process, target}
         self._orig_tmux_mode = S.TMUX_MODE  # Store original for cancel
         self._last_preview_html = None  # For avoiding redundant UI updates
@@ -3504,7 +3563,6 @@ class TmuxSelectionDialog(DraggableDialog):
             f"QTableWidget {{ {PANEL_BG_FLAT_CSS} color: {TEXT_PRIMARY}; "
             f"border: 1px solid {BORDER_COLOR}; font-family: Menlo, monospace; font-size: 11px; }} "
             f"QTableWidget::item {{ padding: 1px 4px; color: {TEXT_PRIMARY}; }} "
-            f"QTableWidget::item:hover {{ background: rgba({STYLE.accent.red()},{STYLE.accent.green()},{STYLE.accent.blue()},0.25); }} "
             f"QTableWidget::item:selected {{ background: rgba({STYLE.accent.red()},{STYLE.accent.green()},{STYLE.accent.blue()},0.5); color: {TEXT_PRIMARY}; }} "
             f"QHeaderView::section {{ background: {BORDER_COLOR}; color: {TEXT_PRIMARY}; padding: 2px 4px; "
             f"border: 1px solid {BORDER_COLOR}; font-weight: bold; }}"
@@ -3515,12 +3573,10 @@ class TmuxSelectionDialog(DraggableDialog):
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.verticalHeader().setVisible(False)
         self.table.verticalHeader().setDefaultSectionSize(22)  # Compact rows
-        self.table.setMouseTracking(True)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)  # We handle edit manually
         self.table.cellClicked.connect(self._on_cell_clicked)
         self.table.cellChanged.connect(self._on_cell_changed)
         self.table.itemSelectionChanged.connect(self._on_selection_changed)
-        self.table.viewport().installEventFilter(self)  # For hover preview
         self._table_scanlines = ScanlineOverlay(self.table.viewport(), alpha=12)
         self.splitter.addWidget(self.table)
 
@@ -3905,9 +3961,7 @@ class TmuxSelectionDialog(DraggableDialog):
             return
         pane_id = self._pane_data[row]['pane_id']
         self._selected_pane_id = pane_id
-        # Update preview to selected row (not hover)
-        if self._hover_pane_id is None:
-            self._update_preview(pane_id)
+        self._update_preview(pane_id)
         # Single-click on phrase column = start editing
         if col == self.COL_PHRASE:
             self.table.editItem(self.table.item(row, col))
@@ -3918,9 +3972,7 @@ class TmuxSelectionDialog(DraggableDialog):
         if rows and rows[0].row() < len(self._pane_data):
             pane_id = self._pane_data[rows[0].row()]['pane_id']
             self._selected_pane_id = pane_id
-            # Update preview if not hovering
-            if self._hover_pane_id is None:
-                self._update_preview(pane_id)
+            self._update_preview(pane_id)
 
     def _on_cell_changed(self, row, col):
         """Save phrase when cell changes."""
@@ -3994,38 +4046,6 @@ class TmuxSelectionDialog(DraggableDialog):
         # Preview: speak the phrase using the selected voice
         do_tts(phrase, block=False, voice_override=voice or None)
 
-    def eventFilter(self, obj, event):
-        """Handle mouse hover for preview."""
-        from PyQt6.QtCore import QEvent
-        if obj == self.table.viewport():
-            if event.type() == QEvent.Type.MouseMove:
-                pos = event.position().toPoint()
-                row = self.table.rowAt(pos.y())
-                col = self.table.columnAt(pos.x())
-                # Update cursor for phrase column (deduplicated to avoid ImageIO churn)
-                want_ibeam = col == self.COL_PHRASE and row >= 0
-                if want_ibeam != self._table_ibeam:
-                    self._table_ibeam = want_ibeam
-                    if want_ibeam:
-                        self.table.viewport().setCursor(Qt.CursorShape.IBeamCursor)
-                    else:
-                        self.table.viewport().setCursor(Qt.CursorShape.ArrowCursor)
-                # Hover preview
-                if row >= 0 and row < len(self._pane_data):
-                    pane_id = self._pane_data[row]['pane_id']
-                    if pane_id != self._hover_pane_id:
-                        self._hover_pane_id = pane_id
-                        self._update_preview(pane_id)
-                else:
-                    self._hover_pane_id = None
-            elif event.type() == QEvent.Type.Leave:
-                self._hover_pane_id = None
-                self.table.viewport().setCursor(Qt.CursorShape.ArrowCursor)
-                # Revert to selected row preview
-                if self._selected_pane_id:
-                    self._update_preview(self._selected_pane_id)
-        return super().eventFilter(obj, event)
-
     def _update_preview(self, pane_id):
         """Update preview panel with scrollback from pane (with ANSI colors).
 
@@ -4051,7 +4071,7 @@ class TmuxSelectionDialog(DraggableDialog):
         last_html = None
 
         while not self._poll_stop.is_set():
-            pane_id = self._hover_pane_id or self._selected_pane_id
+            pane_id = self._selected_pane_id
             if not pane_id:
                 self._poll_stop.wait(0.1)
                 continue
@@ -4082,7 +4102,7 @@ done
 
                 while not self._poll_stop.is_set():
                     # Check if pane changed
-                    new_pane = self._hover_pane_id or self._selected_pane_id
+                    new_pane = self._selected_pane_id
                     if new_pane != current_pane:
                         proc.terminate()
                         break
@@ -4388,8 +4408,7 @@ done
             if data['pane_id'] == pane_id:
                 self.table.selectRow(row)
                 self._selected_pane_id = pane_id
-                if self._hover_pane_id is None:
-                    self._update_preview(pane_id)
+                self._update_preview(pane_id)
                 break
 
     def set_main_window(self, main_window):
@@ -8248,51 +8267,6 @@ class PermissionDialog(DraggableDialog):
             super().keyPressEvent(e)
 
 
-class ScanlineOverlay(QWidget):
-    """Transparent overlay drawing horizontal CRT scanlines on a parent viewport.
-
-    Command, specific. Installs itself on the parent, auto-resizes, and draws
-    scanlines only when STYLE.scanlines is True. Used by EmeraldTerminalStyle.
-
-    Args:
-        parent (QWidget): Viewport widget to overlay
-        alpha (int): Scanline darkness (0-255), higher = more prominent
-        spacing (int): Pixels between scanlines
-    """
-
-    def __init__(self, parent=None, alpha=18, spacing=3):
-        super().__init__(parent)
-        self._alpha = alpha
-        self._spacing = spacing
-        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        self.setAutoFillBackground(False)
-        if parent:
-            parent.installEventFilter(self)
-            self.resize(parent.size())
-            self.raise_()
-
-    def eventFilter(self, obj, event):
-        """Command, specific. Auto-resize overlay when parent resizes."""
-        if obj is self.parent() and event.type() == QEvent.Type.Resize:
-            self.resize(event.size())
-        return False
-
-    def paintEvent(self, event):
-        """Command, specific. Draw horizontal scanlines if STYLE.scanlines is True."""
-        if not STYLE.scanlines:
-            return
-        p = QPainter(self)
-        p.setPen(QPen(QColor(0, 0, 0, self._alpha), 1))
-        y = 0
-        h = self.height()
-        w = self.width()
-        while y < h:
-            p.drawLine(0, y, w, y)
-            y += self._spacing
-        p.end()
-
-
 class TextPanel(QTextEdit):
     """Read-only text panel."""
 
@@ -9406,6 +9380,7 @@ class WaveformWidget(QWidget):
         self.setMaximumHeight(133)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self._inner = _WaveformInner(self)
+        self._scanline_overlay = ScanlineOverlay(self, alpha=25, spacing=3)
         self._glow = None
         self._update_glow()
 
@@ -9429,6 +9404,7 @@ class WaveformWidget(QWidget):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self._inner.setGeometry(self.rect())
+        self._scanline_overlay.raise_()
 
     def set_samples(self, samples):
         max_samples = WAVEFORM_DURATION_SECONDS * SAMPLE_RATE

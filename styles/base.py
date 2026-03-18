@@ -105,6 +105,7 @@ class BaseStyle:
     font = "Futura"
     corner_radius = 12
     scanlines = False  # If True, draw CRT-style horizontal scanlines on panels
+    text_shadow = None  # If set, (QColor, x_offset, y_offset, blur) for title/section label shadows
 
     # Colors
     accent = CYAN

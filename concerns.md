@@ -187,3 +187,63 @@ UI clear operations must also clear the backing data source, not just the displa
 ### Lesson
 
 Always check actual rp API with grep before guessing function names. The rp clipboard convention is `string_to_clipboard` / `string_from_clipboard`, not the reverse naming.
+
+---
+
+## 2026-03-15: QTableWidget `::item:hover` CSS incompatible with cell widget columns
+
+### The Bug
+
+In the Tmux Pane Manager, the Voice column uses `setCellWidget` to place QComboBox dropdowns in each row. With `QTableWidget::item:hover { background: ... }` in the stylesheet, hovering over any cell — including over a QComboBox — causes the row's highlight to jump around visually. The user sees the highlighted row change just by moving the mouse over the voice dropdowns, which is distracting and feels broken.
+
+### Root Cause
+
+Qt's `::item:hover` pseudo-state applies to table items at the widget level. When a cell contains a cell widget (QComboBox), mouse events on that widget still propagate hover state to the underlying QTableWidgetItem. Combined with `setMouseTracking(True)`, every pixel of mouse movement triggers hover recalculation across all items. The result: the visual highlight follows the cursor even when the user is just trying to interact with a dropdown.
+
+### Fix
+
+Removed `QTableWidget::item:hover` CSS rule from the tmux pane table. Also removed `setMouseTracking(True)` and the viewport eventFilter (which were originally for hover-to-switch-preview, already removed). Selection highlight (`::item:selected`) still works on click.
+
+### Lesson
+
+`QTableWidget::item:hover` and `setCellWidget` don't mix well. If a table has interactive cell widgets (combo boxes, buttons), avoid hover CSS on the table items — hover state bleeds through the widget boundary. Use `::item:selected` for visual feedback instead.
+
+---
+
+## 2026-03-15: Whisper initial_prompt parroting on near-silent audio
+
+### The Bug
+
+User recorded ~0.4s of near-silence and got "muse workbench local" as transcription — words from tmux pane names that were nowhere in the audio.
+
+### Root Cause
+
+`_get_initial_prompt()` concatenates `S.CUSTOM_WORDS` + tmux pane phrase words and passes them to Whisper as `initial_prompt`. On near-silent audio (-47.8 dB, above the energy gate threshold), Whisper large-v3 hallucinates the prompt words back verbatim. Reproduced 10/10 times: without initial_prompt → returns "."; with initial_prompt → returns "muse workbench local".
+
+### Fix
+
+Added prompt parroting detection after Whisper transcription: if all result words are a subset of the initial_prompt words, the transcription is discarded as a hallucination.
+
+### Lesson (also added to CLAUDE.md)
+
+**No speculative fixes.** The initial attempt was an energy gate fix that wouldn't have caught this bug (-47.8 dB was above the threshold). Always reproduce and prove root cause before writing any fix.
+
+---
+
+## 2026-03-15: Speculative energy gate fix — unnecessary code shipped
+
+### The Bug
+
+After seeing the "muse workbench local" hallucination, a speculative energy gate was added to `_transcribe()` before the root cause was proven. The gate checked if audio energy was below -70 dB and skipped transcription. The actual audio was -47.8 dB — well above the threshold — so the gate would never have caught the real bug.
+
+### Root Cause
+
+Guessing before investigating. The energy gate was a reasonable hypothesis but was never tested against the actual failing audio before being committed.
+
+### Fix
+
+Removed the speculative energy gate after proving the real root cause (prompt parroting). Added CLAUDE.md rule: "No speculative fixes."
+
+### Lesson
+
+If you already wrote a speculative fix and later find the real cause, re-evaluate and remove anything that doesn't address it. Don't keep dead code just because it was already written.

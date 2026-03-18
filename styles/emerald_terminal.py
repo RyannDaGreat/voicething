@@ -1,9 +1,9 @@
 """Emerald Terminal style - sleek green-on-dark terminal aesthetic.
 
 Modern hacker terminal with emerald green accents on near-black backgrounds.
-Differentiates from CRT Terminal by being clean, minimal, and modern rather
-than retro phosphor. Think Matrix-inspired but refined -- no scanlines, no
-phosphor dots, no CRT curvature. Just crisp emerald on dark with subtle glow.
+Subtle CRT scanlines throughout all panels for immersion. Think Matrix-inspired
+but refined -- no phosphor dots, no CRT curvature. Crisp emerald on dark with
+subtle glow and horizontal scanline overlays.
 """
 
 from PyQt6.QtCore import Qt, QPointF, QRectF
