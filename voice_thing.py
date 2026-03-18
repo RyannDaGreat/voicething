@@ -552,7 +552,7 @@ DEFAULTS = dict(
         'pre_cancel':    {'pattern': [[-20, -17, -10, -5, -1]] + [[]] * 15, 'duration': 0.05},
         'boot':          {'pattern': [[0], [4], [7], [11], [16], [0, 4, 7, 11, 16]] + [[]] * 49, 'duration': 0.06},
         'auto_enter_on': {'pattern': [[2, 9], [6, 14, 16], [9, 18], [7, 16, 21], [6, 14, 18, 21, 26]] + [[]] * 11, 'duration': 0.08711429988156041},
-        'tmux_send':     {'pattern': [[-17, -5, 7], [-13, -1, 11], [-10, 14], [-5, 19]] + [[]] * 12, 'duration': 0.06843836142250373},
+        'tmux_send':     {'pattern': [[14], [16], [14], [16], [14]] + [[]] * 11, 'duration': 0.08193661398222568},
         'command_phrase': {'pattern': [[0, 7, 12], [5, 12, 19]] + [[]] * 14, 'duration': 0.08},
     },
     TRANSCRIPTION_SHORTCUTS=['L'],  # Action keys shown as quick buttons on each transcription row
