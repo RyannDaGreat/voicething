@@ -431,6 +431,25 @@ class TeeOutput:
 DEFAULT_WAKEWORD_PHRASES = 'jarvis, roger, netbook, record'
 DEFAULT_WAKEWORD_STOP_PHRASES = 'over'
 DEFAULT_WAKEWORD_CANCEL_PHRASES = 'cancel, never mind'
+
+# Tooltip text for strip wake/stop word toggles (shared between TmuxSelectionDialog and WakeWordSettingsWidget)
+STRIP_WAKE_WORD_TOOLTIP = (
+    "Remove magic phrase from start of transcription.\n\n"
+    'Example: "report do something" \u2192 "do something"\n'
+    '"Report, check this out" \u2192 "check this out"\n'
+    '"report. Fix the bug" \u2192 "Fix the bug"\n\n'
+    "Handles punctuation and capitalization from\n"
+    "speech-to-text (commas, periods, caps, etc)."
+)
+STRIP_STOP_WORD_TOOLTIP = (
+    'Remove stop word (e.g. "over") from end of transcription.\n\n'
+    'Example: "do something over" \u2192 "do something"\n'
+    '"check this Out." \u2192 "check this"\n'
+    '"fix the bug, over!" \u2192 "fix the bug"\n\n'
+    "Handles punctuation and capitalization from\n"
+    "speech-to-text (commas, periods, caps, etc).\n"
+    "Stop words are configured in Wake Word settings."
+)
 DEFAULT_OPENWAKEWORD_MODEL = 'computer'
 DEFAULT_OPENWAKEWORD_SENSITIVITY = 0.2
 DEFAULT_TTS_SAY_SPEED = 175
@@ -506,6 +525,8 @@ DEFAULTS = dict(
     TMUX_AUTO_SCROLL=True,  # Auto-scroll to bottom on update (False = preserve position)
     TMUX_PHRASES_AS_CONTEXT=True,  # Include tmux phrases in context words
     TMUX_FIRST_WORD_ONLY=True,  # Only match magic phrase if it's the first word(s) in the text
+    TMUX_STRIP_WAKE_WORD=True,  # Remove magic phrase from start of transcription before pasting
+    TMUX_STRIP_STOP_WORD=True,  # Remove stop word (e.g. "over") from end of transcription before pasting
     TMUX_ANNOUNCE_PANE=False,  # Announce pane names via TTS when sending
     TMUX_ANNOUNCE_DELAY=500,  # ms to wait after TTS before resuming wake word (0-5000)
     # Command phrases: say a phrase to run a bash command (macOS engine only, no recording)
@@ -959,9 +980,13 @@ def _ntfy_listen_loop(topic, gen):
                     print(f"NTFY received: {text}" + (f" (voice={voice})" if voice else ""))
                     if _ntfy_pre_tts_callback:
                         _ntfy_pre_tts_callback()
-                    do_tts(text, block=True, voice_override=voice)
-                    if _ntfy_post_tts_callback:
-                        _ntfy_post_tts_callback()
+                    try:
+                        do_tts(text, block=True, voice_override=voice)
+                    except Exception as e:
+                        print(f"NTFY TTS failed: {e}")
+                    finally:
+                        if _ntfy_post_tts_callback:
+                            _ntfy_post_tts_callback()
         except Exception as e:
             if gen != _ntfy_generation:
                 return
@@ -1505,6 +1530,156 @@ def listening_for_tmux_panes_as_wakewords() -> bool:
     if S.WAKEWORD_ENGINE == 'macos':
         return S.WAKEWORD_MACOS.get('use_tmux_phrases', False)
     return False
+
+
+def strip_wake_word(text, phrase):
+    """Remove a magic phrase from the start of text, ignoring punctuation and case.
+
+    Pure function, general. Strips the wake/magic phrase from the beginning of
+    the transcription. Handles variations in punctuation and capitalization that
+    speech-to-text engines commonly produce (e.g. "Report, do something" ->
+    "do something", "report. Do something" -> "Do something").
+
+    Args:
+        text (str): The full transcription text.
+        phrase (str): The magic phrase to strip (e.g. "report", "for voice").
+
+    Returns:
+        str: Text with the magic phrase removed from the start, or unchanged
+             if the phrase is not at the start.
+
+    Examples:
+        >>> strip_wake_word("report do something", "report")
+        'do something'
+        >>> strip_wake_word("Report, do something", "report")
+        'do something'
+        >>> strip_wake_word("report. Do something", "report")
+        'Do something'
+        >>> strip_wake_word("Report: do something", "Report")
+        'do something'
+        >>> strip_wake_word("Report! Do this", "report")
+        'Do this'
+        >>> strip_wake_word("Report... check this", "report")
+        'check this'
+        >>> strip_wake_word("for voice hello world", "for voice")
+        'hello world'
+        >>> strip_wake_word("For Voice, hello world", "for voice")
+        'hello world'
+        >>> strip_wake_word("For Jarvis, check this", "for jarvis")
+        'check this'
+        >>> strip_wake_word("for Jarvis check this", "for jarvis")
+        'check this'
+        >>> strip_wake_word("LTX render the video now", "ltx")
+        'render the video now'
+        >>> strip_wake_word("grand maybe you missed some items", "grand")
+        'maybe you missed some items'
+        >>> strip_wake_word("Grand check the output", "grand")
+        'check the output'
+        >>> strip_wake_word("report", "report")
+        ''
+        >>> strip_wake_word("Report.", "report")
+        ''
+        >>> strip_wake_word("Report...", "report")
+        ''
+        >>> strip_wake_word("report   ", "report")
+        ''
+        >>> strip_wake_word("no match here", "report")
+        'no match here'
+        >>> strip_wake_word("reporting something", "report")
+        'reporting something'
+        >>> strip_wake_word("grandma called today", "grand")
+        'grandma called today'
+    """
+    if not text or not phrase:
+        return text
+    text_lower = text.lower()
+    phrase_lower = phrase.lower()
+    if not text_lower.startswith(phrase_lower):
+        return text
+    after = text[len(phrase):]
+    # Must have a word boundary after the phrase (not a letter/digit)
+    if after and after[0].isalnum():
+        return text  # "reporting" should not match "report"
+    # Strip leading punctuation and whitespace after the phrase
+    after = after.lstrip(' \t,.:;!?-—–')
+    return after
+
+
+def strip_stop_word(text, stop_words):
+    """Remove a stop word from the end of text, ignoring punctuation and case.
+
+    Pure function, general. Strips stop words (like "over") from the end of
+    the transcription. Handles variations in punctuation and capitalization that
+    speech-to-text engines commonly produce (e.g. "do something Over." ->
+    "do something", "hello over" -> "hello").
+
+    Args:
+        text (str): The full transcription text.
+        stop_words (list[str]): Stop words to check for (e.g. ["over"]).
+
+    Returns:
+        str: Text with the stop word removed from the end, or unchanged
+             if no stop word is found at the end.
+
+    Examples:
+        >>> strip_stop_word("do something over", ["over"])
+        'do something'
+        >>> strip_stop_word("do something Over.", ["over"])
+        'do something'
+        >>> strip_stop_word("do something over.", ["over"])
+        'do something'
+        >>> strip_stop_word("do something OVER", ["over"])
+        'do something'
+        >>> strip_stop_word("do something, over!", ["over"])
+        'do something'
+        >>> strip_stop_word("please fix the bug Over.", ["over"])
+        'please fix the bug'
+        >>> strip_stop_word("is that right over?", ["over"])
+        'is that right'
+        >>> strip_stop_word("do the thing over...", ["over"])
+        'do the thing'
+        >>> strip_stop_word("just do it Over!", ["over"])
+        'just do it'
+        >>> strip_stop_word("do something over   ", ["over"])
+        'do something'
+        >>> strip_stop_word("do something end", ["over", "end"])
+        'do something'
+        >>> strip_stop_word("over", ["over"])
+        ''
+        >>> strip_stop_word("Over.", ["over"])
+        ''
+        >>> strip_stop_word(" over", ["over"])
+        ''
+        >>> strip_stop_word("no match here", ["over"])
+        'no match here'
+        >>> strip_stop_word("game over now", ["over"])
+        'game over now'
+        >>> strip_stop_word("moreover something", ["over"])
+        'moreover something'
+        >>> strip_stop_word("the overall design is good", ["over"])
+        'the overall design is good'
+        >>> strip_stop_word("we covered that already", ["over"])
+        'we covered that already'
+        >>> strip_stop_word("I discovered a bug", ["over"])
+        'I discovered a bug'
+        >>> strip_stop_word("hand it over to the team please", ["over"])
+        'hand it over to the team please'
+    """
+    if not text or not stop_words:
+        return text
+    # Strip trailing punctuation to expose the last word
+    stripped = text.rstrip(' \t,.:;!?-—–')
+    for word in stop_words:
+        word_lower = word.lower()
+        stripped_lower = stripped.lower()
+        if stripped_lower.endswith(word_lower):
+            before = stripped[:len(stripped) - len(word_lower)]
+            # Must have a word boundary before the stop word (not a letter/digit)
+            if before and before[-1].isalnum():
+                continue  # "moreover" should not match "over"
+            result = before.rstrip(' \t,.:;!?-—–')
+            return result
+    return text
 
 
 def tmux_paste_text(target, text):
@@ -3739,6 +3914,33 @@ class TmuxSelectionDialog(DraggableDialog):
         btn_row.addWidget(ok_btn)
         layout.addLayout(btn_row)
 
+        # Second row: transcription cleanup toggles
+        strip_row = QHBoxLayout()
+        strip_row.setSpacing(8)
+
+        self.strip_wake_btn = QPushButton("Strip wake word")
+        self.strip_wake_btn.setIcon(load_icon("cancel", ICON_COLOR_DARK))
+        self.strip_wake_btn.setIconSize(QSize(ICON_SIZE, ICON_SIZE))
+        self.strip_wake_btn.setStyleSheet(get_btn_css())
+        self.strip_wake_btn.setCheckable(True)
+        self.strip_wake_btn.setChecked(S.TMUX_STRIP_WAKE_WORD)
+        self.strip_wake_btn.clicked.connect(self._on_strip_wake_toggle)
+        set_toggle_tooltip(self.strip_wake_btn, STRIP_WAKE_WORD_TOOLTIP)
+        strip_row.addWidget(self.strip_wake_btn)
+
+        self.strip_stop_btn = QPushButton("Strip stop word")
+        self.strip_stop_btn.setIcon(load_icon("cancel", ICON_COLOR_DARK))
+        self.strip_stop_btn.setIconSize(QSize(ICON_SIZE, ICON_SIZE))
+        self.strip_stop_btn.setStyleSheet(get_btn_css())
+        self.strip_stop_btn.setCheckable(True)
+        self.strip_stop_btn.setChecked(S.TMUX_STRIP_STOP_WORD)
+        self.strip_stop_btn.clicked.connect(self._on_strip_stop_toggle)
+        set_toggle_tooltip(self.strip_stop_btn, STRIP_STOP_WORD_TOOLTIP)
+        strip_row.addWidget(self.strip_stop_btn)
+
+        strip_row.addStretch()
+        layout.addLayout(strip_row)
+
         self.setMinimumSize(700, 400)
         self._update_preview_style()  # Initialize preview with current theme/font
         self._refresh_table()
@@ -3840,12 +4042,12 @@ class TmuxSelectionDialog(DraggableDialog):
             # Voice override combobox (only if phrase is set)
             if phrase:
                 backend = S.SPEAK_BACK_VOICE
+                voices = get_voice_names_for_backend(backend)
                 combo = QComboBox()
                 combo.setStyleSheet(get_combobox_css() + " font-size: 10px;")
                 combo.addItem("Default", "")
-                if backend in ('say', 'siri'):
-                    for v in get_voice_names_for_backend(backend):
-                        combo.addItem(v, v)
+                for v in voices:
+                    combo.addItem(v, v)
                 # Set current selection from TTS_WAKE_VOICES
                 current_voice = S.TTS_WAKE_VOICES.get(backend, {}).get(phrase.lower(), "")
                 idx = 0
@@ -3870,7 +4072,11 @@ class TmuxSelectionDialog(DraggableDialog):
 
         self.table.resizeColumnsToContents()
         self.table.setColumnWidth(self.COL_PHRASE, 120)
-        self.table.setColumnWidth(self.COL_VOICE, 100)
+        # Hide voice column when backend has no voices
+        has_voices = bool(get_voice_names_for_backend(S.SPEAK_BACK_VOICE))
+        self.table.setColumnHidden(self.COL_VOICE, not has_voices)
+        if has_voices:
+            self.table.setColumnWidth(self.COL_VOICE, 100)
         self.table.blockSignals(False)
 
         # Try to restore previous selection if requested
@@ -4043,8 +4249,9 @@ class TmuxSelectionDialog(DraggableDialog):
         elif backend in wake_voices:
             del wake_voices[backend]
         S.set('TTS_WAKE_VOICES', wake_voices)
-        # Preview: speak the phrase using the selected voice
-        do_tts(phrase, block=False, voice_override=voice or None)
+        # Preview: speak "voicename phrase" to avoid triggering the wake word
+        voice_name = voice or "Default"
+        do_tts(f"{voice_name} {phrase}", block=False, voice_override=voice or None)
 
     def _update_preview(self, pane_id):
         """Update preview panel with scrollback from pane (with ANSI colors).
@@ -4176,10 +4383,15 @@ done
             self._poll_thread = None
 
     def changeEvent(self, event):
-        """Refresh voice combos when window becomes active (syncs with WakeVoiceDialog)."""
+        """Refresh voice combos and strip toggles when window becomes active."""
         from PyQt6.QtCore import QEvent
         if event.type() == QEvent.Type.ActivationChange and self.isActiveWindow():
             self._refresh_voice_combos()
+            # Sync strip toggles with settings (bidirectional with WakeWordSettingsWidget)
+            self.strip_wake_btn.setChecked(S.TMUX_STRIP_WAKE_WORD)
+            set_toggle_tooltip(self.strip_wake_btn)
+            self.strip_stop_btn.setChecked(S.TMUX_STRIP_STOP_WORD)
+            set_toggle_tooltip(self.strip_stop_btn)
         super().changeEvent(event)
 
     def showEvent(self, event):
@@ -4390,6 +4602,16 @@ done
         """Toggle first-word-only matching and auto-save."""
         set_toggle_tooltip(self.first_word_btn)
         S.set('TMUX_FIRST_WORD_ONLY', self.first_word_btn.isChecked())
+
+    def _on_strip_wake_toggle(self, checked=None):
+        """Toggle wake word stripping and auto-save."""
+        set_toggle_tooltip(self.strip_wake_btn)
+        S.set('TMUX_STRIP_WAKE_WORD', self.strip_wake_btn.isChecked())
+
+    def _on_strip_stop_toggle(self, checked=None):
+        """Toggle stop word stripping and auto-save."""
+        set_toggle_tooltip(self.strip_stop_btn)
+        S.set('TMUX_STRIP_STOP_WORD', self.strip_stop_btn.isChecked())
 
     def _paste_from_tmux_clipboard(self):
         """Paste tmux clipboard contents to the selected pane."""
@@ -5004,8 +5226,9 @@ class WakeVoiceDialog(DraggableDialog):
         elif self._backend in wake_voices:
             del wake_voices[self._backend]
         S.set('TTS_WAKE_VOICES', wake_voices)
-        # Preview: speak the wake word with the selected voice
-        do_tts(phrase, block=False, voice_override=voice or None)
+        # Preview: speak "voicename phrase" to avoid triggering the wake word
+        voice_name = voice or "Default"
+        do_tts(f"{voice_name} {phrase}", block=False, voice_override=voice or None)
 
 
 class TTSSettingsWidget(QWidget):
@@ -5792,6 +6015,33 @@ class WakeWordSettingsWidget(QWidget):
 
         self._layout.addWidget(self._macos_container)
 
+        # Transcription cleanup section (applies to all engines)
+        self._layout.addWidget(make_section("Transcription Cleanup"))
+
+        strip_wake_row = QHBoxLayout()
+        strip_wake_row.setSpacing(8)
+        self._strip_wake_checkbox = make_checkbox(
+            "Delete wake word from transcription", S.TMUX_STRIP_WAKE_WORD,
+            STRIP_WAKE_WORD_TOOLTIP,
+            self._on_strip_wake_changed)
+        strip_wake_row.addWidget(self._strip_wake_checkbox)
+        strip_wake_row.addStretch()
+        self._layout.addLayout(strip_wake_row)
+
+        strip_stop_row = QHBoxLayout()
+        strip_stop_row.setSpacing(8)
+        self._strip_stop_checkbox = make_checkbox(
+            "Delete stop word from transcription", S.TMUX_STRIP_STOP_WORD,
+            STRIP_STOP_WORD_TOOLTIP,
+            self._on_strip_stop_changed)
+        strip_stop_row.addWidget(self._strip_stop_checkbox)
+        strip_stop_row.addStretch()
+        self._layout.addLayout(strip_stop_row)
+
+        # Register hooks for bidirectional sync with TmuxSelectionDialog
+        S.hooks['TMUX_STRIP_WAKE_WORD'] = lambda v: self._strip_wake_checkbox.setChecked(v)
+        S.hooks['TMUX_STRIP_STOP_WORD'] = lambda v: self._strip_stop_checkbox.setChecked(v)
+
         # Initialize visibility
         self._update_for_engine()
 
@@ -5841,6 +6091,12 @@ class WakeWordSettingsWidget(QWidget):
         cfg['stop_phrases'] = phrases
         S.set('WAKEWORD_MACOS', cfg)
         self.settings_changed.emit()
+
+    def _on_strip_wake_changed(self, state):
+        S.set('TMUX_STRIP_WAKE_WORD', state == Qt.CheckState.Checked.value)
+
+    def _on_strip_stop_changed(self, state):
+        S.set('TMUX_STRIP_STOP_WORD', state == Qt.CheckState.Checked.value)
 
     def _on_tmux_phrases_changed(self, state):
         checked = state == Qt.CheckState.Checked.value
@@ -10291,16 +10547,23 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         # Per-wake-word voice override (looked up once, used in all instruction paths)
         voice_override = self._get_wake_voice_override()
 
+        # Strip stop word from end of transcription (before routing)
+        if S.TMUX_STRIP_STOP_WORD:
+            stop_phrases_str = S.WAKEWORD_MACOS.get('stop_phrases', DEFAULT_WAKEWORD_STOP_PHRASES)
+            stop_words = [w.strip() for w in stop_phrases_str.split(',') if w.strip()]
+            text = strip_stop_word(text, stop_words)
+
         # Voice routing: if tmux mode enabled, check for first phrase match
         tmux_routed = False
         if S.TMUX_MODE:
             pane_id, phrase = self._find_first_matching_tmux_pane(text)
             if pane_id:
-                # Magic phrase matched - route to that tmux pane (skip ⌘V)
+                # Strip magic phrase from start of transcription
+                clean_text = strip_wake_word(text, phrase) if S.TMUX_STRIP_WAKE_WORD else text
                 # Uses tmux_paste_text() which pipes via stdin, no system clipboard needed
-                tmux_text = text
+                tmux_text = clean_text
                 if S.SPEAK_BACK_APPEND_INSTRUCTION and not (S.SPEAK_BACK_WAKE_ONLY and not self._recording_from_wake_word):
-                    tmux_text = text + '\n\n' + build_speak_back_instruction(voice_override=voice_override)
+                    tmux_text = clean_text + '\n\n' + build_speak_back_instruction(voice_override=voice_override)
                 play_chime('tmux_send')
                 self._do_tmux_paste_to_target(pane_id, tmux_text, voice_override=voice_override)
                 tmux_routed = True
@@ -10366,8 +10629,12 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
             self._wake_suppressed_until = time.time() + 30  # provisional; refined after TTS
 
         def speak_and_resume():
-            do_tts(text, block=True, voice_override=voice_override)
-            # Now we know TTS is done — suppress for the configured delay
+            try:
+                do_tts(text, block=True, voice_override=voice_override)
+            except Exception as e:
+                print(f"TTS announcement failed: {e}")
+            # Always reset suppression — even if TTS crashed, don't leave
+            # wake words permanently blocked by the provisional 30s timestamp.
             delay_ms = S.TMUX_ANNOUNCE_DELAY
             self._wake_suppressed_until = time.time() + delay_ms / 1000.0
             # Show stripe animation during cooldown (signal main thread)
@@ -11233,6 +11500,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
             'CUSTOM_CHIMES', 'CHIME_AUDIO_SETTINGS',
             # Tmux
             'TMUX_MODE', 'TMUX_TARGET', 'TMUX_PANE_NAMES', 'TMUX_FIRST_WORD_ONLY',
+            'TMUX_STRIP_WAKE_WORD', 'TMUX_STRIP_STOP_WORD',
             'TMUX_PHRASES_AS_CONTEXT', 'TMUX_ANNOUNCE_PANE', 'TMUX_ANNOUNCE_DELAY',
             # TTS / speak-back
             'SPEAK_BACK_VOICE', 'TTS_SAY', 'TTS_SUPERTONIC', 'TTS_KITTEN', 'TTS_SIRI', 'TTS_WAKE_VOICES',
