@@ -573,8 +573,10 @@ DEFAULTS = dict(
         'pre_cancel':    {'pattern': [[-20, -17, -10, -5, -1]] + [[]] * 15, 'duration': 0.05},
         'boot':          {'pattern': [[0], [4], [7], [11], [16], [0, 4, 7, 11, 16]] + [[]] * 49, 'duration': 0.06},
         'auto_enter_on': {'pattern': [[2, 9], [6, 14, 16], [9, 18], [7, 16, 21], [6, 14, 18, 21, 26]] + [[]] * 11, 'duration': 0.08711429988156041},
-        'tmux_send':     {'pattern': [[14], [16], [14], [16], [14]] + [[]] * 11, 'duration': 0.08193661398222568},
+        'tmux_send':      {'pattern': [[14], [16], [14], [16], [14]] + [[]] * 11, 'duration': 0.08193661398222568},
         'command_phrase': {'pattern': [[0, 7, 12], [5, 12, 19]] + [[]] * 14, 'duration': 0.08},
+        'cmd_phrases_on': {'pattern': [[4, 9, 13], [14], [13], [9], [4, 8, 11], [16]] + [[]] * 10, 'duration': 0.17257431218029587},
+        'cmd_phrases_off':{'pattern': [[4], [4, 8, 11], [13], [11], [4], [-3, 4, 9]] + [[]] * 10, 'duration': 0.18363939409130087},
     },
     TRANSCRIPTION_SHORTCUTS=['L'],  # Action keys shown as quick buttons on each transcription row
     RECORDINGS_DIR=DEFAULT_RECORDINGS_DIR,  # Folder for audio recordings and transcripts
@@ -3820,6 +3822,27 @@ class TmuxSelectionDialog(DraggableDialog):
         )
         btn_row.addWidget(self.first_word_btn)
 
+        # Strip wake/stop word toggle buttons
+        self.strip_wake_btn = QPushButton("Strip wake word")
+        self.strip_wake_btn.setIcon(load_icon("strip-left", ICON_COLOR_DARK))
+        self.strip_wake_btn.setIconSize(QSize(ICON_SIZE, ICON_SIZE))
+        self.strip_wake_btn.setStyleSheet(get_btn_css())
+        self.strip_wake_btn.setCheckable(True)
+        self.strip_wake_btn.setChecked(S.TMUX_STRIP_WAKE_WORD)
+        self.strip_wake_btn.clicked.connect(self._on_strip_wake_toggle)
+        set_toggle_tooltip(self.strip_wake_btn, STRIP_WAKE_WORD_TOOLTIP)
+        btn_row.addWidget(self.strip_wake_btn)
+
+        self.strip_stop_btn = QPushButton("Strip stop word")
+        self.strip_stop_btn.setIcon(load_icon("strip-right", ICON_COLOR_DARK))
+        self.strip_stop_btn.setIconSize(QSize(ICON_SIZE, ICON_SIZE))
+        self.strip_stop_btn.setStyleSheet(get_btn_css())
+        self.strip_stop_btn.setCheckable(True)
+        self.strip_stop_btn.setChecked(S.TMUX_STRIP_STOP_WORD)
+        self.strip_stop_btn.clicked.connect(self._on_strip_stop_toggle)
+        set_toggle_tooltip(self.strip_stop_btn, STRIP_STOP_WORD_TOOLTIP)
+        btn_row.addWidget(self.strip_stop_btn)
+
         # Preview controls: theme toggle, ANSI toggle, font size +/-
         # Load from settings
         self._preview_dark_mode = S.TMUX_PREVIEW_DARK_MODE
@@ -3913,33 +3936,6 @@ class TmuxSelectionDialog(DraggableDialog):
         ok_btn.clicked.connect(self.accept)  # Just close, everything already saved
         btn_row.addWidget(ok_btn)
         layout.addLayout(btn_row)
-
-        # Second row: transcription cleanup toggles
-        strip_row = QHBoxLayout()
-        strip_row.setSpacing(8)
-
-        self.strip_wake_btn = QPushButton("Strip wake word")
-        self.strip_wake_btn.setIcon(load_icon("cancel", ICON_COLOR_DARK))
-        self.strip_wake_btn.setIconSize(QSize(ICON_SIZE, ICON_SIZE))
-        self.strip_wake_btn.setStyleSheet(get_btn_css())
-        self.strip_wake_btn.setCheckable(True)
-        self.strip_wake_btn.setChecked(S.TMUX_STRIP_WAKE_WORD)
-        self.strip_wake_btn.clicked.connect(self._on_strip_wake_toggle)
-        set_toggle_tooltip(self.strip_wake_btn, STRIP_WAKE_WORD_TOOLTIP)
-        strip_row.addWidget(self.strip_wake_btn)
-
-        self.strip_stop_btn = QPushButton("Strip stop word")
-        self.strip_stop_btn.setIcon(load_icon("cancel", ICON_COLOR_DARK))
-        self.strip_stop_btn.setIconSize(QSize(ICON_SIZE, ICON_SIZE))
-        self.strip_stop_btn.setStyleSheet(get_btn_css())
-        self.strip_stop_btn.setCheckable(True)
-        self.strip_stop_btn.setChecked(S.TMUX_STRIP_STOP_WORD)
-        self.strip_stop_btn.clicked.connect(self._on_strip_stop_toggle)
-        set_toggle_tooltip(self.strip_stop_btn, STRIP_STOP_WORD_TOOLTIP)
-        strip_row.addWidget(self.strip_stop_btn)
-
-        strip_row.addStretch()
-        layout.addLayout(strip_row)
 
         self.setMinimumSize(700, 400)
         self._update_preview_style()  # Initialize preview with current theme/font
