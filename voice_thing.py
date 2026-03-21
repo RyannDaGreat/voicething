@@ -1811,7 +1811,7 @@ def chime(*chords, t=0.15, gap=0.0, name=None, **kwargs):
 
 
 def play_chime(name):
-    """Play a named chime, checking custom chimes first, then hardcoded defaults, then theme."""
+    """Play a named chime, checking custom chimes first, then theme."""
     # Check for custom chime first
     if name in S.CUSTOM_CHIMES:
         custom = S.CUSTOM_CHIMES[name]
@@ -1819,16 +1819,6 @@ def play_chime(name):
         t = custom.get('duration', 0.1)
         # Convert pattern (list of lists of semitones) to chords
         chords = [list(beat) for beat in pattern if beat]  # Skip empty beats
-        if chords:
-            chime(*chords, t=t, name=name)
-        return
-    # Check hardcoded default custom chimes (e.g. FamilyMart chimes)
-    default_customs = DEFAULTS.get('CUSTOM_CHIMES', {})
-    if name in default_customs:
-        custom = default_customs[name]
-        pattern = custom.get('pattern', [])
-        t = custom.get('duration', 0.1)
-        chords = [list(beat) for beat in pattern if beat]
         if chords:
             chime(*chords, t=t, name=name)
         return
@@ -7870,16 +7860,13 @@ class ChimeEditorDialog(DraggableDialog):
     def _update_revert_button(self):
         """Update revert button enabled state and tooltip based on whether custom exists."""
         has_custom = self._current_chime in S.CUSTOM_CHIMES
-        default_customs = DEFAULTS.get('CUSTOM_CHIMES', {})
-        has_hardcoded = self._current_chime in default_customs
         self.revert_btn.setEnabled(has_custom)
         if has_custom:
-            target = "hardcoded default" if has_hardcoded else f"{S.CHIME_THEME} theme"
             set_tooltip(self.revert_btn,
-                f"Revert '{self._current_chime}' to {target} pattern, discarding your custom edits")
+                f"Revert '{self._current_chime}' to original {S.CHIME_THEME} theme pattern, discarding your custom edits")
         else:
             set_tooltip(self.revert_btn,
-                f"No custom edits to revert - '{self._current_chime}' is using its default pattern")
+                f"No custom edits to revert - '{self._current_chime}' is using the original {S.CHIME_THEME} theme pattern")
 
     def _on_stroke_started(self):
         """Called when a brush stroke begins - push undo state once."""
@@ -8016,23 +8003,14 @@ class ChimeEditorDialog(DraggableDialog):
         self._select_chime_in_list(self._current_chime)
 
     def _revert_to_original(self):
-        """Revert to original pattern, discarding any custom pattern.
-
-        Priority: hardcoded defaults (DEFAULTS['CUSTOM_CHIMES']) → theme → empty.
-        This matches play_chime()'s resolution order.
-        """
+        """Revert to original theme pattern, discarding any custom pattern."""
         name = self._current_chime
         # Remove custom pattern if exists
         if name in S.CUSTOM_CHIMES:
             del S.CUSTOM_CHIMES[name]
-        # Reload: hardcoded defaults first, then theme fallback
-        default_customs = DEFAULTS.get('CUSTOM_CHIMES', {})
+        # Reload from theme
         theme = CHIME_THEMES.get(S.CHIME_THEME, CHIME_THEMES['default'])
-        if name in default_customs:
-            info = default_customs[name]
-            self._pattern = [list(chord) for chord in info['pattern']]
-            self._duration = info['duration']
-        elif name in theme:
+        if name in theme:
             chords, duration = theme[name]
             self._pattern = [list(chord) for chord in chords]
             self._duration = duration
@@ -11522,6 +11500,12 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
 
         # Migrate old lowercase keys to uppercase
         data = {k.upper(): v for k, v in data.items()}
+
+        # Merge any missing default custom chimes into loaded data (e.g. new hardcoded chimes)
+        if 'CUSTOM_CHIMES' in data:
+            for name, chime_data in DEFAULTS.get('CUSTOM_CHIMES', {}).items():
+                if name not in data['CUSTOM_CHIMES']:
+                    data['CUSTOM_CHIMES'][name] = chime_data
 
         # Convert pet strings to enums
         if 'PET_TYPES' in data:
