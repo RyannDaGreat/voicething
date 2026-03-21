@@ -556,6 +556,7 @@ DEFAULTS = dict(
     SILENCE_THRESHOLD=-70,  # dB threshold below which audio is considered silence
     VOLUME_REDUCTION_ENABLED=False,  # Reduce Mac volume while recording
     VOLUME_REDUCTION_PERCENT=50,  # Target % of original volume (0=mute, 100=no change)
+    SPOTIFY_PAUSE_WHILE_RECORDING=False,  # Pause Spotify during recording, resume after
     CHIME_VOLUME=0.5,  # Volume for chimes (0.0 to 1.0)
     CHIME_PROGRAM=127,  # Program number (0-127), single source of truth
     CHIME_PITCH=12,  # Pitch shift in semitones (-24 to +24)
@@ -6592,6 +6593,20 @@ class PrefsDialog(DraggableDialog):
         vol_pct_row.addWidget(self.vol_pct_value)
         settings_box.addLayout(vol_pct_row)
 
+        # Spotify pause during recording
+        spotify_row = QHBoxLayout()
+        spotify_row.setSpacing(8)
+        spotify_label = QLabel("Spotify:")
+        spotify_label.setStyleSheet(get_pref_label_css())
+        set_tooltip(spotify_label, "Pause Spotify while recording and resume after.\n\n"
+                                   "Only affects Spotify if it's already running and playing.\n"
+                                   "Will not launch Spotify if it's not open.")
+        spotify_row.addWidget(spotify_label)
+        self.spotify_pause_checkbox = make_checkbox("Pause Spotify during recording",
+            S.SPOTIFY_PAUSE_WHILE_RECORDING, on_change=self._on_spotify_pause_changed, css_size=12)
+        spotify_row.addWidget(self.spotify_pause_checkbox, 1)
+        settings_box.addLayout(spotify_row)
+
         # Context Words section
         settings_box.addWidget(make_section("Context Words"))
         context_row = QHBoxLayout()
@@ -6935,6 +6950,9 @@ class PrefsDialog(DraggableDialog):
 
     def _on_vol_reduce_changed(self, state):
         S.VOLUME_REDUCTION_ENABLED = state == Qt.CheckState.Checked.value
+
+    def _on_spotify_pause_changed(self, state):
+        S.SPOTIFY_PAUSE_WHILE_RECORDING = state == Qt.CheckState.Checked.value
 
     def _on_vol_reduce_pct_changed(self, value):
         S.VOLUME_REDUCTION_PERCENT = value
@@ -10898,6 +10916,10 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
             return
         self._tmux_wake_prefix = None
         self._restore_volume()
+        # Resume Spotify if we paused it
+        if getattr(self, '_spotify_was_playing', False):
+            rp.spotify_play()
+            self._spotify_was_playing = False
         self._cleanup()
         self._set_state("idle")
         self.audio_chunks = []
@@ -11490,7 +11512,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
             'WHISPER_MODEL', 'CUSTOM_WORDS', 'LLM_ENABLED', 'LLM_MODEL', 'LLM_PREFIX',
             # Silence detection
             'SILENCE_SKIP_ENABLED', 'SILENCE_THRESHOLD',
-            'VOLUME_REDUCTION_ENABLED', 'VOLUME_REDUCTION_PERCENT',
+            'VOLUME_REDUCTION_ENABLED', 'VOLUME_REDUCTION_PERCENT', 'SPOTIFY_PAUSE_WHILE_RECORDING',
             # Chimes
             'CHIME_VOLUME', 'CHIME_PITCH', 'CHIME_PROGRAM', 'CHIME_THEME',
             'CUSTOM_CHIMES', 'CHIME_AUDIO_SETTINGS',
@@ -11744,6 +11766,13 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
                 self._original_volume = vol
                 set_mac_volume(int(vol * S.VOLUME_REDUCTION_PERCENT / 100))
 
+        # Pause Spotify if running and playing
+        self._spotify_was_playing = False
+        if S.SPOTIFY_PAUSE_WHILE_RECORDING:
+            if rp.spotify_is_running() and rp.spotify_is_playing():
+                rp.spotify_pause()
+                self._spotify_was_playing = True
+
         self.audio_chunks = []
         if pre_buffer is not None and len(pre_buffer) > 0:
             self.audio_chunks.append(pre_buffer)
@@ -11788,6 +11817,10 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
 
     def stop_recording(self):
         self._restore_volume()
+        # Resume Spotify if we paused it
+        if getattr(self, '_spotify_was_playing', False):
+            rp.spotify_play()
+            self._spotify_was_playing = False
         if self.stream:
             self.stream.stop()
             self.stream.close()
