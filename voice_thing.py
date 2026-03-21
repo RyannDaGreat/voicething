@@ -559,6 +559,9 @@ DEFAULTS = dict(
         'enter on':           "curl -s http://localhost:$VOICETHING_PORT/cmd?phrase=enter+on",
         'enter off':          "curl -s http://localhost:$VOICETHING_PORT/cmd?phrase=enter+off",
         'retranscribe':       "curl -s http://localhost:$VOICETHING_PORT/cmd?phrase=retranscribe",
+        'whisper small':      "curl -s http://localhost:$VOICETHING_PORT/cmd?phrase=whisper+small",
+        'whisper medium':     "curl -s http://localhost:$VOICETHING_PORT/cmd?phrase=whisper+medium",
+        'whisper large':      "curl -s http://localhost:$VOICETHING_PORT/cmd?phrase=whisper+large",
     },
     AUTO_COPY=True,   # Copy transcription to clipboard before paste
     AUTO_PASTE=True,  # Use ⌘V to paste after copying
@@ -11247,10 +11250,13 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
 
     # Control server command tables
     _SETTING_COMMANDS = {
-        'reply on':  ('SPEAK_BACK_APPEND_INSTRUCTION', True,  "TTS reply instruction enabled"),
-        'reply off': ('SPEAK_BACK_APPEND_INSTRUCTION', False, "TTS reply instruction disabled"),
-        'enter on':  ('AUTO_ENTER', True,  "Auto-enter enabled"),
-        'enter off': ('AUTO_ENTER', False, "Auto-enter disabled"),
+        'reply on':      ('SPEAK_BACK_APPEND_INSTRUCTION', True,  "TTS reply instruction enabled"),
+        'reply off':     ('SPEAK_BACK_APPEND_INSTRUCTION', False, "TTS reply instruction disabled"),
+        'enter on':      ('AUTO_ENTER', True,  "Auto-enter enabled"),
+        'enter off':     ('AUTO_ENTER', False, "Auto-enter disabled"),
+        'whisper small': ('WHISPER_MODEL', 'small',    "Whisper model set to small"),
+        'whisper medium':('WHISPER_MODEL', 'medium',   "Whisper model set to medium"),
+        'whisper large': ('WHISPER_MODEL', 'large-v3', "Whisper model set to large-v3"),
     }
     _ACTION_COMMANDS = {
         'retranscribe': ('retranscribe_latest', "Retranscribing latest audio"),
