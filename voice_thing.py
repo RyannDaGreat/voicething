@@ -7851,7 +7851,9 @@ class ChimeEditorDialog(DraggableDialog):
             self._pattern.append([])
 
         self.grid.set_pattern(self._pattern)
-        self.duration_knob.setValue(int(self._duration * 1000), emit=False)
+        ms = int(self._duration * 1000)
+        self.duration_knob.setValue(ms, emit=False)
+        self.duration_knob.setLabel(f"{ms}ms")
         self._update_beats_knob_min()
         self._update_revert_button()
 
@@ -8027,7 +8029,9 @@ class ChimeEditorDialog(DraggableDialog):
         while len(self._pattern) < self._num_beats:
             self._pattern.append([])
         self.grid.set_pattern(self._pattern)
-        self.duration_knob.setValue(int(self._duration * 1000), emit=False)
+        ms = int(self._duration * 1000)
+        self.duration_knob.setValue(ms, emit=False)
+        self.duration_knob.setLabel(f"{ms}ms")
         self._populate_chime_list()
         self._select_chime_in_list(name)
         self._update_revert_button()
