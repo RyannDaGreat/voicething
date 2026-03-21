@@ -558,6 +558,7 @@ DEFAULTS = dict(
         'reply off':          "curl -s http://localhost:$VOICETHING_PORT/cmd?phrase=reply+off",
         'enter on':           "curl -s http://localhost:$VOICETHING_PORT/cmd?phrase=enter+on",
         'enter off':          "curl -s http://localhost:$VOICETHING_PORT/cmd?phrase=enter+off",
+        'retranscribe':       "curl -s http://localhost:$VOICETHING_PORT/cmd?phrase=retranscribe",
     },
     AUTO_COPY=True,   # Copy transcription to clipboard before paste
     AUTO_PASTE=True,  # Use ⌘V to paste after copying
@@ -10055,6 +10056,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
     _delayed_wake_resume_signal = pyqtSignal()  # Resume wakeword from background thread
     _cooldown_start_signal = pyqtSignal(int)   # Start cooldown stripe animation (delay_ms)
     _cooldown_stop_signal = pyqtSignal()       # Stop cooldown stripe animation
+    _control_action_signal = pyqtSignal(str)   # Run a named action on main thread (from control server)
 
     _paint_inset = 0
 
@@ -10338,6 +10340,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
             lambda: QTimer.singleShot(S.TMUX_ANNOUNCE_DELAY, self._resume_wake_word_listener))
         self._cooldown_start_signal.connect(self._start_cooldown_animation)
         self._cooldown_stop_signal.connect(self._stop_cooldown_animation)
+        self._control_action_signal.connect(self._run_control_action)
 
         self.update_timer = QTimer()
         self.update_timer.timeout.connect(self._update_display)
@@ -11242,26 +11245,42 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
             print("Restarted macOS wakeword engine for new command phrases")
         self._save_settings()
 
+    # Control server command tables
+    _SETTING_COMMANDS = {
+        'reply on':  ('SPEAK_BACK_APPEND_INSTRUCTION', True,  "TTS reply instruction enabled"),
+        'reply off': ('SPEAK_BACK_APPEND_INSTRUCTION', False, "TTS reply instruction disabled"),
+        'enter on':  ('AUTO_ENTER', True,  "Auto-enter enabled"),
+        'enter off': ('AUTO_ENTER', False, "Auto-enter disabled"),
+    }
+    _ACTION_COMMANDS = {
+        'retranscribe': ('retranscribe_latest', "Retranscribing latest audio"),
+    }
+
     def _handle_control_cmd(self, phrase):
         """Handle a command from the HTTP control server. Returns result string.
 
-        Command, specific. Dispatches known phrases to S.set() for settings toggles.
+        Command, specific. Dispatches settings toggles and actions.
+        Actions that touch UI are dispatched to the main thread via signal.
         """
-        # Simple phrase -> setting mapping for now; extensible for future commands
-        SETTING_COMMANDS = {
-            'reply on':  ('SPEAK_BACK_APPEND_INSTRUCTION', True,  "TTS reply instruction enabled"),
-            'reply off': ('SPEAK_BACK_APPEND_INSTRUCTION', False, "TTS reply instruction disabled"),
-            'enter on':  ('AUTO_ENTER', True,  "Auto-enter enabled"),
-            'enter off': ('AUTO_ENTER', False, "Auto-enter disabled"),
-        }
         phrase_lower = phrase.strip().lower()
-        if phrase_lower in SETTING_COMMANDS:
-            setting, value, desc = SETTING_COMMANDS[phrase_lower]
+        if phrase_lower in self._SETTING_COMMANDS:
+            setting, value, desc = self._SETTING_COMMANDS[phrase_lower]
             S.set(setting, value)
             self._save_settings()
             print(f"[control] {desc}")
             return desc
+        if phrase_lower in self._ACTION_COMMANDS:
+            method_name, desc = self._ACTION_COMMANDS[phrase_lower]
+            self._control_action_signal.emit(method_name)
+            print(f"[control] {desc}")
+            return desc
         return f"Unknown command: {phrase!r}"
+
+    def _run_control_action(self, method_name):
+        """Run a named method on the main thread (called via signal from control server)."""
+        method = getattr(self, method_name, None)
+        if method:
+            method()
 
     def _on_command_phrase_detected(self, phrase):
         """Handle command phrase detected — run the associated bash command in a daemon thread."""
