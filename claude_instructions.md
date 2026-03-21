@@ -16,7 +16,9 @@ VoiceThing is a keyboard-driven voice transcription app for macOS built with PyQ
 - **TRANSCRIPTION_SHORTCUTS**: Settings key storing a list of action keys (e.g. `['L', 'C']`) that appear as quick-access buttons on each transcription row. Configurable via toggle buttons in the actions dialog.
 - **ACTION_INFO**: Module-level dict mapping action keys to `(icon_name, label, signal_name)` tuples. Used by both `TranscriptionActionsDialog` and `TranscriptionRow` to dynamically build shortcut buttons.
 - **Append Copy**: Action that appends transcription text to the clipboard (with newline separator) rather than replacing it. Key: B, icon: clipboard-plus.
-- **command phrases**: Voice-triggered bash commands. Say a phrase → run a shell command, with no recording. Only works with macOS native engine (arbitrary phrase support). Toolbar slot: H key.
+- **command phrases**: Voice-triggered actions. Say a phrase → run an internal command or shell command, with no recording. Only works with macOS native engine (arbitrary phrase support). Toolbar slot: H key.
+- **internal commands**: Command phrases that toggle app settings via `S.set()` instead of running shell commands. Defined in `_INTERNAL_COMMANDS` dict. Checked before shell commands.
+- **control server**: HTTP server on localhost for remote-controlling VoiceThing. Endpoint: `/cmd?phrase=...`. Started automatically on a random port. Port shown in Preferences.
 
 ## Key Files
 
@@ -80,7 +82,13 @@ Users can toggle which actions appear as **shortcut buttons** on each transcript
 
 ## Command Phrases
 
-Voice-triggered bash commands — say a phrase, run a command, no recording involved. Only works with the macOS native wake word engine (NSSpeechRecognizer supports arbitrary phrases).
+Voice-triggered commands — say a phrase, run an action, no recording involved. Only works with the macOS native wake word engine (NSSpeechRecognizer supports arbitrary phrases).
+
+**Two types of command phrases**:
+1. **Shell commands**: phrase → bash command (stored in `S.COMMAND_PHRASES` dict). For external actions like Spotify control, volume, brightness.
+2. **Internal commands**: phrase → `S.set()` call (hardcoded in `VoiceThingWindow._INTERNAL_COMMANDS`). For toggling app settings with bidirectional UI updates. Currently: `reply on`/`reply off` (SPEAK_BACK_APPEND_INSTRUCTION), `enter on`/`enter off` (AUTO_ENTER).
+
+Internal commands are checked first in `_on_command_phrase_detected`; if no match, falls through to shell commands. Both types are registered with the macOS speech engine.
 
 **Architecture**:
 - Settings: `COMMAND_PHRASES_ENABLED` (bool), `COMMAND_PHRASES` (dict of phrase→bash_command)
@@ -88,12 +96,26 @@ Voice-triggered bash commands — say a phrase, run a command, no recording invo
 - `COMMAND_PHRASES_MUTE_WHILE_RECORDING` (bool, default True): suppresses command phrase callbacks during recording
 - `wakeword/base.py`: `on_command` callback in `WakeWordEngine.__init__`
 - `wakeword/macos_engine.py`: `command_phrases` param, `_command_phrases_lower` lookup set. In delegate: when not recording and command phrase detected → `on_command(phrase)` and return (skip recording)
-- `VoiceThingWindow._on_command_phrase_detected`: case-insensitive lookup, plays `command_phrase` chime, runs command via `subprocess.run(cmd, shell=True)` in daemon thread
+- `VoiceThingWindow._on_command_phrase_detected`: checks internal commands first (via `_handle_control_cmd`), then falls through to shell commands. Plays `command_phrase` chime on match.
 - `CommandPhrasesDialog`: editable table (phrase|command), +/- row buttons, enable checkbox. Emits `phrases_changed` signal which triggers engine restart
 
 **Toolbar**: H key slot (replaced auto-minimize/eye button). H opens dialog, Shift+H toggles on/off. Auto-minimize moved to Preferences → Window section as a checkbox.
 
-**Chime**: `command_phrase` — descending two-note confirmation beep (`[7,12], [0,5]`).
+**Chime**: `command_phrase` — two-chord confirmation (`[A,E,A5], [D,A5,G6]`). Listed in all chime themes and CHIME_DESCRIPTIONS.
+
+## HTTP Control Server
+
+Lightweight HTTP server for remote-controlling VoiceThing from any program (curl, Claude Code, scripts).
+
+**Startup**: Started automatically in `VoiceThingWindow.__init__` via `_start_control_server()`. Binds to `127.0.0.1` on a random free port (starting from 8222). Port is displayed in Preferences dialog (bottom, selectable text with tooltip showing curl examples).
+
+**Endpoints**:
+- `GET /health` → `{"status": "ok", "app": "voicething"}`
+- `GET /cmd?phrase=...` → dispatches to `_handle_control_cmd`. For known internal commands, calls `S.set()` and returns `{"ok": true, "phrase": "...", "result": "..."}`. Unknown phrases return a result string saying so.
+
+**Design**: Intentionally simple string→action dispatch for now. The `/cmd` endpoint is the extension point — future commands can add new phrases without changing the server. All received commands are printed to console via `[control]` prefix.
+
+**Example usage**: `curl 'http://localhost:8222/cmd?phrase=reply+off'`
 
 ## Constraints
 
