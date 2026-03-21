@@ -16,9 +16,9 @@ VoiceThing is a keyboard-driven voice transcription app for macOS built with PyQ
 - **TRANSCRIPTION_SHORTCUTS**: Settings key storing a list of action keys (e.g. `['L', 'C']`) that appear as quick-access buttons on each transcription row. Configurable via toggle buttons in the actions dialog.
 - **ACTION_INFO**: Module-level dict mapping action keys to `(icon_name, label, signal_name)` tuples. Used by both `TranscriptionActionsDialog` and `TranscriptionRow` to dynamically build shortcut buttons.
 - **Append Copy**: Action that appends transcription text to the clipboard (with newline separator) rather than replacing it. Key: B, icon: clipboard-plus.
-- **command phrases**: Voice-triggered actions. Say a phrase → run an internal command or shell command, with no recording. Only works with macOS native engine (arbitrary phrase support). Toolbar slot: H key.
-- **internal commands**: Command phrases that toggle app settings via `S.set()` instead of running shell commands. Defined in `_INTERNAL_COMMANDS` dict. Checked before shell commands.
-- **control server**: HTTP server on localhost for remote-controlling VoiceThing. Endpoint: `/cmd?phrase=...`. Started automatically on a random port. Port shown in Preferences.
+- **command phrases**: Voice-triggered actions. Say a phrase → run a shell command, no recording. Self-controlling phrases use curl to hit the local control server. Only works with macOS native engine (arbitrary phrase support). Toolbar slot: H key.
+- **control server**: HTTP server on localhost for remote-controlling VoiceThing. Endpoint: `/cmd?phrase=...`. Started automatically on a random port. Port stored in `VOICETHING_PORT` env var and shown in Preferences.
+- **self-controlling phrases**: Command phrases whose shell command is a curl to VoiceThing's own control server (e.g. `curl -s http://localhost:$VOICETHING_PORT/cmd?phrase=reply+on`). Used for settings toggles and actions that need to run inside the app process.
 
 ## Key Files
 
@@ -84,19 +84,31 @@ Users can toggle which actions appear as **shortcut buttons** on each transcript
 
 Voice-triggered commands — say a phrase, run an action, no recording involved. Only works with the macOS native wake word engine (NSSpeechRecognizer supports arbitrary phrases).
 
-**Two types of command phrases**:
-1. **Shell commands**: phrase → bash command (stored in `S.COMMAND_PHRASES` dict). For external actions like Spotify control, volume, brightness.
-2. **Internal commands**: phrase → `S.set()` call (hardcoded in `VoiceThingWindow._INTERNAL_COMMANDS`). For toggling app settings with bidirectional UI updates. Currently: `reply on`/`reply off` (SPEAK_BACK_APPEND_INSTRUCTION), `enter on`/`enter off` (AUTO_ENTER).
+All command phrases are regular entries in `S.COMMAND_PHRASES` (phrase → shell command). Self-controlling phrases use curl to hit the local HTTP control server (see below), which dispatches to `_handle_control_cmd`. The `$VOICETHING_PORT` env var is set at startup so curl commands can find the server.
 
-Internal commands are checked first in `_on_command_phrase_detected`; if no match, falls through to shell commands. Both types are registered with the macOS speech engine.
+**Default command phrases**:
+
+| Phrase | Action |
+|--------|--------|
+| `spotify play/pause/next/previous` | Control Spotify via AppleScript |
+| `music play/pause` | Control Music.app via AppleScript |
+| `press enter key` | Simulate Enter keypress via AppleScript |
+| `brightness minimum/maximum` | Adjust screen brightness |
+| `volume maximum/medium/minimum/mute` | Adjust system volume |
+| `reply on/off` | Toggle TTS reply instruction (`SPEAK_BACK_APPEND_INSTRUCTION`) |
+| `enter on/off` | Toggle auto-enter (`AUTO_ENTER`) |
+| `whisper small/medium/large` | Switch Whisper model (`small`, `medium`, `large-v3`) |
+| `retranscribe` | Retranscribe latest audio with current model (Z key equivalent) |
+
+Self-controlling phrases (reply, enter, whisper, retranscribe) use: `curl -s http://localhost:$VOICETHING_PORT/cmd?phrase=...`
 
 **Architecture**:
 - Settings: `COMMAND_PHRASES_ENABLED` (bool), `COMMAND_PHRASES` (dict of phrase→bash_command)
-- Default phrases: app-specific media controls (Spotify, Music.app), brightness/volume, key simulation (press enter key). Generic media key simulation was removed — `MRMediaRemoteSendCommand` silently fails on macOS 15.4+ (entitlement-gated), and `CGEventPost` only reaches the frontmost app.
 - `COMMAND_PHRASES_MUTE_WHILE_RECORDING` (bool, default True): suppresses command phrase callbacks during recording
 - `wakeword/base.py`: `on_command` callback in `WakeWordEngine.__init__`
 - `wakeword/macos_engine.py`: `command_phrases` param, `_command_phrases_lower` lookup set. In delegate: when not recording and command phrase detected → `on_command(phrase)` and return (skip recording)
-- `VoiceThingWindow._on_command_phrase_detected`: checks internal commands first (via `_handle_control_cmd`), then falls through to shell commands. Plays `command_phrase` chime on match.
+- `VoiceThingWindow._on_command_phrase_detected`: case-insensitive lookup, plays `command_phrase` chime, runs command via `subprocess.run(cmd, shell=True)` in daemon thread
+- `_handle_control_cmd`: dispatches `/cmd` requests. `_SETTING_COMMANDS` dict for settings toggles (calls `S.set()`), `_ACTION_COMMANDS` dict for UI actions (dispatched to main thread via `_control_action_signal`)
 - `CommandPhrasesDialog`: editable table (phrase|command), +/- row buttons, enable checkbox. Emits `phrases_changed` signal which triggers engine restart
 
 **Toolbar**: H key slot (replaced auto-minimize/eye button). H opens dialog, Shift+H toggles on/off. Auto-minimize moved to Preferences → Window section as a checkbox.
@@ -107,15 +119,25 @@ Internal commands are checked first in `_on_command_phrase_detected`; if no matc
 
 Lightweight HTTP server for remote-controlling VoiceThing from any program (curl, Claude Code, scripts).
 
-**Startup**: Started automatically in `VoiceThingWindow.__init__` via `_start_control_server()`. Binds to `127.0.0.1` on a random free port (starting from 8222). Port is displayed in Preferences dialog (bottom, selectable text with tooltip showing curl examples).
+**Startup**: Started automatically in `VoiceThingWindow.__init__` via `_start_control_server()`. Binds to `127.0.0.1` on a random free port (starting from 8222). Port is stored in env var `VOICETHING_PORT` and displayed in Preferences dialog (bottom, selectable text with tooltip showing curl examples).
 
 **Endpoints**:
 - `GET /health` → `{"status": "ok", "app": "voicething"}`
-- `GET /cmd?phrase=...` → dispatches to `_handle_control_cmd`. For known internal commands, calls `S.set()` and returns `{"ok": true, "phrase": "...", "result": "..."}`. Unknown phrases return a result string saying so.
+- `GET /cmd?phrase=...` → dispatches to `_handle_control_cmd`. Settings commands call `S.set()` directly. Action commands (e.g. retranscribe) are dispatched to the main thread via `_control_action_signal`. Returns `{"ok": true, "phrase": "...", "result": "..."}`.
 
-**Design**: Intentionally simple string→action dispatch for now. The `/cmd` endpoint is the extension point — future commands can add new phrases without changing the server. All received commands are printed to console via `[control]` prefix.
+**Adding new commands**: Add to `_SETTING_COMMANDS` (for settings toggles) or `_ACTION_COMMANDS` (for UI actions needing main thread), then add a matching default command phrase in `DEFAULTS['COMMAND_PHRASES']` with the curl command.
 
-**Example usage**: `curl 'http://localhost:8222/cmd?phrase=reply+off'`
+**Design**: All received commands logged to console with `[control]` prefix. The `/cmd` endpoint is the extension point — future commands can add new phrases without changing the server.
+
+**Example usage**: `curl "http://localhost:$VOICETHING_PORT/cmd?phrase=whisper+large"`
+
+## Spotify Pause During Recording
+
+Setting: `SPOTIFY_PAUSE_WHILE_RECORDING` (bool, default False). Checkbox in Preferences under volume reduction section.
+
+When enabled: `start_recording()` checks `rp.spotify_is_running()` and `rp.spotify_is_playing()`. If Spotify is running and playing, pauses it and sets `_spotify_was_playing = True`. On `stop_recording()` or `cancel_recording()`, resumes playback if it was paused. Does not launch Spotify if it's not running.
+
+Uses `rp.spotify_is_running()` (pgrep-based, avoids launching Spotify via AppleScript), `rp.spotify_pause()`, `rp.spotify_play()`.
 
 ## Constraints
 
