@@ -554,6 +554,10 @@ DEFAULTS = dict(
         'volume medium':      "osascript -e 'set volume output volume 50'",
         'volume minimum':     "osascript -e 'set volume output volume 6'",
         'volume mute':        "osascript -e 'set volume output muted true'",
+        'reply on':           "curl -s http://localhost:$VOICETHING_PORT/cmd?phrase=reply+on",
+        'reply off':          "curl -s http://localhost:$VOICETHING_PORT/cmd?phrase=reply+off",
+        'enter on':           "curl -s http://localhost:$VOICETHING_PORT/cmd?phrase=enter+on",
+        'enter off':          "curl -s http://localhost:$VOICETHING_PORT/cmd?phrase=enter+off",
     },
     AUTO_COPY=True,   # Copy transcription to clipboard before paste
     AUTO_PASTE=True,  # Use ⌘V to paste after copying
@@ -10026,7 +10030,8 @@ def _start_control_server():
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
     _control_server = (port, httpd)
-    print(f"[control] Server ready on http://localhost:{port}")
+    os.environ['VOICETHING_PORT'] = str(port)
+    print(f"[control] Server ready on http://localhost:{port} (VOICETHING_PORT={port})")
     return port
 
 def get_control_port():
@@ -11237,43 +11242,32 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
             print("Restarted macOS wakeword engine for new command phrases")
         self._save_settings()
 
-    # Internal command actions: phrase -> (callback, description)
-    # These are handled by the control server, not as shell commands.
-    _INTERNAL_COMMANDS = {
-        'reply on':  ('SPEAK_BACK_APPEND_INSTRUCTION', True,  "TTS reply instruction enabled"),
-        'reply off': ('SPEAK_BACK_APPEND_INSTRUCTION', False, "TTS reply instruction disabled"),
-        'enter on':  ('AUTO_ENTER', True,  "Auto-enter enabled"),
-        'enter off': ('AUTO_ENTER', False, "Auto-enter disabled"),
-    }
-
     def _handle_control_cmd(self, phrase):
         """Handle a command from the HTTP control server. Returns result string.
 
-        Query, specific. Dispatches internal commands via S.set().
-        Called from the server thread — use signals for UI updates.
+        Command, specific. Dispatches known phrases to S.set() for settings toggles.
         """
+        # Simple phrase -> setting mapping for now; extensible for future commands
+        SETTING_COMMANDS = {
+            'reply on':  ('SPEAK_BACK_APPEND_INSTRUCTION', True,  "TTS reply instruction enabled"),
+            'reply off': ('SPEAK_BACK_APPEND_INSTRUCTION', False, "TTS reply instruction disabled"),
+            'enter on':  ('AUTO_ENTER', True,  "Auto-enter enabled"),
+            'enter off': ('AUTO_ENTER', False, "Auto-enter disabled"),
+        }
         phrase_lower = phrase.strip().lower()
-        if phrase_lower in self._INTERNAL_COMMANDS:
-            setting, value, desc = self._INTERNAL_COMMANDS[phrase_lower]
+        if phrase_lower in SETTING_COMMANDS:
+            setting, value, desc = SETTING_COMMANDS[phrase_lower]
             S.set(setting, value)
             self._save_settings()
             print(f"[control] {desc}")
-            play_chime('command_phrase')
             return desc
         return f"Unknown command: {phrase!r}"
 
     def _on_command_phrase_detected(self, phrase):
-        """Handle command phrase detected — run the associated command in a daemon thread.
-
-        Checks internal commands first (via control server), then shell commands.
-        """
+        """Handle command phrase detected — run the associated bash command in a daemon thread."""
         import subprocess, threading
         phrase_lower = phrase.lower()
-        # Check internal commands first
-        if phrase_lower in self._INTERNAL_COMMANDS:
-            self._handle_control_cmd(phrase)
-            return
-        # Look up shell command (case-insensitive)
+        # Look up command (case-insensitive)
         cmd = None
         for p, c in S.COMMAND_PHRASES.items():
             if p.lower() == phrase_lower:
@@ -11414,10 +11408,8 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
                         phrase = info.get('phrase', '')
                         if phrase:
                             tmux_phrases.append(phrase)
-                # Collect command phrases if enabled (shell + internal)
+                # Collect command phrases if enabled
                 command_phrases = list(S.COMMAND_PHRASES.keys()) if S.COMMAND_PHRASES_ENABLED else []
-                if S.COMMAND_PHRASES_ENABLED:
-                    command_phrases.extend(self._INTERNAL_COMMANDS.keys())
                 self.wake_word_engine = create_engine(
                     engine_name,
                     callback=self._on_wake_word_detected,
