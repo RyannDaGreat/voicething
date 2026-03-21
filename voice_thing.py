@@ -6898,6 +6898,17 @@ class PrefsDialog(DraggableDialog):
         action_row.addWidget(folder_btn, 1)
         layout.addLayout(action_row)
 
+        # Control server port display
+        port = get_control_port()
+        if port:
+            port_label = QLabel(f"Control server: http://localhost:{port}/cmd")
+            port_label.setStyleSheet(get_pref_label_css() + " color: #888; font-size: 10px;")
+            set_tooltip(port_label, f"HTTP control server for remote commands.\n\n"
+                                    f"Example: curl 'http://localhost:{port}/cmd?phrase=reply+on'\n"
+                                    f"Health: curl 'http://localhost:{port}/health'")
+            port_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+            layout.addWidget(port_label)
+
         # Cancel/OK buttons
         btn_row = QHBoxLayout()
         btn_row.setSpacing(8)
@@ -9959,6 +9970,70 @@ class WaveformWidget(QWidget):
         p.drawLine(0, int(cy), w, int(cy))
 
 
+# =============================================================================
+# HTTP Control Server — remote-control VoiceThing via curl
+# =============================================================================
+_control_server = None  # Singleton (port, httpd)
+_control_cmd_handler = None  # Callback: str -> str (set by VoiceThingWindow)
+
+def _start_control_server():
+    """Start the HTTP control server on a random free port. Returns port number."""
+    import http.server, socketserver, urllib.parse
+    global _control_server
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def log_message(self, fmt, *args):
+            print(f"[control] {args[0]}")
+
+        def _send_json(self, data, status=200):
+            body = json.dumps(data).encode()
+            self.send_response(status)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', len(body))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def do_GET(self):
+            parsed = urllib.parse.urlparse(self.path)
+            params = urllib.parse.parse_qs(parsed.query)
+
+            if parsed.path == '/health':
+                self._send_json({'status': 'ok', 'app': 'voicething'})
+                return
+
+            if parsed.path == '/cmd':
+                phrase = params.get('phrase', [''])[0]
+                if not phrase:
+                    self._send_json({'error': 'Missing phrase parameter'}, 400)
+                    return
+                print(f"[control] cmd: {phrase!r}")
+                handler = _control_cmd_handler
+                if handler:
+                    result = handler(phrase)
+                    self._send_json({'ok': True, 'phrase': phrase, 'result': result})
+                else:
+                    self._send_json({'error': 'No command handler registered'}, 503)
+                return
+
+            self._send_json({'error': 'Unknown endpoint. Use /cmd?phrase=... or /health'}, 404)
+
+    class ThreadedServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
+        allow_reuse_address = True
+        daemon_threads = True
+
+    port = rp.get_next_free_port(8222)
+    httpd = ThreadedServer(('127.0.0.1', port), Handler)
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    _control_server = (port, httpd)
+    print(f"[control] Server ready on http://localhost:{port}")
+    return port
+
+def get_control_port():
+    """Get the control server port, or None if not running."""
+    return _control_server[0] if _control_server else None
+
+
 class VoiceThingWindow(DraggableResizableMixin, QWidget):
     hide_signal = pyqtSignal()
     toggle_signal = pyqtSignal()
@@ -10293,6 +10368,11 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
 
         self._load_settings()
         self._update_ui()  # Initialize UI layout based on boot size
+
+        # Start HTTP control server and register command handler
+        global _control_cmd_handler
+        self._control_port = _start_control_server()
+        _control_cmd_handler = self._handle_control_cmd
 
         # Wire NTFY TTS callbacks to pause/resume wakeword during speech
         global _ntfy_pre_tts_callback, _ntfy_post_tts_callback
@@ -11157,11 +11237,43 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
             print("Restarted macOS wakeword engine for new command phrases")
         self._save_settings()
 
+    # Internal command actions: phrase -> (callback, description)
+    # These are handled by the control server, not as shell commands.
+    _INTERNAL_COMMANDS = {
+        'reply on':  ('SPEAK_BACK_APPEND_INSTRUCTION', True,  "TTS reply instruction enabled"),
+        'reply off': ('SPEAK_BACK_APPEND_INSTRUCTION', False, "TTS reply instruction disabled"),
+        'enter on':  ('AUTO_ENTER', True,  "Auto-enter enabled"),
+        'enter off': ('AUTO_ENTER', False, "Auto-enter disabled"),
+    }
+
+    def _handle_control_cmd(self, phrase):
+        """Handle a command from the HTTP control server. Returns result string.
+
+        Query, specific. Dispatches internal commands via S.set().
+        Called from the server thread — use signals for UI updates.
+        """
+        phrase_lower = phrase.strip().lower()
+        if phrase_lower in self._INTERNAL_COMMANDS:
+            setting, value, desc = self._INTERNAL_COMMANDS[phrase_lower]
+            S.set(setting, value)
+            self._save_settings()
+            print(f"[control] {desc}")
+            play_chime('command_phrase')
+            return desc
+        return f"Unknown command: {phrase!r}"
+
     def _on_command_phrase_detected(self, phrase):
-        """Handle command phrase detected — run the associated bash command in a daemon thread."""
+        """Handle command phrase detected — run the associated command in a daemon thread.
+
+        Checks internal commands first (via control server), then shell commands.
+        """
         import subprocess, threading
         phrase_lower = phrase.lower()
-        # Look up command (case-insensitive)
+        # Check internal commands first
+        if phrase_lower in self._INTERNAL_COMMANDS:
+            self._handle_control_cmd(phrase)
+            return
+        # Look up shell command (case-insensitive)
         cmd = None
         for p, c in S.COMMAND_PHRASES.items():
             if p.lower() == phrase_lower:
@@ -11302,8 +11414,10 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
                         phrase = info.get('phrase', '')
                         if phrase:
                             tmux_phrases.append(phrase)
-                # Collect command phrases if enabled
+                # Collect command phrases if enabled (shell + internal)
                 command_phrases = list(S.COMMAND_PHRASES.keys()) if S.COMMAND_PHRASES_ENABLED else []
+                if S.COMMAND_PHRASES_ENABLED:
+                    command_phrases.extend(self._INTERNAL_COMMANDS.keys())
                 self.wake_word_engine = create_engine(
                     engine_name,
                     callback=self._on_wake_word_detected,
