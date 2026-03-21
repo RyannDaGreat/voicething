@@ -1811,7 +1811,7 @@ def chime(*chords, t=0.15, gap=0.0, name=None, **kwargs):
 
 
 def play_chime(name):
-    """Play a named chime, checking custom chimes first, then theme."""
+    """Play a named chime, checking custom chimes first, then hardcoded defaults, then theme."""
     # Check for custom chime first
     if name in S.CUSTOM_CHIMES:
         custom = S.CUSTOM_CHIMES[name]
@@ -1819,6 +1819,16 @@ def play_chime(name):
         t = custom.get('duration', 0.1)
         # Convert pattern (list of lists of semitones) to chords
         chords = [list(beat) for beat in pattern if beat]  # Skip empty beats
+        if chords:
+            chime(*chords, t=t, name=name)
+        return
+    # Check hardcoded default custom chimes (e.g. FamilyMart chimes)
+    default_customs = DEFAULTS.get('CUSTOM_CHIMES', {})
+    if name in default_customs:
+        custom = default_customs[name]
+        pattern = custom.get('pattern', [])
+        t = custom.get('duration', 0.1)
+        chords = [list(beat) for beat in pattern if beat]
         if chords:
             chime(*chords, t=t, name=name)
         return
@@ -8006,7 +8016,11 @@ class ChimeEditorDialog(DraggableDialog):
         self._select_chime_in_list(self._current_chime)
 
     def _revert_to_original(self):
-        """Revert to original theme pattern, discarding any custom pattern."""
+        """Revert to original pattern, discarding any custom pattern.
+
+        Priority: hardcoded defaults (DEFAULTS['CUSTOM_CHIMES']) → theme → empty.
+        This matches play_chime()'s resolution order.
+        """
         name = self._current_chime
         # Remove custom pattern if exists
         if name in S.CUSTOM_CHIMES:
