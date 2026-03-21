@@ -198,8 +198,8 @@ CHIME_THEMES = {
         'auto_enter_off': (([16, 11], [7, 4]), 0.08),           # C#6+G# → E+C# descending
         'tmux_on':        (([-3], [4], [7, 12]), 0.07),         # F# → C# → E+A5 ascending 3-chord
         'tmux_off':       (([12, 7], [4], [-3]), 0.07),         # A5+E → C# → F# descending
-        'cmd_phrases_on': (([0, 5], [7, 12]), 0.08),             # A+D → E+A5 ascending 4th
-        'cmd_phrases_off':(([12, 7], [5, 0]), 0.08),             # A5+E → D+A descending 4th
+        'cmd_phrases_on': (([4, 9, 13], [14], [13], [9], [4, 8, 11], [16]), 0.173),  # FamilyMart chime
+        'cmd_phrases_off':(([4], [4, 8, 11], [13], [11], [4], [-3, 4, 9]), 0.184),  # FamilyMart chime (off)
         'boot':           (([0], [4], [7], [12], [0, 4, 7, 12]), 0.08),  # A→C#→E→A5→Amaj chord
     },
     # Minimal: Clean single notes, perfect intervals (octaves, 5ths)
@@ -228,8 +228,8 @@ CHIME_THEMES = {
         'auto_enter_off': (([7], [-5]), 0.06),                  # E5 → E4 octave leap down
         'tmux_on':        (([-12], [0], [12]), 0.05),           # A3 → A4 → A5 ascending octaves
         'tmux_off':       (([12], [0], [-12]), 0.05),           # A5 → A4 → A3 descending octaves
-        'cmd_phrases_on': (([0], [5], [12]), 0.05),              # A → D → A5 ascending 4th+octave
-        'cmd_phrases_off':(([12], [5], [0]), 0.05),              # A5 → D → A descending
+        'cmd_phrases_on': (([4, 9, 13], [14], [13], [9], [4, 8, 11], [16]), 0.173),  # FamilyMart chime
+        'cmd_phrases_off':(([4], [4, 8, 11], [13], [11], [4], [-3, 4, 9]), 0.184),  # FamilyMart chime (off)
         'boot':           (([0], [7], [12], [0, 7, 12]), 0.06), # A→E→A5→power chord
     },
     # Blues: A blues scale with blue notes (0, 3, 5, 6, 7, 10)
@@ -258,8 +258,8 @@ CHIME_THEMES = {
         'auto_enter_off': (([15, 10], [7, 3]), 0.08),           # C6+G → E+C minor walk down
         'tmux_on':        (([0, 6], [3, 10], [7, 15]), 0.07),   # A+Eb → C+G → E+C6 tritone ascend
         'tmux_off':       (([15, 7], [10, 3], [6, 0]), 0.07),   # C6+E → G+C → Eb+A tritone descend
-        'cmd_phrases_on': (([0, 5], [3, 10], [7, 15]), 0.07),   # A+D → C+G → E+C6 ascending 4ths
-        'cmd_phrases_off':(([15, 7], [10, 3], [5, 0]), 0.07),   # C6+E → G+C → D+A descending 4ths
+        'cmd_phrases_on': (([4, 9, 13], [14], [13], [9], [4, 8, 11], [16]), 0.173),  # FamilyMart chime
+        'cmd_phrases_off':(([4], [4, 8, 11], [13], [11], [4], [-3, 4, 9]), 0.184),  # FamilyMart chime (off)
         'boot':           (([0, 3], [6], [7, 10], [0, 3, 7, 10]), 0.1),  # Am→Eb→E+G→Am7 blues
     },
     # Ethereal: Sus2/Sus4 only, wide voicings (0, 2, 5, 7, 9)
@@ -289,8 +289,8 @@ CHIME_THEMES = {
         'auto_enter_off': (([14, 7], [9, 2]), 0.1),             # B5+E → F#+B sus2 fall
         'tmux_on':        (([-7, 0], [2, 7], [9, 14]), 0.09),   # D+A → B+E → F#+B5 ascending 5ths
         'tmux_off':       (([14, 9], [7, 2], [0, -7]), 0.09),   # B5+F# → E+B → A+D descending 5ths
-        'cmd_phrases_on': (([0, 5], [7, 14]), 0.09),             # A+D → E+B5 ascending sus4
-        'cmd_phrases_off':(([14, 7], [5, 0]), 0.09),             # B5+E → D+A descending sus4
+        'cmd_phrases_on': (([4, 9, 13], [14], [13], [9], [4, 8, 11], [16]), 0.173),  # FamilyMart chime
+        'cmd_phrases_off':(([4], [4, 8, 11], [13], [11], [4], [-3, 4, 9]), 0.184),  # FamilyMart chime (off)
         'boot':           (([0, 2], [7], [9, 14], [0, 2, 7, 14]), 0.12), # Asus2→E→F#+B5→Asus2 spread
     },
     # Melancholy: A natural minor (0, 2, 3, 5, 7, 8, 10)
@@ -319,8 +319,8 @@ CHIME_THEMES = {
         'auto_enter_off': (([12, 7], [8, 3]), 0.1),             # A5+E → F+C minor 6 fall
         'tmux_on':        (([-5, 0], [3, 7], [8, 12]), 0.08),   # E+A → C+E → F+A5 ascending minor
         'tmux_off':       (([12, 8], [7, 3], [0, -5]), 0.08),   # A5+F → E+C → A+E descending minor
-        'cmd_phrases_on': (([0, 5], [3, 8], [7, 12]), 0.08),    # A+D → C+F → E+A5 ascending minor 4ths
-        'cmd_phrases_off':(([12, 7], [8, 3], [5, 0]), 0.08),    # A5+E → F+C → D+A descending minor 4ths
+        'cmd_phrases_on': (([4, 9, 13], [14], [13], [9], [4, 8, 11], [16]), 0.173),  # FamilyMart chime
+        'cmd_phrases_off':(([4], [4, 8, 11], [13], [11], [4], [-3, 4, 9]), 0.184),  # FamilyMart chime (off)
         'boot':           (([0, 3], [5], [7], [8, 12], [0, 3, 7]), 0.12), # Am→D→E→F+A5→Am triad
     },
     # Bright: A major scale (0, 2, 4, 5, 7, 9, 11)
@@ -351,8 +351,8 @@ CHIME_THEMES = {
         'auto_enter_off': (([14, 18], [9, 2]), 0.06),              # B5+D#6 → F#+B fall
         'tmux_on':        (([-7, 0], [4, 9], [11, 16]), 0.06),  # D+A → C#+F# → G#+C#6 ascending maj
         'tmux_off':       (([16, 11], [9, 4], [0, -7]), 0.06),  # C#6+G# → F#+C# → A+D descending maj
-        'cmd_phrases_on': (([-7, 0], [5, 9], [12, 16]), 0.06),  # D+A → D5+F# → A5+C#6 ascending
-        'cmd_phrases_off':(([16, 12], [9, 5], [0, -7]), 0.06),  # C#6+A5 → F#+D5 → A+D descending
+        'cmd_phrases_on': (([4, 9, 13], [14], [13], [9], [4, 8, 11], [16]), 0.173),  # FamilyMart chime
+        'cmd_phrases_off':(([4], [4, 8, 11], [13], [11], [4], [-3, 4, 9]), 0.184),  # FamilyMart chime (off)
         'boot':           (([0], [4], [7], [11], [16], [0, 4, 7, 11, 16]), 0.06),  # A→C#→E→G#→C#6→Amaj9
     },
     # Jazzy: Extended chords, 7ths, 9ths, 13ths
@@ -381,8 +381,8 @@ CHIME_THEMES = {
         'auto_enter_off': (([14, 9], [10, 5]), 0.07),           # B5+F# → G+D jazz 2nds fall
         'tmux_on':        (([-2, 2], [5, 10], [9, 14]), 0.06),  # G+B → D+G → F#+B5 ascending jazz
         'tmux_off':       (([14, 9], [10, 5], [2, -2]), 0.06),  # B5+F# → G+D → B+G descending jazz
-        'cmd_phrases_on': (([-2, 5], [2, 10], [9, 14]), 0.06),  # G+D → B+G → F#+B5 ascending jazz 4ths
-        'cmd_phrases_off':(([14, 9], [10, 2], [5, -2]), 0.06),  # B5+F# → G+B → D+G descending jazz 4ths
+        'cmd_phrases_on': (([4, 9, 13], [14], [13], [9], [4, 8, 11], [16]), 0.173),  # FamilyMart chime
+        'cmd_phrases_off':(([4], [4, 8, 11], [13], [11], [4], [-3, 4, 9]), 0.184),  # FamilyMart chime (off)
         'boot':           (([0, 4], [7, 10], [14], [0, 4, 7, 10, 14]), 0.08),  # A9 arpeggio → full voicing
     },
 }
@@ -576,8 +576,6 @@ DEFAULTS = dict(
         'auto_enter_on': {'pattern': [[2, 9], [6, 14, 16], [9, 18], [7, 16, 21], [6, 14, 18, 21, 26]] + [[]] * 11, 'duration': 0.08711429988156041},
         'tmux_send':      {'pattern': [[14], [16], [14], [16], [14]] + [[]] * 11, 'duration': 0.08193661398222568},
         'command_phrase': {'pattern': [[0, 7, 12], [5, 12, 19]] + [[]] * 14, 'duration': 0.08},
-        'cmd_phrases_on': {'pattern': [[4, 9, 13], [14], [13], [9], [4, 8, 11], [16]] + [[]] * 10, 'duration': 0.17257431218029587},
-        'cmd_phrases_off':{'pattern': [[4], [4, 8, 11], [13], [11], [4], [-3, 4, 9]] + [[]] * 10, 'duration': 0.18363939409130087},
     },
     TRANSCRIPTION_SHORTCUTS=['L'],  # Action keys shown as quick buttons on each transcription row
     RECORDINGS_DIR=DEFAULT_RECORDINGS_DIR,  # Folder for audio recordings and transcripts
@@ -11500,12 +11498,6 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
 
         # Migrate old lowercase keys to uppercase
         data = {k.upper(): v for k, v in data.items()}
-
-        # Merge any missing default custom chimes into loaded data (e.g. new hardcoded chimes)
-        if 'CUSTOM_CHIMES' in data:
-            for name, chime_data in DEFAULTS.get('CUSTOM_CHIMES', {}).items():
-                if name not in data['CUSTOM_CHIMES']:
-                    data['CUSTOM_CHIMES'][name] = chime_data
 
         # Convert pet strings to enums
         if 'PET_TYPES' in data:
