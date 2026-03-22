@@ -859,6 +859,8 @@ def build_tts_command(voice_override=None):
         )
 
 
+_tts_active = False  # True while any TTS backend is playing audio
+
 def do_tts(text, block=True, voice_override=None):
     """Speak text using the configured TTS backend.
 
@@ -871,6 +873,14 @@ def do_tts(text, block=True, voice_override=None):
         voice_override: If set, use this voice name instead of the configured default.
     """
     def _speak():
+        global _tts_active
+        _tts_active = True
+        try:
+            _speak_inner()
+        finally:
+            _tts_active = False
+
+    def _speak_inner():
         import rp
         backend = S.SPEAK_BACK_VOICE
         if backend == 'say':
@@ -917,12 +927,15 @@ def do_tts(text, block=True, voice_override=None):
 def stop_tts():
     """Kill any active TTS playback across all backends.
 
-    Command, specific. Stops:
+    Command, specific. Returns True if TTS was active and got stopped.
+
+    Stops:
     - say backend: kills 'say' process
     - siri backend: kills 'afplay' process (siri plays via afplay)
     - kitten backend: stops local sounddevice stream
     - supertonic backend: hits /stop endpoint on the server
     """
+    was_active = _tts_active
     # Kill say and afplay (used by say and siri backends)
     subprocess.run(['pkill', '-x', 'say'], capture_output=True)
     subprocess.run(['pkill', '-x', 'afplay'], capture_output=True)
@@ -950,6 +963,7 @@ def stop_tts():
         except Exception:
             pass
     threading.Thread(target=_stop_supertonic, daemon=True).start()
+    return was_active
 
 
 # =============================================================================
@@ -11980,8 +11994,8 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
 
         # Stop any active TTS playback so it doesn't talk over the user
         if S.SPEAK_BACK_STOP_ON_RECORD:
-            stop_tts()
-            play_chime('tts_interrupt')
+            if stop_tts():
+                play_chime('tts_interrupt')
 
         self.audio_chunks = []
         if pre_buffer is not None and len(pre_buffer) > 0:
