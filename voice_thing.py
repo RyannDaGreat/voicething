@@ -11222,6 +11222,9 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         if not hasattr(self, '_cmd_phrases_dialog') or self._cmd_phrases_dialog is None:
             self._cmd_phrases_dialog = CommandPhrasesDialog(self)
             self._cmd_phrases_dialog.center_on_parent()
+            # Set default size after center_on_parent (which calls adjustSize)
+            if not (S.RESTORE_WINDOW_GEOMETRY and 'command_phrases' in S.WINDOW_GEOMETRY):
+                self._cmd_phrases_dialog.resize(1500, 960)
             self._cmd_phrases_dialog.finished.connect(self._on_cmd_phrases_dialog_closed)
             self._cmd_phrases_dialog.phrases_changed.connect(self._on_command_phrases_changed)
         self._cmd_phrases_dialog.show()
