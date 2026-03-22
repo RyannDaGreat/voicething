@@ -607,6 +607,7 @@ DEFAULTS = dict(
     SPEAK_BACK_APPEND_INSTRUCTION=True,  # Append TTS instruction to transcriptions
     SPEAK_BACK_TMUX_ONLY=False,  # Only append TTS instruction when sending to tmux (not paste)
     SPEAK_BACK_WAKE_ONLY=True,  # Only append TTS instruction when recording started by wake word
+    SPEAK_BACK_STOP_ON_RECORD=True,  # Stop any active TTS playback when recording starts
     SPEAK_BACK_INSTRUCTION_TEMPLATE="Reply in chat first as you would normally. Then speak in pure English via ({command} > /dev/null &), only 1-2 sentences unless asked for more as it will be played as audio.",
     # NTFY remote TTS settings
     NTFY_ENABLED=True,  # Enable NTFY listener for remote TTS
@@ -903,6 +904,44 @@ def do_tts(text, block=True, voice_override=None):
         _speak()
     else:
         threading.Thread(target=_speak, daemon=True).start()
+
+
+def stop_tts():
+    """Kill any active TTS playback across all backends.
+
+    Command, specific. Stops:
+    - say backend: kills 'say' process
+    - siri backend: kills 'afplay' process (siri plays via afplay)
+    - kitten backend: stops local sounddevice stream
+    - supertonic backend: hits /stop endpoint on the server
+    """
+    # Kill say and afplay (used by say and siri backends)
+    subprocess.run(['pkill', '-x', 'say'], capture_output=True)
+    subprocess.run(['pkill', '-x', 'afplay'], capture_output=True)
+
+    # Stop local sounddevice playback (kitten streams to an OutputStream)
+    try:
+        import sounddevice as sd
+        sd.stop()  # Stops sd.play() streams
+        # Also abort kitten's persistent OutputStream if it exists
+        import rp.r as _r
+        stream = getattr(_r, '_kitten_tts_audio_stream', None)
+        if stream is not None and stream.active:
+            stream.abort()
+    except ImportError:
+        pass
+
+    # Stop supertonic server playback (plays audio in its own process via sd.play)
+    def _stop_supertonic():
+        try:
+            from rp.libs.supertonic_tts_server import _get_port_from_tmux
+            port = _get_port_from_tmux()
+            if port:
+                import urllib.request
+                urllib.request.urlopen('http://localhost:%d/stop' % port, timeout=2)
+        except Exception:
+            pass
+    threading.Thread(target=_stop_supertonic, daemon=True).start()
 
 
 # =============================================================================
@@ -5445,6 +5484,17 @@ class TTSSettingsWidget(QWidget):
         wake_only_row.addStretch()
         tts_sub.addLayout(wake_only_row)
 
+        # Stop TTS on record checkbox (indented)
+        stop_on_rec_row = indented_row(level=1)
+        self._stop_on_rec_checkbox = make_checkbox("Stop on record",
+            S.SPEAK_BACK_STOP_ON_RECORD,
+            "Stop any active TTS playback when recording starts.\n"
+            "Prevents TTS from talking over you while you speak.",
+            self._on_stop_on_rec_changed)
+        stop_on_rec_row.addWidget(self._stop_on_rec_checkbox)
+        stop_on_rec_row.addStretch()
+        tts_sub.addLayout(stop_on_rec_row)
+
         # NTFY remote TTS checkbox (indented)
         ntfy_row = indented_row(level=1)
         self._ntfy_checkbox = make_checkbox("NTFY remote TTS",
@@ -5760,6 +5810,9 @@ class TTSSettingsWidget(QWidget):
 
     def _on_wake_only_changed(self, state):
         S.set('SPEAK_BACK_WAKE_ONLY', state == Qt.CheckState.Checked.value)
+
+    def _on_stop_on_rec_changed(self, state):
+        S.set('SPEAK_BACK_STOP_ON_RECORD', state == Qt.CheckState.Checked.value)
 
     def _on_announce_changed(self, state):
         enabled = state == Qt.CheckState.Checked.value
@@ -11666,7 +11719,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
             'TMUX_PHRASES_AS_CONTEXT', 'TMUX_ANNOUNCE_PANE', 'TMUX_ANNOUNCE_DELAY',
             # TTS / speak-back
             'SPEAK_BACK_VOICE', 'TTS_SAY', 'TTS_SUPERTONIC', 'TTS_KITTEN', 'TTS_SIRI', 'TTS_WAKE_VOICES',
-            'SPEAK_BACK_APPEND_INSTRUCTION', 'SPEAK_BACK_TMUX_ONLY', 'SPEAK_BACK_WAKE_ONLY',
+            'SPEAK_BACK_APPEND_INSTRUCTION', 'SPEAK_BACK_TMUX_ONLY', 'SPEAK_BACK_WAKE_ONLY', 'SPEAK_BACK_STOP_ON_RECORD',
             'SPEAK_BACK_INSTRUCTION_TEMPLATE', 'TTS_TEST_PHRASE',
             # NTFY (topic before enabled, so listener has topic when it starts)
             'NTFY_TOPIC', 'NTFY_USE_CURL',
@@ -11916,6 +11969,10 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
             if rp.spotify_is_running() and rp.spotify_is_playing():
                 rp.spotify_pause()
                 self._spotify_was_playing = True
+
+        # Stop any active TTS playback so it doesn't talk over the user
+        if S.SPEAK_BACK_STOP_ON_RECORD:
+            stop_tts()
 
         self.audio_chunks = []
         if pre_buffer is not None and len(pre_buffer) > 0:
