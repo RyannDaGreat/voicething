@@ -5508,7 +5508,7 @@ class TTSSettingsWidget(QWidget):
 
         # Stop TTS on record checkbox (indented)
         stop_on_rec_row = indented_row(level=1)
-        self._stop_on_rec_checkbox = make_checkbox("Stop on record",
+        self._stop_on_rec_checkbox = make_checkbox("Interrupt on record",
             S.SPEAK_BACK_STOP_ON_RECORD,
             "Stop any active TTS playback when recording starts.\n"
             "Prevents TTS from talking over you while you speak.",
