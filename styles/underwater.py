@@ -91,12 +91,14 @@ class UnderwaterStyle(BaseStyle):
     slider_fill    = "rgb(0,180,160)"
 
     # --- Knob ---
-    knob_style       = "glass"
-    knob_body_dark   = "#0a1828"
-    knob_body_light  = "#15304a"
-    knob_notch_style = "line"
+    knob_style       = "modern"
+    knob_body_dark   = "#1a4060"
+    knob_body_light  = "#2a6888"
+    knob_notch_style = "dot"
     knob_tickmarks   = True
     knob_glow        = True
+    knob_label_color = "#b8e8e0"
+    knob_track_color = BIOLUM_CYAN_CSS
 
     # --- Input ---
     input_bg   = '#0c1e34'
@@ -355,6 +357,58 @@ class UnderwaterStyle(BaseStyle):
                 int(spec_r * 2), int(spec_r * 2),
             )
 
+    def _draw_fish(self, painter, x, y, size, facing_left=False, alpha_mult=1.0):
+        """Draw a tiny tropical fish silhouette with bioluminescent tint.
+
+        Command, specific. Simple teardrop body + triangular tail fin.
+
+        Args:
+            x, y: Center position
+            size: Body length in pixels
+            facing_left: If True, fish faces left
+            alpha_mult: Opacity multiplier
+        """
+        painter.save()
+        painter.translate(x, y)
+        if facing_left:
+            painter.scale(-1, 1)
+
+        body_alpha = int(160 * alpha_mult)
+        fin_alpha = int(120 * alpha_mult)
+
+        # Body (elongated ellipse)
+        body = QPainterPath()
+        body.addEllipse(QRectF(-size * 0.5, -size * 0.25, size, size * 0.5))
+        body_color = QColor(0, 180, 170, body_alpha)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QBrush(body_color))
+        painter.drawPath(body)
+
+        # Tail fin (triangle)
+        tail = QPainterPath()
+        tail.moveTo(-size * 0.5, 0)
+        tail.lineTo(-size * 0.85, -size * 0.3)
+        tail.lineTo(-size * 0.85, size * 0.3)
+        tail.closeSubpath()
+        painter.setBrush(QBrush(QColor(0, 160, 155, fin_alpha)))
+        painter.drawPath(tail)
+
+        # Eye (tiny bright dot)
+        eye_x = size * 0.25
+        painter.setBrush(QBrush(QColor(220, 255, 250, body_alpha)))
+        painter.drawEllipse(QPointF(eye_x, -size * 0.04), size * 0.06, size * 0.06)
+
+        # Dorsal fin (small triangle on top)
+        dorsal = QPainterPath()
+        dorsal.moveTo(-size * 0.1, -size * 0.25)
+        dorsal.lineTo(size * 0.1, -size * 0.25)
+        dorsal.lineTo(0, -size * 0.45)
+        dorsal.closeSubpath()
+        painter.setBrush(QBrush(QColor(0, 200, 190, fin_alpha)))
+        painter.drawPath(dorsal)
+
+        painter.restore()
+
     def _draw_caustic_overlay(self, painter, rect, width, height,
                                alpha_top=0.38, alpha_bottom=0.05):
         """
@@ -476,34 +530,45 @@ class UnderwaterStyle(BaseStyle):
             biolum_spots.append((bx, by, br))
         self._draw_bioluminescence(painter, biolum_spots, alpha_mult)
 
-        # --- 5. Decorative bubbles (various sizes, clustered near edges) ---
+        # --- 5. Decorative bubbles (varied sizes, clusters + stragglers) ---
         np.random.seed(8888)
-        bubble_defs = [
-            # (x_offset_from_left, y_offset_from_bottom, radius)
-            (14, 55, 11),
-            (32, 32, 7),
-            (48, 70, 5),
-            (width - 40, 50, 10),
-            (width - 22, 28, 6),
-            (width - 55, 68, 4),
-            # A few mid-field rising bubbles
-            (int(width * 0.3), int(height * 0.6), 5),
-            (int(width * 0.6), int(height * 0.45), 3),
-            (int(width * 0.45), int(height * 0.75), 8),
-            (int(width * 0.7), int(height * 0.8), 4),
+        # Edge clusters (rising from bottom)
+        edge_bubbles = [
+            (14, 55, 11), (32, 32, 7), (48, 70, 5), (22, 80, 3.5),
+            (42, 45, 2), (8, 38, 4),
+            (width - 40, 50, 10), (width - 22, 28, 6), (width - 55, 68, 4),
+            (width - 15, 60, 3), (width - 48, 38, 2.5), (width - 30, 78, 5),
         ]
-        for bx, by_from_bottom, br in bubble_defs[:6]:
+        for bx, by_from_bottom, br in edge_bubbles:
             self._draw_bubble(
-                painter,
-                rect.x() + bx,
-                rect.bottom() - by_from_bottom,
+                painter, rect.x() + bx, rect.bottom() - by_from_bottom,
                 br, alpha_mult * 0.85,
             )
-        for bx, by, br in bubble_defs[6:]:
+        # Mid-field rising bubbles (various sizes — tiny to medium)
+        mid_bubbles = [
+            (0.3, 0.6, 5), (0.6, 0.45, 3), (0.45, 0.75, 8), (0.7, 0.8, 4),
+            (0.15, 0.5, 2), (0.25, 0.35, 3.5), (0.55, 0.65, 2.5),
+            (0.8, 0.55, 6), (0.35, 0.85, 1.5), (0.65, 0.3, 2),
+            (0.5, 0.5, 7), (0.4, 0.4, 1.5), (0.75, 0.7, 3),
+            (0.2, 0.7, 4.5), (0.85, 0.4, 2),
+        ]
+        for fx, fy, br in mid_bubbles:
             self._draw_bubble(
-                painter, rect.x() + bx, rect.y() + by,
+                painter, rect.x() + int(width * fx), rect.y() + int(height * fy),
                 br, alpha_mult * 0.6,
             )
+
+        # --- 5b. Small fish ---
+        np.random.seed(3456)
+        fish_defs = [
+            (0.18, 0.55, 12, False),   # (x_frac, y_frac, size, facing_left)
+            (0.72, 0.38, 9, True),
+            (0.88, 0.68, 7, False),
+        ]
+        for fx, fy, size, facing_left in fish_defs:
+            fish_x = rect.x() + int(width * fx)
+            fish_y = rect.y() + int(height * fy)
+            self._draw_fish(painter, fish_x, fish_y, size, facing_left, alpha_mult * 0.7)
 
         # --- 6. Vignette (darker at edges and bottom) ---
         self._draw_vignette(painter, rect, width, height, radius)
