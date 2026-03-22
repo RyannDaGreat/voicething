@@ -165,6 +165,7 @@ CHIME_DESCRIPTIONS = {
     'cmd_phrases_on':   "Command Phrases On: Voice commands enabled (Shift+H)",
     'cmd_phrases_off':  "Command Phrases Off: Voice commands disabled (Shift+H)",
     'command_phrase':   "Command Phrase: A voice command was recognized and executed",
+    'tts_interrupt':    "TTS Interrupt: Active TTS playback was stopped because recording started",
 }
 
 # Chime themes - each theme defines sounds for various events
@@ -202,6 +203,7 @@ CHIME_THEMES = {
         'cmd_phrases_on': (([4, 9, 13], [14], [13], [9], [4, 8, 11], [16]), 0.173),  # FamilyMart chime
         'cmd_phrases_off':(([4], [4, 8, 11], [13], [11], [4], [-3, 4, 9]), 0.184),  # FamilyMart chime (off)
         'command_phrase': (([0, 7, 12], [5, 12, 19]), 0.08),    # A+E+A5 → D+A5+G6
+        'tts_interrupt':  (([12, 7], [-5]), 0.06),              # A5+E desc → E4 soft shush
         'boot':           (([0], [4], [7], [12], [0, 4, 7, 12]), 0.08),  # A→C#→E→A5→Amaj chord
     },
     # Minimal: Clean single notes, perfect intervals (octaves, 5ths)
@@ -233,6 +235,7 @@ CHIME_THEMES = {
         'cmd_phrases_on': (([4, 9, 13], [14], [13], [9], [4, 8, 11], [16]), 0.173),  # FamilyMart chime
         'cmd_phrases_off':(([4], [4, 8, 11], [13], [11], [4], [-3, 4, 9]), 0.184),  # FamilyMart chime (off)
         'command_phrase': (([0, 7, 12], [5, 12, 19]), 0.08),    # A+E+A5 → D+A5+G6
+        'tts_interrupt':  (([12, 7], [-5]), 0.06),              # A5+E desc → E4 soft shush
         'boot':           (([0], [7], [12], [0, 7, 12]), 0.06), # A→E→A5→power chord
     },
     # Blues: A blues scale with blue notes (0, 3, 5, 6, 7, 10)
@@ -264,6 +267,7 @@ CHIME_THEMES = {
         'cmd_phrases_on': (([4, 9, 13], [14], [13], [9], [4, 8, 11], [16]), 0.173),  # FamilyMart chime
         'cmd_phrases_off':(([4], [4, 8, 11], [13], [11], [4], [-3, 4, 9]), 0.184),  # FamilyMart chime (off)
         'command_phrase': (([0, 7, 12], [5, 12, 19]), 0.08),    # A+E+A5 → D+A5+G6
+        'tts_interrupt':  (([12, 7], [-5]), 0.06),              # A5+E desc → E4 soft shush
         'boot':           (([0, 3], [6], [7, 10], [0, 3, 7, 10]), 0.1),  # Am→Eb→E+G→Am7 blues
     },
     # Ethereal: Sus2/Sus4 only, wide voicings (0, 2, 5, 7, 9)
@@ -296,6 +300,7 @@ CHIME_THEMES = {
         'cmd_phrases_on': (([4, 9, 13], [14], [13], [9], [4, 8, 11], [16]), 0.173),  # FamilyMart chime
         'cmd_phrases_off':(([4], [4, 8, 11], [13], [11], [4], [-3, 4, 9]), 0.184),  # FamilyMart chime (off)
         'command_phrase': (([0, 7, 12], [5, 12, 19]), 0.08),    # A+E+A5 → D+A5+G6
+        'tts_interrupt':  (([12, 7], [-5]), 0.06),              # A5+E desc → E4 soft shush
         'boot':           (([0, 2], [7], [9, 14], [0, 2, 7, 14]), 0.12), # Asus2→E→F#+B5→Asus2 spread
     },
     # Melancholy: A natural minor (0, 2, 3, 5, 7, 8, 10)
@@ -327,6 +332,7 @@ CHIME_THEMES = {
         'cmd_phrases_on': (([4, 9, 13], [14], [13], [9], [4, 8, 11], [16]), 0.173),  # FamilyMart chime
         'cmd_phrases_off':(([4], [4, 8, 11], [13], [11], [4], [-3, 4, 9]), 0.184),  # FamilyMart chime (off)
         'command_phrase': (([0, 7, 12], [5, 12, 19]), 0.08),    # A+E+A5 → D+A5+G6
+        'tts_interrupt':  (([12, 7], [-5]), 0.06),              # A5+E desc → E4 soft shush
         'boot':           (([0, 3], [5], [7], [8, 12], [0, 3, 7]), 0.12), # Am→D→E→F+A5→Am triad
     },
     # Bright: A major scale (0, 2, 4, 5, 7, 9, 11)
@@ -360,6 +366,7 @@ CHIME_THEMES = {
         'cmd_phrases_on': (([4, 9, 13], [14], [13], [9], [4, 8, 11], [16]), 0.173),  # FamilyMart chime
         'cmd_phrases_off':(([4], [4, 8, 11], [13], [11], [4], [-3, 4, 9]), 0.184),  # FamilyMart chime (off)
         'command_phrase': (([0, 7, 12], [5, 12, 19]), 0.08),    # A+E+A5 → D+A5+G6
+        'tts_interrupt':  (([12, 7], [-5]), 0.06),              # A5+E desc → E4 soft shush
         'boot':           (([0], [4], [7], [11], [16], [0, 4, 7, 11, 16]), 0.06),  # A→C#→E→G#→C#6→Amaj9
     },
     # Jazzy: Extended chords, 7ths, 9ths, 13ths
@@ -391,6 +398,7 @@ CHIME_THEMES = {
         'cmd_phrases_on': (([4, 9, 13], [14], [13], [9], [4, 8, 11], [16]), 0.173),  # FamilyMart chime
         'cmd_phrases_off':(([4], [4, 8, 11], [13], [11], [4], [-3, 4, 9]), 0.184),  # FamilyMart chime (off)
         'command_phrase': (([0, 7, 12], [5, 12, 19]), 0.08),    # A+E+A5 → D+A5+G6
+        'tts_interrupt':  (([12, 7], [-5]), 0.06),              # A5+E desc → E4 soft shush
         'boot':           (([0, 4], [7, 10], [14], [0, 4, 7, 10, 14]), 0.08),  # A9 arpeggio → full voicing
     },
 }
@@ -11973,6 +11981,7 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         # Stop any active TTS playback so it doesn't talk over the user
         if S.SPEAK_BACK_STOP_ON_RECORD:
             stop_tts()
+            play_chime('tts_interrupt')
 
         self.audio_chunks = []
         if pre_buffer is not None and len(pre_buffer) > 0:
