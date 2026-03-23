@@ -182,6 +182,20 @@ def run_flashlight():
     signal.signal(signal.SIGTERM, _signal_handler)
     signal.signal(signal.SIGINT, _signal_handler)
 
+    # --- pynput global mouse listener (dismiss on mouse move) ---
+    from pynput import mouse
+
+    # Ignore mouse moves in the first second (cursor warp on window creation)
+    _mouse_move_ready_time = time.time() + 1.0
+
+    def _on_mouse_move(x, y):
+        if time.time() > _mouse_move_ready_time:
+            _dismiss()
+
+    mouse_listener = mouse.Listener(on_move=_on_mouse_move)
+    mouse_listener.daemon = True
+    mouse_listener.start()
+
     # --- Show window ---
     app.setPresentationOptions_(
         NSApplicationPresentationHideDock | NSApplicationPresentationHideMenuBar
