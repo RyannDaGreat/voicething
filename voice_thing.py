@@ -570,6 +570,8 @@ DEFAULTS = dict(
         'whisper small':      "curl -s http://localhost:$VOICETHING_PORT/cmd?phrase=whisper+small",
         'whisper medium':     "curl -s http://localhost:$VOICETHING_PORT/cmd?phrase=whisper+medium",
         'whisper large':      "curl -s http://localhost:$VOICETHING_PORT/cmd?phrase=whisper+large",
+        'make screen white':  "curl -s http://localhost:$VOICETHING_PORT/cmd?phrase=flashlight+on",
+        'brightness zero':    "osascript -e 'tell app \"System Events\"' -e 'repeat 50 times' -e 'key code 145' -e 'delay 0.05' -e 'end repeat' -e 'end tell'",
     },
     AUTO_COPY=True,   # Copy transcription to clipboard before paste
     AUTO_PASTE=True,  # Use ⌘V to paste after copying
@@ -11337,7 +11339,9 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         'whisper large': ('WHISPER_MODEL', 'large-v3', "Whisper model set to large-v3"),
     }
     _ACTION_COMMANDS = {
-        'retranscribe': ('retranscribe_latest', "Retranscribing latest audio"),
+        'retranscribe':    ('retranscribe_latest', "Retranscribing latest audio"),
+        'flashlight on':   ('flashlight_on',       "Flashlight mode activated"),
+        'flashlight off':  ('flashlight_off',      "Flashlight mode deactivated"),
     }
 
     def _handle_control_cmd(self, phrase):
@@ -11366,10 +11370,37 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
         if method:
             method()
 
+    def flashlight_on(self):
+        """Command, specific. Launch flashlight mode (fullscreen EDR white overlay)."""
+        import subprocess
+        # Kill any existing flashlight first
+        self.flashlight_off()
+        flashlight_script = os.path.join(os.path.dirname(__file__), 'flashlight.py')
+        print(f"[flashlight] Launching: {flashlight_script}")
+        subprocess.Popen(
+            [sys.executable, flashlight_script],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+
+    def flashlight_off(self):
+        """Command, specific. Kill the flashlight process if running."""
+        pid_file = '/tmp/voicething_flashlight.pid'
+        try:
+            with open(pid_file) as f:
+                pid = int(f.read().strip())
+            os.kill(pid, signal.SIGTERM)
+            print(f"[flashlight] Killed flashlight process {pid}")
+        except (FileNotFoundError, ValueError, ProcessLookupError, PermissionError):
+            pass
+
     def _on_command_phrase_detected(self, phrase):
         """Handle command phrase detected — run the associated bash command in a daemon thread."""
         import subprocess, threading
         phrase_lower = phrase.lower()
+        # Kill flashlight overlay on any command phrase (except "make screen white" itself)
+        if phrase_lower != 'make screen white':
+            self.flashlight_off()
         # Look up command (case-insensitive)
         cmd = None
         for p, c in S.COMMAND_PHRASES.items():
@@ -11571,6 +11602,8 @@ class VoiceThingWindow(DraggableResizableMixin, QWidget):
 
         Called from wakeword callback thread — must not touch Qt widgets directly.
         """
+        # Kill flashlight overlay if running (any voice trigger dismisses it)
+        self.flashlight_off()
         # Ignore triggers during TTS announcement cooldown
         if time.time() < self._wake_suppressed_until:
             print(f"[wakeword] Ignoring trigger during announcement cooldown")
