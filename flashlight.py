@@ -192,7 +192,8 @@ def run_flashlight():
     # --- Render loop: clear to EDR white ---
     # EDR headroom ramps up over ~2-3 seconds, so we render continuously
     # for a few seconds then switch to a slow idle render to maintain it.
-    from Foundation import NSRunLoop, NSDate, NSDefaultRunLoopMode
+    from Foundation import NSDate, NSDefaultRunLoopMode
+    from AppKit import NSAnyEventMask
 
     MTLRenderPassDescriptor = objc.lookUpClass('MTLRenderPassDescriptor')
 
@@ -222,6 +223,20 @@ def run_flashlight():
         cmd_buf.presentDrawable_(drawable)
         cmd_buf.commit()
 
+    def _drain_events():
+        """Command, specific. Pump NSApplication event queue so keyDown/mouseDown/mouseMoved fire."""
+        while True:
+            event = app.nextEventMatchingMask_untilDate_inMode_dequeue_(
+                NSAnyEventMask,
+                NSDate.distantPast(),  # non-blocking
+                NSDefaultRunLoopMode,
+                True,
+            )
+            if event is None:
+                break
+            app.sendEvent_(event)
+        app.updateWindows()
+
     # Main run loop with rendering
     print("[flashlight] Starting EDR render loop")
     while not _dismiss_called[0]:
@@ -229,12 +244,10 @@ def run_flashlight():
         interval = RAMP_INTERVAL_S if elapsed < RAMP_DURATION_S else IDLE_INTERVAL_S
 
         _render_frame()
+        _drain_events()
 
-        # Process events (keyboard, mouse, signals)
-        NSRunLoop.currentRunLoop().runMode_beforeDate_(
-            NSDefaultRunLoopMode,
-            NSDate.dateWithTimeIntervalSinceNow_(interval),
-        )
+        # Sleep to control frame rate (avoid busy-spinning)
+        time.sleep(interval)
 
 
 if __name__ == '__main__':
